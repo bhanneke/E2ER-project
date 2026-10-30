@@ -33,7 +33,7 @@ def _remote(base: Path, link_target: Path | None, *, link_name: str = "code") ->
     seed = base / "seed"
     seed.mkdir()
     _git("init", "-q", "-b", "main", str(seed))
-    (seed / "provenance.json").write_text(json.dumps({"run": {"paper_id": "P1"}}))
+    (seed / "provenance.json").write_text(json.dumps({"run": {"paper_id": "P1"}}), encoding="utf-8", newline="\n")
     if link_target is not None:
         os.symlink(str(link_target), seed / link_name)
     _git("add", "-A", cwd=seed)
@@ -56,8 +56,8 @@ class _Local(gf.Target):
 def _staged(base: Path) -> gf.Staged:
     stage = base / "staged"
     (stage / "code").mkdir(parents=True)
-    (stage / "code" / "run.py").write_text("print('written by e2er push')\n")
-    (stage / "provenance.json").write_text(json.dumps({"run": {"paper_id": "P1"}}))
+    (stage / "code" / "run.py").write_text("print('written by e2er push')\n", encoding="utf-8", newline="\n")
+    (stage / "provenance.json").write_text(json.dumps({"run": {"paper_id": "P1"}}), encoding="utf-8", newline="\n")
     return gf.Staged(root=stage, files=["code/run.py", "provenance.json"], left_out=[])
 
 
@@ -97,12 +97,12 @@ def test_the_legacy_client_never_uploads_a_link_or_a_hidden_file(tmp_path, monke
     from src.modules.github import client as gc
 
     secret = tmp_path / "id_rsa"
-    secret.write_text("PRIVATE KEY")
+    secret.write_text("PRIVATE KEY", encoding="utf-8", newline="\n")
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "paper.tex").write_text("\\documentclass{article}")
+    (ws / "paper.tex").write_text("\\documentclass{article}", encoding="utf-8", newline="\n")
     (ws / "key.tex").symlink_to(secret)
-    (ws / ".env").write_text("ANTHROPIC_API_KEY=x")
+    (ws / ".env").write_text("ANTHROPIC_API_KEY=x", encoding="utf-8", newline="\n")
     c = gc.GitHubClient.__new__(gc.GitHubClient)
     pushed: list[str] = []
     monkeypatch.setattr(c, "push_file", lambda repo, path, content, msg, branch="main": pushed.append(path))

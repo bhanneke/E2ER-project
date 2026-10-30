@@ -89,7 +89,9 @@ def _study(where: Path) -> Path:
 
     ws = where / "workspaces" / "2026-10-30-road-deaths"
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-reviewer", "title": "Road deaths"}), "utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-reviewer", "title": "Road deaths"}), "utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE rates_raw (location TEXT, spatial_type TEXT, value REAL)")
     con.executemany("INSERT INTO rates_raw VALUES (?,?,?)", RATES)
@@ -115,9 +117,9 @@ def _study(where: Path) -> Path:
             "retrieved_at": "2026-10-29T21:10:05Z",
         },
     ]
-    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     for name, text in (("clean_rates.py", CLEAN), ("run_estimation.py", ESTIMATE)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 120, by="e2er-run") == 0
     return export_paper(ws, where / "exports", date_str="20261030")
 
@@ -245,10 +247,10 @@ def reviewer(tmp_path_factory) -> Reviewer:
     proc = subprocess.run(
         [str(py), "-m", "pip", "install", "--quiet", "--disable-pip-version-check", "--no-index",
          "--find-links", str(wheelhouse), str(wheel)],
-        capture_output=True, text=True, timeout=1200,
+        capture_output=True, encoding="utf-8", errors="replace", timeout=1200,
     )  # fmt: skip
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    home, temp, cwd = base / "home (empty)", base / "temp ü", base / "Arbeitsordner ä"
+    home, temp, cwd = base / "home (empty)", base / "temp ü, 2", base / "Arbeitsordner ä"
     for d in (home, temp, cwd):
         d.mkdir()
     return Reviewer(env_dir, cwd, _reviewer_env(home, temp, env_dir))

@@ -141,11 +141,11 @@ def test_an_empty_lock_says_the_study_needs_python_alone(tmp_path):
 
     folder = tmp_path / "study"
     (folder / "code").mkdir(parents=True)
-    (folder / "code" / "run.py").write_text("print(1)\n", encoding="utf-8")
-    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8")
-    (folder / "provenance.json").write_text(json.dumps({"files": {}}), encoding="utf-8")
+    (folder / "code" / "run.py").write_text("print(1)\n", encoding="utf-8", newline="\n")
+    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8", newline="\n")
+    (folder / "provenance.json").write_text(json.dumps({"files": {}}), encoding="utf-8", newline="\n")
     (folder / "results").mkdir()
-    (folder / "results" / "r.json").write_text('{"main": 1}', encoding="utf-8")
+    (folder / "results" / "r.json").write_text('{"main": 1}', encoding="utf-8", newline="\n")
     recipe = {
         "schema": "e2er-reproduce/1",
         "requirements": "code/requirements.txt",
@@ -153,7 +153,7 @@ def test_an_empty_lock_says_the_study_needs_python_alone(tmp_path):
         "steps": [{"run": ["python", "run.py"]}],
         "compare": [{"published": "results/r.json", "produced": "r.json"}],
     }
-    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8")
+    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     packed = pkg.build(folder, tmp_path / "study.e2er", locker=lambda *a: ("", ""))
     env = packed.manifest["environment"]
     assert env["note"] == "code/requirements.txt lists no packages: the study's code needs Python alone."
@@ -190,12 +190,12 @@ def test_the_lock_holds_across_processes(tmp_path):
             assert time.monotonic() < deadline and child.poll() is None, "the other process never took the lock"
             time.sleep(0.02)
         start = time.monotonic()
-        with open(lock, "a+") as fh, exclusive(fh):
+        with open(lock, "a+", encoding="utf-8", newline="\n") as fh, exclusive(fh):
             waited = time.monotonic() - start
         assert waited > 0.5, f"took the lock after {waited:.2f} s while the other process held it"
     finally:
         child.wait(timeout=60)
-    with open(lock, "a+") as fh, exclusive(fh):
+    with open(lock, "a+", encoding="utf-8", newline="\n") as fh, exclusive(fh):
         pass  # released: taken again at once
 
 
@@ -207,10 +207,10 @@ def _folder(tmp_path: Path, names: list[str]) -> Path:
 
     folder = tmp_path / "study"
     folder.mkdir()
-    (folder / "provenance.json").write_text(json.dumps({"files": {}}), encoding="utf-8")
+    (folder / "provenance.json").write_text(json.dumps({"files": {}}), encoding="utf-8", newline="\n")
     for n in names:
         (folder / n).parent.mkdir(parents=True, exist_ok=True)
-        (folder / n).write_text(n, encoding="utf-8")
+        (folder / n).write_text(n, encoding="utf-8", newline="\n")
     return folder
 
 
@@ -309,7 +309,7 @@ def test_a_file_that_cannot_be_written_is_named_and_a_long_path_on_windows_says_
     monkeypatch.setattr(sys, "platform", "win32")
     with pytest.raises(pkg.PackageError) as e:
         pkg.open_package(package, deep)
-    assert "Windows opens at most 259 unless long paths are turned on" in str(e.value)
+    assert "Windows opens at most 259 unless you turn on long paths" in str(e.value)
     assert "Unpack into a short folder (C:\\e2er\\study)" in str(e.value)
 
 
@@ -332,7 +332,9 @@ def test_verify_names_files_whose_only_change_is_crlf(tmp_path):
         "code/run.py": {"sha256": hashlib.sha256(lf).hexdigest(), "bytes": len(lf)},
         "code/other.py": {"sha256": hashlib.sha256(b"original\n").hexdigest(), "bytes": 9},
     }
-    (folder / "provenance.json").write_text(json.dumps({"schema": "e2er-provenance/1", "files": files}), "utf-8")
+    (folder / "provenance.json").write_text(
+        json.dumps({"schema": "e2er-provenance/1", "files": files}), "utf-8", newline="\n"
+    )
     check = _check_integrity(folder)
     assert check.status == FAIL
     assert "2 modified (code/run.py, code/other.py)" in check.detail
@@ -372,3 +374,130 @@ def test_steps_write_utf8_into_their_pipes_and_e2er_reads_it(tmp_path):
     code, tail = rp._run([sys.executable, "-c", "print('Prüfung 文献 ✓')"], cwd=tmp_path, env=env, timeout=60, log=log)
     assert code == 0 and tail == "Prüfung 文献 ✓"
     assert log.read_text(encoding="utf-8").strip() == "Prüfung 文献 ✓"
+
+
+# ── Docker mounts of folders with commas, spaces and Windows drive letters ──
+
+
+def test_a_mount_of_a_folder_with_a_comma_is_quoted_as_docker_reads_it():
+    """`--mount` is one CSV line: `Reviews/Smith, Jones/study` split into a broken field."""
+    import csv
+
+    from src.core.pipeline.sandbox import bind_mount
+
+    value = bind_mount("/home/ann/Reviews/Smith, Jones/study", "/work/run")
+    assert value == 'type=bind,"source=/home/ann/Reviews/Smith, Jones/study",target=/work/run'
+    fields = next(csv.reader([value]))  # what Docker's parser (Go's encoding/csv) gets
+    assert fields == ["type=bind", "source=/home/ann/Reviews/Smith, Jones/study", "target=/work/run"]
+    assert bind_mount("/tmp/a b ü", "/x", readonly=True) == "type=bind,source=/tmp/a b ü,target=/x,readonly"
+    win = bind_mount(r"C:\Users\Ann Lee\AppData\Local\Temp\e2er-reproduce-1", "/work/run")
+    assert win == r"type=bind,source=C:\Users\Ann Lee\AppData\Local\Temp\e2er-reproduce-1,target=/work/run"
+    assert next(csv.reader([bind_mount('/tmp/say "hi", ok', "/x")]))[1] == 'source=/tmp/say "hi", ok'
+
+
+def test_the_reproduce_sandbox_mounts_the_run_folder_through_the_quoting(tmp_path):
+    run_dir = tmp_path / "Smith, Jones" / "e2er-reproduce-1"
+    run_dir.mkdir(parents=True)
+    box = rs.Box(docker="docker", image="img", base="python:3.12-slim", python="3.12", e2er=False)
+    argv = rs.run_argv(box, "n", run_dir, ["python", "x.py"], {}, network=False)
+    assert f'"source={run_dir.resolve()}"' in argv[argv.index("--mount") + 1]
+
+
+# ── processes: liveness, start time and the whole tree, on every system ─────
+
+
+def test_a_live_process_and_a_finished_one_are_told_apart():
+    """Windows answered "cannot tell" (os.kill(pid, 0) would end the process there): `cancel` stopped another
+    process's run."""
+    from src.core import run_owner
+
+    assert run_owner.pid_alive(os.getpid()) is True
+    assert run_owner.process_started(os.getpid())
+    done = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True)
+    assert run_owner.pid_alive(int(done.stdout)) is False
+
+
+_TREE = """\
+import subprocess, sys, time
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+open(sys.argv[1], "w").write(str(child.pid))
+time.sleep(120)
+"""
+
+
+def test_kill_tree_ends_a_process_and_its_children(tmp_path):
+    """POSIX kills the process group; Windows has no os.killpg and uses taskkill /T (a CLI's timeout raised
+    AttributeError there)."""
+    import time
+
+    from src.core import run_owner
+    from src.core.child_env import kill_tree
+
+    pid_file = tmp_path / "child.pid"
+    proc = subprocess.Popen([sys.executable, "-c", _TREE, str(pid_file)], start_new_session=True)
+    deadline = time.monotonic() + 60
+    while not pid_file.exists() or not pid_file.read_text(encoding="utf-8"):
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    child = int(pid_file.read_text(encoding="utf-8"))
+    kill_tree(proc)
+    proc.wait(timeout=30)
+    deadline = time.monotonic() + 30
+    while run_owner.pid_alive(child):
+        assert time.monotonic() < deadline, "the child outlived its parent's kill"
+        time.sleep(0.1)
+
+
+# ── commands and paths a reader pastes ──────────────────────────────────────
+
+
+def test_a_quoted_program_gets_the_call_operator_on_windows(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert console.shell_program(r"C:\My Apps\codex") == r'& "C:\My Apps\codex"'
+    assert console.shell_program(r"C:\Apps\codex") == r"C:\Apps\codex"
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert console.shell_program("/Applications/My Apps/codex") == "'/Applications/My Apps/codex'"
+
+
+def test_a_file_url_of_a_windows_drive_names_the_drive(monkeypatch):
+    from src import paths
+
+    monkeypatch.setattr(paths.os, "name", "nt")
+    assert paths.clean_path_input("file:///C:/Users/Ann/My%20Library.bib") == "C:/Users/Ann/My Library.bib"
+    monkeypatch.setattr(paths.os, "name", "posix")
+    assert paths.clean_path_input("file:///Users/ann/My%20Library.bib") == "/Users/ann/My Library.bib"
+
+
+# ── text files: UTF-8 and LF, whatever the system's defaults ────────────────
+
+
+def _io_calls_without_explicit_text_settings(root: Path) -> list[str]:
+    """Text reads without encoding, text writes without encoding or newline, subprocess text=True: where."""
+    import ast
+
+    out: list[str] = []
+    for p in sorted(root.rglob("*.py")):
+        tree = ast.parse(p.read_text(encoding="utf-8"))
+        for n in ast.walk(tree):
+            if not isinstance(n, ast.Call) or any(k.arg is None for k in n.keywords):
+                continue
+            kws = {k.arg for k in n.keywords}
+            f = n.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", "")
+            owner = f.value.id if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) else ""
+            where = f"{p.relative_to(root.parent).as_posix()}:{n.lineno}"
+            if owner == "subprocess" and "text" in kws and "encoding" not in kws:
+                out.append(f"{where} subprocess text=True without encoding")
+            if name == "read_text" and "encoding" not in kws and not n.args:
+                out.append(f"{where} read_text without encoding")
+            if name == "write_text" and isinstance(f, ast.Attribute) and owner not in ("exports",):
+                if ("encoding" not in kws and len(n.args) < 2) or ("newline" not in kws and len(n.args) < 4):
+                    out.append(f"{where} write_text without encoding or newline")
+    return out
+
+
+def test_e2er_names_utf8_and_lf_for_every_text_file_it_reads_or_writes():
+    """Windows reads and writes text in its code page with CRLF: e2er's rendered tables were not the bytes its
+    checks compared (2026-10-30), and reading a UTF-8 file raised UnicodeDecodeError."""
+    found = _io_calls_without_explicit_text_settings(Path(__file__).resolve().parents[1] / "src")
+    assert found == [], "\n".join(found)

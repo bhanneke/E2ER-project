@@ -69,7 +69,9 @@ def _probe_gemini_flags(cli_path: str) -> tuple[bool, bool]:
     if cli_path in _FLAG_CACHE:
         return _FLAG_CACHE[cli_path]
     try:
-        out = subprocess.run([cli_path, "--help"], capture_output=True, text=True, timeout=_PROBE_TIMEOUT)
+        out = subprocess.run(
+            [cli_path, "--help"], capture_output=True, encoding="utf-8", errors="replace", timeout=_PROBE_TIMEOUT
+        )
         help_out = (out.stdout or "") + (out.stderr or "")
     except (OSError, subprocess.SubprocessError):
         help_out = ""

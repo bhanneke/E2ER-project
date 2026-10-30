@@ -55,11 +55,11 @@ def _study(tmp_path: Path, script: str, published: dict) -> Path:
     folder = tmp_path / "study"
     for d in ("code", "results", "data"):
         (folder / d).mkdir(parents=True)
-    (folder / "code" / "run_estimation.py").write_text(script, encoding="utf-8")
-    (folder / "code" / "get_data.py").write_text(GET_DATA, encoding="utf-8")
-    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8")
+    (folder / "code" / "run_estimation.py").write_text(script, encoding="utf-8", newline="\n")
+    (folder / "code" / "get_data.py").write_text(GET_DATA, encoding="utf-8", newline="\n")
+    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8", newline="\n")
     _db(folder / "data" / "data.db")
-    (folder / "results" / "estimation_results.json").write_text(json.dumps(published), encoding="utf-8")
+    (folder / "results" / "estimation_results.json").write_text(json.dumps(published), encoding="utf-8", newline="\n")
     sha = hashlib.sha256((folder / "data" / "data.db").read_bytes()).hexdigest()
     recipe = {
         "schema": rp.SCHEMA,
@@ -76,7 +76,7 @@ def _study(tmp_path: Path, script: str, published: dict) -> Path:
         "inputs": [{"path": "data.db", "sha256": sha, "source": "the study's database", "reload": "get_data.py"}],
         "compare": [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}],
     }
-    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8")
+    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     return folder
 
 
@@ -169,7 +169,9 @@ def test_inputs_are_listed_when_the_environment_cannot_be_made(tmp_path: Path, c
     # before anything is installed (tests/test_security_reproduce.py).
     monkeypatch.setenv("UV_OFFLINE", "1")
     monkeypatch.setenv("PIP_NO_INDEX", "1")
-    (folder / "code" / "requirements.txt").write_text("e2er-no-such-package-xyz==0.0.1\n", encoding="utf-8")
+    (folder / "code" / "requirements.txt").write_text(
+        "e2er-no-such-package-xyz==0.0.1\n", encoding="utf-8", newline="\n"
+    )
     assert reproduce(str(folder), yes=True, sandbox=False) == 2
     text = capsys.readouterr().out
     assert "error: could not install" in text
@@ -232,11 +234,11 @@ def test_the_scan_lets_local_reads_and_queries_pass(source: str) -> None:
 def _estimation_workspace(tmp_path: Path, script: str) -> Path:
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "run_estimation.py").write_text(script, encoding="utf-8")
+    (ws / "run_estimation.py").write_text(script, encoding="utf-8", newline="\n")
     results = {
         "main": {"coefficients": {"x": {"estimate": 1.0, "se": 0.5, "t_stat": 2.0, "p_value": 0.0455, "df": None}}}
     }
-    (ws / "estimation_results.json").write_text(json.dumps(results), encoding="utf-8")
+    (ws / "estimation_results.json").write_text(json.dumps(results), encoding="utf-8", newline="\n")
     return ws
 
 
@@ -261,7 +263,7 @@ def test_a_local_helper_that_fetches_the_web_is_found(tmp_path: Path) -> None:
     ws = _estimation_workspace(
         tmp_path, "import json\nimport helpers\njson.dump({}, open('estimation_results.json','w'))\n"
     )
-    (ws / "helpers.py").write_text("import requests\n", encoding="utf-8")
+    (ws / "helpers.py").write_text("import requests\n", encoding="utf-8", newline="\n")
     checks = check_specialist_artifacts(ws, "econometrics_specialist")
     assert any("helpers.py:1: imports requests" in c.reason for c in checks if not c.ok)
 

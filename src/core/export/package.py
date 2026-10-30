@@ -545,7 +545,7 @@ def uv_lock(requirements: Path, python_minor: str, as_of: str) -> tuple[str | No
         if as_of:
             cmd += ["--exclude-newer", as_of]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            proc = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=600)
         except (OSError, subprocess.SubprocessError) as e:
             return None, f"the packages could not be resolved ({e})"
         if proc.returncode != 0 or not out.is_file():
@@ -585,7 +585,7 @@ def pip_download(requirements: Path, python_minor: str, dest: Path) -> tuple[lis
     if locked:
         cmd.append("--no-deps")  # the lock lists every package already
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        proc = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=3600)
     except (OSError, subprocess.SubprocessError) as e:
         return [], f"the wheels could not be downloaded ({e})"
     if proc.returncode != 0:
@@ -801,7 +801,7 @@ def build(
                     + (f", with releases up to {as_of}" if as_of else "")
                     + ".\n"
                 )
-                lock.write_text(header + text, encoding="utf-8")
+                lock.write_text(header + text, encoding="utf-8", newline="\n")
                 extra[LOCK] = lock
                 environment.update(
                     lock=LOCK,
@@ -1287,7 +1287,7 @@ def _unwritable(rel: str, target: Path, e: OSError) -> str:
     if sys.platform == "win32" and len(str(target)) >= WINDOWS_MAX_PATH:
         why += (
             f": its path has {len(str(target))} characters, and Windows opens at most {WINDOWS_MAX_PATH - 1} "
-            "unless long paths are turned on. Unpack into a short folder (C:\\e2er\\study), or turn on long "
+            "unless you turn on long paths. Unpack into a short folder (C:\\e2er\\study), or turn on long "
             "paths (docs/REVIEWING.md says how)"
         )
     return why

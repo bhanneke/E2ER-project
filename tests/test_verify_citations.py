@@ -187,6 +187,7 @@ async def test_verify_uses_bibitem_bodies_end_to_end(tmp_path: Path):
         \end{thebibliography}
         """,
         encoding="utf-8",
+        newline="\n",
     )
     # No DOI in body → DOI chain fails; OpenAlex title-search returns
     # the canonical paper.
@@ -226,6 +227,7 @@ async def test_verify_bibitem_entry_with_empty_body_is_unverifiable(tmp_path: Pa
         \end{thebibliography}
         """,
         encoding="utf-8",
+        newline="\n",
     )
     report = await verify(draft)
     assert report.total_cites == 1
@@ -251,6 +253,7 @@ def test_load_bib(tmp_path: Path):
 }
 """,
         encoding="utf-8",
+        newline="\n",
     )
     out = load_bib(bib)
     assert set(out.keys()) == {"smith2020", "jones2019"}
@@ -345,6 +348,7 @@ def draft_and_bib(tmp_path: Path):
         Per \cite{good2020} and \citep{good2021}, but also \cite{hallucinated2024}.
         """,
         encoding="utf-8",
+        newline="\n",
     )
     bib = tmp_path / "references.bib"
     bib.write_text(
@@ -354,6 +358,7 @@ def draft_and_bib(tmp_path: Path):
 @article{never_cited, title={Orphan}, year={2019}, doi={10.1/orph}}
 """,
         encoding="utf-8",
+        newline="\n",
     )
     return draft, bib
 
@@ -381,9 +386,9 @@ async def test_verify_happy_path(draft_and_bib, tmp_path: Path):
 
 async def test_verify_missing_in_bib_only_fails(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"See \cite{ghost}.", encoding="utf-8")
+    draft.write_text(r"See \cite{ghost}.", encoding="utf-8", newline="\n")
     bib = tmp_path / "references.bib"
-    bib.write_text("@article{real, title={Real}, year={2020}}", encoding="utf-8")
+    bib.write_text("@article{real, title={Real}, year={2020}}", encoding="utf-8", newline="\n")
     report = await verify(draft, bib_path=bib)
     assert report.missing_in_bib == 1
     assert report.passed is False
@@ -391,11 +396,12 @@ async def test_verify_missing_in_bib_only_fails(tmp_path: Path):
 
 async def test_verify_unverifiable_warn_by_default(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"See \cite{obscure}.", encoding="utf-8")
+    draft.write_text(r"See \cite{obscure}.", encoding="utf-8", newline="\n")
     bib = tmp_path / "references.bib"
     bib.write_text(
         "@article{obscure, title={An obscure working paper nobody indexes}, year={2024}}",
         encoding="utf-8",
+        newline="\n",
     )
     empty = _empty_search()
     with (
@@ -411,11 +417,12 @@ async def test_verify_unverifiable_warn_by_default(tmp_path: Path):
 
 async def test_verify_unverifiable_strict_fails(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"See \cite{obscure}.", encoding="utf-8")
+    draft.write_text(r"See \cite{obscure}.", encoding="utf-8", newline="\n")
     bib = tmp_path / "references.bib"
     bib.write_text(
         "@article{obscure, title={An obscure working paper nobody indexes}, year={2024}}",
         encoding="utf-8",
+        newline="\n",
     )
     empty = _empty_search()
     with (
@@ -431,7 +438,7 @@ async def test_verify_unverifiable_strict_fails(tmp_path: Path):
 
 async def test_verify_skipped_when_no_cites(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text("Just text, no citations.", encoding="utf-8")
+    draft.write_text("Just text, no citations.", encoding="utf-8", newline="\n")
     report = await verify(draft)
     assert report.skipped_reason and report.skipped_reason.startswith("no references:")
     assert report.passed is True  # skipped == pass per the verify_numbers convention
@@ -449,7 +456,7 @@ async def test_citing_with_no_bibliography_fails_rather_than_skips(tmp_path: Pat
     asserts "unverifiable and uncompilable", not "fabricated".
     """
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"See \cite{foo} and \citep{bar, baz}.", encoding="utf-8")
+    draft.write_text(r"See \cite{foo} and \citep{bar, baz}.", encoding="utf-8", newline="\n")
 
     report = await verify(draft)
 
@@ -463,9 +470,9 @@ async def test_citing_with_no_bibliography_fails_rather_than_skips(tmp_path: Pat
 
 async def test_bibliography_source_records_the_bib_actually_used(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"\cite{x2020}", encoding="utf-8")
+    draft.write_text(r"\cite{x2020}", encoding="utf-8", newline="\n")
     bib = tmp_path / "references.bib"
-    bib.write_text("@article{x2020, title={T}, year={2020}}", encoding="utf-8")
+    bib.write_text("@article{x2020, title={T}, year={2020}}", encoding="utf-8", newline="\n")
 
     none_ = AsyncMock(return_value=None)
     empty = AsyncMock(return_value=_search_with())
@@ -492,6 +499,7 @@ async def test_bibitem_only_draft_records_its_source(tmp_path: Path):
         r"\bibitem{k1} A. Author. A Real Title. Journal, 2020."
         "\n\\end{thebibliography}\n",
         encoding="utf-8",
+        newline="\n",
     )
     none_ = AsyncMock(return_value=None)
     empty = AsyncMock(return_value=_search_with())
@@ -512,11 +520,12 @@ async def test_bibitem_only_draft_records_its_source(tmp_path: Path):
 
 async def test_verify_falls_through_doi_chain_to_title_search(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"\cite{x2020}", encoding="utf-8")
+    draft.write_text(r"\cite{x2020}", encoding="utf-8", newline="\n")
     bib = tmp_path / "references.bib"
     bib.write_text(
         "@article{x2020, title={The Exact Title}, year={2020}, doi={10.1/x}}",
         encoding="utf-8",
+        newline="\n",
     )
     # All three DOI lookups fail; OpenAlex title search finds it.
     title_hit = _search_with(PaperMetadata(title="The Exact Title", year=2020, doi="10.1/x"))
@@ -539,9 +548,9 @@ async def test_verify_falls_through_doi_chain_to_title_search(tmp_path: Path):
 
 async def test_verify_and_save_writes_json(tmp_path: Path):
     draft = tmp_path / "draft.tex"
-    draft.write_text(r"\cite{good}", encoding="utf-8")
+    draft.write_text(r"\cite{good}", encoding="utf-8", newline="\n")
     bib = tmp_path / "references.bib"
-    bib.write_text("@article{good, title={Good}, year={2020}, doi={10.1/g}}", encoding="utf-8")
+    bib.write_text("@article{good, title={Good}, year={2020}, doi={10.1/g}}", encoding="utf-8", newline="\n")
     good = _stub_paper(doi="10.1/g", title="Good")
     with (
         patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=AsyncMock(return_value=good)),
@@ -551,7 +560,7 @@ async def test_verify_and_save_writes_json(tmp_path: Path):
         report = await verify_and_save(draft, tmp_path, bib_path=bib)
     out = tmp_path / "citation_integrity.json"
     assert out.is_file()
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["verified"] == 1
     assert data["checks"][0]["status"] == STATUS_VERIFIED_DOI
     assert report.passed is True
@@ -596,7 +605,8 @@ def test_cli_verify_citations_help_lists_subcommand():
     r = subprocess.run(
         [sys.executable, "-m", "src", "--help"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=Path(__file__).resolve().parent.parent,
     )
     assert r.returncode == 0
@@ -611,8 +621,10 @@ def test_cli_verify_citations_help_lists_subcommand():
 
 async def test_verify_default_falls_back_to_literature_bib(tmp_path: Path):
     draft = tmp_path / "paper_draft.tex"
-    draft.write_text(r"See \cite{ghost2024}.", encoding="utf-8")
-    (tmp_path / "literature.bib").write_text("@article{real2020, title={Real}, year={2020}}", encoding="utf-8")
+    draft.write_text(r"See \cite{ghost2024}.", encoding="utf-8", newline="\n")
+    (tmp_path / "literature.bib").write_text(
+        "@article{real2020, title={Real}, year={2020}}", encoding="utf-8", newline="\n"
+    )
     report = await verify(draft)
     assert not report.skipped_reason, "gate skipped despite literature.bib being present"
     assert report.missing_in_bib == 1  # proves literature.bib was actually loaded
@@ -621,13 +633,15 @@ async def test_verify_default_falls_back_to_literature_bib(tmp_path: Path):
 
 async def test_verify_default_prefers_refs_bib_over_literature_bib(tmp_path: Path):
     draft = tmp_path / "paper_draft.tex"
-    draft.write_text(r"See \cite{merged2020}.", encoding="utf-8")
+    draft.write_text(r"See \cite{merged2020}.", encoding="utf-8", newline="\n")
     # merged2020 exists ONLY in refs.bib — if literature.bib won, it would
     # report missing_in_bib.
     (tmp_path / "refs.bib").write_text(
-        "@article{merged2020, title={Merged}, year={2020}, doi={10.1/m}}", encoding="utf-8"
+        "@article{merged2020, title={Merged}, year={2020}, doi={10.1/m}}", encoding="utf-8", newline="\n"
     )
-    (tmp_path / "literature.bib").write_text("@article{other2019, title={Other}, year={2019}}", encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(
+        "@article{other2019, title={Other}, year={2019}}", encoding="utf-8", newline="\n"
+    )
     stub = _stub_paper(doi="10.1/m", title="Merged")
     with (
         patch("src.core.pipeline.verify_citations.openalex.fetch_by_doi", new=AsyncMock(return_value=stub)),
@@ -646,9 +660,9 @@ async def test_gate_composition_with_assembled_refs_bib(tmp_path: Path):
     from src.core.renderer.templates import assemble_refs_bib
 
     draft = tmp_path / "paper_draft.tex"
-    draft.write_text(r"Real \cite{real2020} and fake \cite{ghost2024}.", encoding="utf-8")
+    draft.write_text(r"Real \cite{real2020} and fake \cite{ghost2024}.", encoding="utf-8", newline="\n")
     (tmp_path / "literature.bib").write_text(
-        "@article{real2020, title={Real}, year={2020}, doi={10.1/r}}", encoding="utf-8"
+        "@article{real2020, title={Real}, year={2020}, doi={10.1/r}}", encoding="utf-8", newline="\n"
     )
     refs_bib = assemble_refs_bib(tmp_path)
     assert refs_bib is not None and refs_bib.name == "refs.bib"

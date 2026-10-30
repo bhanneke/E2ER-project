@@ -18,44 +18,44 @@ from tests.results_script import write_results_script
 
 def test_empty_dict_fails(tmp_path: Path):
     """The M4 regression: estimation_results.json == "{}" must fail."""
-    (tmp_path / "x.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "x.json").write_text("{}", encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.json")
     assert not c.ok
     assert "empty JSON" in c.reason
 
 
 def test_empty_list_fails(tmp_path: Path):
-    (tmp_path / "x.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "x.json").write_text("[]", encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.json")
     assert not c.ok and "empty JSON" in c.reason
 
 
 def test_literal_null_fails(tmp_path: Path):
-    (tmp_path / "x.json").write_text("null", encoding="utf-8")
+    (tmp_path / "x.json").write_text("null", encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.json")
     assert not c.ok
 
 
 def test_whitespace_only_json_fails(tmp_path: Path):
-    (tmp_path / "x.json").write_text("   \n\t  ", encoding="utf-8")
+    (tmp_path / "x.json").write_text("   \n\t  ", encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.json")
     assert not c.ok
 
 
 def test_non_empty_dict_passes(tmp_path: Path):
     payload = {"in_sample_r2": 0.04, "oos_r2": -0.01, "clark_west": 1.83}
-    (tmp_path / "x.json").write_text(json.dumps(payload), encoding="utf-8")
+    (tmp_path / "x.json").write_text(json.dumps(payload), encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.json")
     assert c.ok
 
 
 def test_non_empty_list_passes(tmp_path: Path):
-    (tmp_path / "x.json").write_text(json.dumps([{"a": 1}]), encoding="utf-8")
+    (tmp_path / "x.json").write_text(json.dumps([{"a": 1}]), encoding="utf-8", newline="\n")
     assert check_artifact_nonempty(tmp_path, "x.json").ok
 
 
 def test_invalid_json_fails(tmp_path: Path):
-    (tmp_path / "x.json").write_text("{not json}", encoding="utf-8")
+    (tmp_path / "x.json").write_text("{not json}", encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.json")
     assert not c.ok and "invalid JSON" in c.reason
 
@@ -65,31 +65,31 @@ def test_invalid_json_fails(tmp_path: Path):
 
 def test_short_markdown_fails(tmp_path: Path):
     """50-char .md is the kind of stub a half-broken specialist writes."""
-    (tmp_path / "x.md").write_text("# Stub\n\nTODO.\n", encoding="utf-8")
+    (tmp_path / "x.md").write_text("# Stub\n\nTODO.\n", encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.md")
     assert not c.ok and "non-whitespace chars" in c.reason
 
 
 def test_real_markdown_passes(tmp_path: Path):
     body = ("Lorem ipsum dolor sit amet. " * 10).strip()
-    (tmp_path / "x.md").write_text(body, encoding="utf-8")
+    (tmp_path / "x.md").write_text(body, encoding="utf-8", newline="\n")
     assert check_artifact_nonempty(tmp_path, "x.md").ok
 
 
 def test_short_tex_fails(tmp_path: Path):
-    (tmp_path / "x.tex").write_text(r"\section{Stub}", encoding="utf-8")
+    (tmp_path / "x.tex").write_text(r"\section{Stub}", encoding="utf-8", newline="\n")
     assert not check_artifact_nonempty(tmp_path, "x.tex").ok
 
 
 def test_short_python_fails(tmp_path: Path):
     """run_estimation.py = `pass` is also a contract violation."""
-    (tmp_path / "x.py").write_text("pass\n", encoding="utf-8")
+    (tmp_path / "x.py").write_text("pass\n", encoding="utf-8", newline="\n")
     assert not check_artifact_nonempty(tmp_path, "x.py").ok
 
 
 def test_whitespace_only_md_fails(tmp_path: Path):
     """1000 whitespace chars are still 0 non-whitespace chars."""
-    (tmp_path / "x.md").write_text(" " * 1000 + "\n" * 50, encoding="utf-8")
+    (tmp_path / "x.md").write_text(" " * 1000 + "\n" * 50, encoding="utf-8", newline="\n")
     c = check_artifact_nonempty(tmp_path, "x.md")
     assert not c.ok and "0 non-whitespace" in c.reason
 
@@ -114,12 +114,13 @@ def test_nested_relative_path(tmp_path: Path):
     (tmp_path / "replication" / "estimation.py").write_text(
         "import pandas as pd\nimport statsmodels.api as sm\n\nprint('hi')\n" * 4,
         encoding="utf-8",
+        newline="\n",
     )
     assert check_artifact_nonempty(tmp_path, "replication/estimation.py").ok
 
 
 def test_unknown_extension_passes_when_nonempty(tmp_path: Path):
-    (tmp_path / "x.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    (tmp_path / "x.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
     assert check_artifact_nonempty(tmp_path, "x.csv").ok
 
 
@@ -129,8 +130,10 @@ def test_unknown_extension_passes_when_nonempty(tmp_path: Path):
 def test_econometrics_specialist_m4_regression(tmp_path: Path):
     """The M4 case end-to-end: econometric_spec.md exists with substance,
     but estimation_results.json is empty → contract violation."""
-    (tmp_path / "econometric_spec.md").write_text("# Specification\n\n" + "Real content. " * 20, encoding="utf-8")
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "econometric_spec.md").write_text(
+        "# Specification\n\n" + "Real content. " * 20, encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     checks = check_specialist_artifacts(tmp_path, "econometrics_specialist")
     by_path = {c.artifact: c for c in checks}
     assert by_path["econometric_spec.md"].ok
@@ -139,9 +142,11 @@ def test_econometrics_specialist_m4_regression(tmp_path: Path):
 
 
 def test_all_required_artifacts_present_passes(tmp_path: Path):
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n\n" + "Real content. " * 30, encoding="utf-8")
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n\n" + "Real content. " * 30, encoding="utf-8", newline="\n")
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.04, "se": 0.01}}}}), encoding="utf-8"
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.04, "se": 0.01}}}}),
+        encoding="utf-8",
+        newline="\n",
     )
     write_results_script(tmp_path)
     failed = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
@@ -150,9 +155,9 @@ def test_all_required_artifacts_present_passes(tmp_path: Path):
 
 def test_data_analyst_sidecars_checked(tmp_path: Path):
     """data_analyst's summary_statistics.json is hard-gated."""
-    (tmp_path / "data_summary.md").write_text("# Data\n\n" + "Real content. " * 20, encoding="utf-8")
-    (tmp_path / "summary_statistics.json").write_text("{}", encoding="utf-8")  # bad
-    (tmp_path / "figure_spec.json").write_text(json.dumps({"figs": ["f1"]}), encoding="utf-8")
+    (tmp_path / "data_summary.md").write_text("# Data\n\n" + "Real content. " * 20, encoding="utf-8", newline="\n")
+    (tmp_path / "summary_statistics.json").write_text("{}", encoding="utf-8", newline="\n")  # bad
+    (tmp_path / "figure_spec.json").write_text(json.dumps({"figs": ["f1"]}), encoding="utf-8", newline="\n")
     failed = [c.artifact for c in check_specialist_artifacts(tmp_path, "data_analyst") if not c.ok]
     assert failed == ["summary_statistics.json"]
 
@@ -162,9 +167,9 @@ def test_data_analyst_figure_spec_is_best_effort_not_gated(tmp_path: Path):
     an empty one must NOT fail the contract when the required artifacts are
     present. This is the M5 re-run unblock — figures have no deterministic
     producer at the data-design boundary."""
-    (tmp_path / "data_summary.md").write_text("# Data\n\n" + "Real content. " * 20, encoding="utf-8")
-    (tmp_path / "summary_statistics.json").write_text(json.dumps({"n": 407}), encoding="utf-8")
-    (tmp_path / "figure_spec.json").write_text("{}", encoding="utf-8")  # empty, but optional
+    (tmp_path / "data_summary.md").write_text("# Data\n\n" + "Real content. " * 20, encoding="utf-8", newline="\n")
+    (tmp_path / "summary_statistics.json").write_text(json.dumps({"n": 407}), encoding="utf-8", newline="\n")
+    (tmp_path / "figure_spec.json").write_text("{}", encoding="utf-8", newline="\n")  # empty, but optional
     checks = check_specialist_artifacts(tmp_path, "data_analyst")
     failed = [c.artifact for c in checks if not c.ok]
     assert failed == []
@@ -268,28 +273,36 @@ def test_check_has_regression(tmp_path: Path):
     good = tmp_path / "g"
     good.mkdir()
     (good / "estimation_results.json").write_text(
-        json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01, "p_value": 0.0}}}})
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01, "p_value": 0.0}}}}),
+        encoding="utf-8",
+        newline="\n",
     )
     assert check_has_regression(good, "estimation_results.json").ok
 
     bad = tmp_path / "b"
     bad.mkdir()
-    (bad / "estimation_results.json").write_text(json.dumps({"_note": "x", "raw_gap_mean": 0.05}))
+    (bad / "estimation_results.json").write_text(
+        json.dumps({"_note": "x", "raw_gap_mean": 0.05}), encoding="utf-8", newline="\n"
+    )
     c = check_has_regression(bad, "estimation_results.json")
     assert not c.ok and "coefficients" in c.reason
 
 
 def test_econometrics_gate_flags_descriptive_only(tmp_path: Path):
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "x " * 100)
-    (tmp_path / "estimation_results.json").write_text(json.dumps({"_note": "no model", "means": {"a": 1}}))
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "x " * 100, encoding="utf-8", newline="\n")
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"_note": "no model", "means": {"a": 1}}), encoding="utf-8", newline="\n"
+    )
     failed = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
     assert any("no estimated regression" in c.reason for c in failed)
 
 
 def test_econometrics_gate_passes_with_real_regression(tmp_path: Path):
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "x " * 100)
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "x " * 100, encoding="utf-8", newline="\n")
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01}}, "diagnostics": {"n": 100}}})
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": -0.01}}, "diagnostics": {"n": 100}}}),
+        encoding="utf-8",
+        newline="\n",
     )
     write_results_script(tmp_path)
     assert all(c.ok for c in check_specialist_artifacts(tmp_path, "econometrics_specialist"))
@@ -306,7 +319,9 @@ def test_econometrics_gate_passes_with_real_regression(tmp_path: Path):
 
 
 def _draft(tmp_path: Path, body: str) -> Path:
-    (tmp_path / "paper_draft.tex").write_text("\\begin{document}\n" + body + "\n\\end{document}\n" + "x " * 100)
+    (tmp_path / "paper_draft.tex").write_text(
+        "\\begin{document}\n" + body + "\n\\end{document}\n" + "x " * 100, encoding="utf-8", newline="\n"
+    )
     return tmp_path
 
 

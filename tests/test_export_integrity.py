@@ -20,8 +20,12 @@ from src.core.export.structured import create_versioned_folder, export_paper
 def _workspace(root: Path) -> Path:
     ws = root / "ws"
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"title": "Synth Study", "pipeline": "empirical"}))
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\begin{document}x\\end{document}")
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Synth Study", "pipeline": "empirical"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\begin{document}x\\end{document}", encoding="utf-8", newline="\n"
+    )
     return ws
 
 
@@ -41,7 +45,7 @@ def test_two_exports_at_the_same_moment_get_two_folders(tmp_path: Path):
         t.join()
     assert len({p.name for p in out}) == 8
     for p in out:  # each folder is one complete export
-        assert json.loads((p / "provenance.json").read_text())["files"]
+        assert json.loads((p / "provenance.json").read_text(encoding="utf-8"))["files"]
 
 
 def test_the_folder_is_created_atomically_with_the_next_free_number(tmp_path: Path):
@@ -54,13 +58,13 @@ def test_dotfiles_key_files_and_os_files_are_never_exported(tmp_path: Path):
     ws = _workspace(tmp_path)
     for d in ("replication", "tables", "figures"):
         (ws / d).mkdir()
-        (ws / d / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-secret-secret")
-        (ws / d / "server.pem").write_text("-----BEGIN PRIVATE KEY-----")
+        (ws / d / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-secret-secret", encoding="utf-8", newline="\n")
+        (ws / d / "server.pem").write_text("-----BEGIN PRIVATE KEY-----", encoding="utf-8", newline="\n")
         (ws / d / ".DS_Store").write_bytes(b"\0\0\0\1Bud1")
         (ws / d / "Thumbs.db").write_bytes(b"x")
-        (ws / d / "kept.txt").write_text("ok")
-    (ws / "debug.log").write_text("log")
-    (ws / ".hidden.log").write_text("hidden")
+        (ws / d / "kept.txt").write_text("ok", encoding="utf-8", newline="\n")
+    (ws / "debug.log").write_text("log", encoding="utf-8", newline="\n")
+    (ws / ".hidden.log").write_text("hidden", encoding="utf-8", newline="\n")
     out = export_paper(ws, tmp_path / "out", date_str="20261001")
     names = {p.name for p in out.rglob("*") if p.is_file()}
     assert not names & {".env", "server.pem", ".DS_Store", "Thumbs.db", ".hidden.log"}
@@ -72,20 +76,22 @@ def test_links_that_leave_the_workspace_are_not_followed(tmp_path: Path):
     ws = _workspace(tmp_path)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "secret.txt").write_text("from outside the workspace")
+    (outside / "secret.txt").write_text("from outside the workspace", encoding="utf-8", newline="\n")
     (outside / "dir").mkdir()
-    (outside / "dir" / "a.tex").write_text("outside table")
+    (outside / "dir" / "a.tex").write_text("outside table", encoding="utf-8", newline="\n")
     (ws / "replication").mkdir()
     os.symlink(outside / "secret.txt", ws / "replication" / "linked.txt")
     os.symlink(outside / "dir", ws / "tables")
     os.symlink(outside / "secret.txt", ws / "notes.md")
-    (ws / "replication" / "inside.txt").write_text("inside")
+    (ws / "replication" / "inside.txt").write_text("inside", encoding="utf-8", newline="\n")
     os.symlink(ws / "replication" / "inside.txt", ws / "replication" / "alias.txt")
     out = export_paper(ws, tmp_path / "out", date_str="20261001")
-    texts = [p.read_text(errors="replace") for p in out.rglob("*") if p.is_file()]
+    texts = [p.read_text(errors="replace", encoding="utf-8") for p in out.rglob("*") if p.is_file()]
     assert not any("from outside the workspace" in t or "outside table" in t for t in texts)
     assert not (out / "paper" / "tables").exists()
-    assert (out / "replication" / "alias.txt").read_text() == "inside"  # a link inside the workspace is copied
+    assert (out / "replication" / "alias.txt").read_text(
+        encoding="utf-8"
+    ) == "inside"  # a link inside the workspace is copied
     assert not any(p.is_symlink() for p in out.rglob("*"))
 
 
@@ -96,18 +102,20 @@ def test_paper_pdf_never_overwrites_the_pdf_of_the_draft_and_the_readme_says_whi
     out = export_paper(ws, tmp_path / "out", date_str="20261001")
     assert (out / "paper" / "paper.pdf").read_bytes() == b"%PDF current draft"
     assert (out / "misc" / "paper.pdf").read_bytes() == b"%PDF stale older build"
-    readme = (out / "README.md").read_text()
+    readme = (out / "README.md").read_text(encoding="utf-8")
     assert "`paper/paper.pdf`" in readme and "`misc/paper.pdf`" in readme
 
 
 def test_report_html_and_nested_files_named_like_the_manifests_are_fingerprinted(tmp_path: Path):
     ws = _workspace(tmp_path)
     (ws / "replication").mkdir()
-    (ws / "replication" / "provenance.json").write_text('{"note": "the package\'s own file"}')
-    (ws / "replication" / "e2er.json").write_text("{}")
-    (ws / "replication" / "report.html").write_text("<p>package page</p>")
+    (ws / "replication" / "provenance.json").write_text(
+        '{"note": "the package\'s own file"}', encoding="utf-8", newline="\n"
+    )
+    (ws / "replication" / "e2er.json").write_text("{}", encoding="utf-8", newline="\n")
+    (ws / "replication" / "report.html").write_text("<p>package page</p>", encoding="utf-8", newline="\n")
     out = export_paper(ws, tmp_path / "out", date_str="20261001")
-    files = json.loads((out / "provenance.json").read_text())["files"]
+    files = json.loads((out / "provenance.json").read_text(encoding="utf-8"))["files"]
     assert "report.html" in files
     for name in ("provenance.json", "e2er.json", "report.html"):
         assert f"replication/{name}" in files

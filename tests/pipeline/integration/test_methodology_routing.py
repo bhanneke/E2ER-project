@@ -40,7 +40,9 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
                 "methodology": "theoretical",
                 "current_stage": "idea",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     return ws
 

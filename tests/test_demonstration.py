@@ -74,7 +74,7 @@ def test_the_two_wordings():
 def test_purpose_from_flag_env_and_dotenv(monkeypatch, _no_purpose: Path):
     assert resolve_purpose() is None
     assert resolve_purpose(True) == "demonstration"
-    (_no_purpose / ".env").write_text("FRED_API_KEY=x\nE2ER_PURPOSE=demonstration\n")
+    (_no_purpose / ".env").write_text("FRED_API_KEY=x\nE2ER_PURPOSE=demonstration\n", encoding="utf-8", newline="\n")
     assert resolve_purpose() == "demonstration"
     monkeypatch.setenv("E2ER_PURPOSE", "")  # the environment wins over .env; empty means none
     assert resolve_purpose() is None
@@ -120,26 +120,28 @@ def test_dossier_hash_is_unchanged_without_purpose(bundle: Path):
 # ── e2er publish ────────────────────────────────────────────────────────────
 def test_publish_without_the_flag_records_no_purpose(bundle: Path, tmp_path: Path):
     assert _publish(bundle, tmp_path) == 0
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert "purpose" not in m and "kind" not in m and "purpose" not in m["dossier"]["doc"]
-    assert "Demonstration" not in (bundle / "paper" / "paper.tex").read_text()
+    assert "Demonstration" not in (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
 
 
 def test_publish_demonstration_writes_manifest_dossier_and_paper(bundle: Path, tmp_path: Path):
     assert _publish(bundle, tmp_path, demonstration=True) == 0
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert m["purpose"] == "demonstration" and "kind" not in m
     assert m["dossier"]["doc"]["purpose"] == "demonstration" and m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
-    assert disclaimer() in (bundle / "paper" / "paper.tex").read_text()
-    entry = json.loads((tmp_path / "entry" / "registry" / "objects" / "bhanneke" / "demo.json").read_text())
+    assert disclaimer() in (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
+    entry = json.loads(
+        (tmp_path / "entry" / "registry" / "objects" / "bhanneke" / "demo.json").read_text(encoding="utf-8")
+    )
     assert entry["purpose"] == "demonstration"
     assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))
 
 
 def test_env_in_the_study_folder_makes_it_the_default(bundle: Path, tmp_path: Path, _no_purpose: Path):
-    (_no_purpose / ".env").write_text("E2ER_PURPOSE=demonstration\n")
+    (_no_purpose / ".env").write_text("E2ER_PURPOSE=demonstration\n", encoding="utf-8", newline="\n")
     assert _publish(bundle, tmp_path) == 0
-    assert json.loads((bundle / "e2er.json").read_text())["purpose"] == "demonstration"
+    assert json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["purpose"] == "demonstration"
 
 
 def test_a_bad_env_value_stops_publish(bundle: Path, tmp_path: Path, monkeypatch, capsys):
@@ -156,7 +158,9 @@ def _replication_bundle(tmp_path: Path) -> Path:
 
     ws = tmp_path / "ws"
     shutil.copytree(ROOT / "tests" / "fixtures" / "replication_demo", ws)
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n")
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n", encoding="utf-8", newline="\n"
+    )
     assert check_reproduction(ws).passed
     bundle = export_paper(ws, tmp_path / "out", date_str="20260930", template="replication")
     make_run_db(tmp_path, paper_id_of(bundle))
@@ -167,11 +171,11 @@ def test_a_replication_study_gets_kind_and_the_replication_wording(tmp_path: Pat
     bundle = _replication_bundle(tmp_path)
     report = bundle / "misc" / "reproduction_report.md"
     assert _publish(bundle, tmp_path, demonstration=True) == 0
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert m["purpose"] == "demonstration" and m["kind"] == "replication"
     assert m["dossier"]["doc"]["kind"] == "replication"
-    assert disclaimer("replication") in report.read_text().split("\n# ", 1)[0]  # above the title
-    assert disclaimer("replication") in (bundle / "paper" / "paper.tex").read_text()
+    assert disclaimer("replication") in report.read_text(encoding="utf-8").split("\n# ", 1)[0]  # above the title
+    assert disclaimer("replication") in (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
     assert not any(c.status == "FAIL" for c in _run_checks(bundle, online=False))
 
 
@@ -188,7 +192,13 @@ def test_dry_run_request_carries_the_purpose(bundle: Path, capsys):
 
 
 def test_the_cli_flag_exists():
-    out = subprocess.run([sys.executable, "-m", "src", "publish", "--help"], cwd=ROOT, capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, "-m", "src", "publish", "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     assert "--demonstration" in out.stdout
 
 
@@ -196,9 +206,9 @@ def test_the_cli_flag_exists():
 def test_mark_report_is_idempotent(tmp_path: Path):
     p = tmp_path / "reproduction_report.md"
     assert not mark_report(p)  # no report, nothing to do
-    p.write_text("# Report\n")
+    p.write_text("# Report\n", encoding="utf-8", newline="\n")
     assert mark_report(p) and not mark_report(p)
-    assert p.read_text() == (
+    assert p.read_text(encoding="utf-8") == (
         f"<!-- e2er:disclaimer begin -->\n> {disclaimer('replication')}\n<!-- e2er:disclaimer end -->\n\n# Report\n"
     )
 
@@ -207,13 +217,16 @@ def test_the_reproduction_step_marks_the_report_in_a_demonstration_study(tmp_pat
     from src.core.pipeline.reproduction import CheckResult
     from src.core.strategist.runner import _reproduction_with_disclaimer
 
-    (tmp_path / "reproduction_report.md").write_text("# Report\n")
+    (tmp_path / "reproduction_report.md").write_text("# Report\n", encoding="utf-8", newline="\n")
     step = _reproduction_with_disclaimer(lambda ws, **kw: CheckResult(True, ()))
     assert step(tmp_path).passed
-    assert (tmp_path / "reproduction_report.md").read_text() == "# Report\n"
+    assert (tmp_path / "reproduction_report.md").read_text(encoding="utf-8") == "# Report\n"
     monkeypatch.setenv("E2ER_PURPOSE", "demonstration")
     assert step(tmp_path).passed
-    assert disclaimer("replication") in (tmp_path / "reproduction_report.md").read_text().split("# Report")[0]
+    assert (
+        disclaimer("replication")
+        in (tmp_path / "reproduction_report.md").read_text(encoding="utf-8").split("# Report")[0]
+    )
 
 
 # ── chosen at run start (`e2er run --demonstration`) ────────────────────────
@@ -251,7 +264,13 @@ def test_run_demonstration_records_the_purpose_at_start(monkeypatch):
     assert cli_run._submit_paper("Does X affect Y?", "empirical", "single_pass", 1.0, demonstration=True)
     assert cli_run._submit_paper("Does X affect Y?", "empirical", "single_pass", 1.0)
     assert sent[0]["purpose"] == "demonstration" and "purpose" not in sent[1]
-    out = subprocess.run([sys.executable, "-m", "src", "run", "--help"], cwd=ROOT, capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, "-m", "src", "run", "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     assert "--demonstration" in out.stdout
 
 
@@ -263,18 +282,24 @@ def test_the_purpose_chosen_at_start_reaches_export_and_publish_without_the_flag
 
     ws = tmp_path / "study" / "workspaces" / "ws"
     shutil.copytree(ROOT / "tests" / "fixtures" / "replication_demo", ws)
-    manifest = json.loads((ws / "manifest.json").read_text()) if (ws / "manifest.json").is_file() else {}
-    (ws / "manifest.json").write_text(json.dumps({**manifest, "purpose": "demonstration"}))
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n")
+    manifest = (
+        json.loads((ws / "manifest.json").read_text(encoding="utf-8")) if (ws / "manifest.json").is_file() else {}
+    )
+    (ws / "manifest.json").write_text(
+        json.dumps({**manifest, "purpose": "demonstration"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n", encoding="utf-8", newline="\n"
+    )
     assert study_purpose(ws) == "demonstration"
     assert check_reproduction(ws).passed
     b = export_paper(ws, tmp_path / "study" / "exports", date_str="20260930", template="replication")
-    assert json.loads((b / "provenance.json").read_text())["run"]["purpose"] == "demonstration"
+    assert json.loads((b / "provenance.json").read_text(encoding="utf-8"))["run"]["purpose"] == "demonstration"
     make_run_db(tmp_path / "study", paper_id_of(b), workspace=ws)
     assert _publish(b, tmp_path) == 0  # no --demonstration
-    m = json.loads((b / "e2er.json").read_text())
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     assert m["purpose"] == "demonstration" and m["dossier"]["doc"]["purpose"] == "demonstration"
-    assert disclaimer("replication") in (b / "paper" / "paper.tex").read_text()
+    assert disclaimer("replication") in (b / "paper" / "paper.tex").read_text(encoding="utf-8")
 
 
 def test_a_republish_replaces_an_earlier_wording_in_the_paper():

@@ -57,7 +57,7 @@ class _FaultyRunner(PipelineRunner):
         self.calls[name] = self.calls.get(name, 0) + 1
         if self.fail_at == name:
             raise RuntimeError(f"injected failure at {name}")
-        (self._workspace / f"_phase_{name}.txt").write_text(f"ok:{name}")
+        (self._workspace / f"_phase_{name}.txt").write_text(f"ok:{name}", encoding="utf-8", newline="\n")
 
     async def _run_initial_phase(self) -> None:
         self._record("initial")
@@ -96,7 +96,9 @@ def _make_workspace(tmp_path: Path, mode: str = "iterative") -> tuple[Path, str]
     pid = f"resilience-{uuid.uuid4().hex[:8]}"
     ws = tmp_path / pid
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": pid, "title": "Test", "mode": mode}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": pid, "title": "Test", "mode": mode}), encoding="utf-8", newline="\n"
+    )
     return ws, pid
 
 
@@ -140,7 +142,7 @@ async def test_crash_preserves_earlier_phase_state(tmp_path, fail_at):
 
     state_file = ws / ".pipeline_state.json"
     assert state_file.exists(), "state must be persisted after crash"
-    state_data = json.loads(state_file.read_text())
+    state_data = json.loads(state_file.read_text(encoding="utf-8"))
     completed = state_data["completed_stages"]
 
     expected_completed = PHASE_ORDER[: PHASE_ORDER.index(fail_at)]
@@ -199,7 +201,7 @@ async def test_artifacts_persist_through_downstream_crash(tmp_path):
             f"artifact for completed phase '{phase}' missing after crash at 'polish' "
             "— a downstream failure deleted upstream output"
         )
-        assert sentinel.read_text() == f"ok:{phase}"
+        assert sentinel.read_text(encoding="utf-8") == f"ok:{phase}"
 
     # Phase that crashed: sentinel must NOT exist (proves _record raises before write).
     assert not (ws / "_phase_polish.txt").exists()
@@ -233,7 +235,7 @@ def test_state_save_keeps_backup_for_corruption_recovery(tmp_path):
     )
 
     # Simulate a partial / corrupted write to the main file
-    main.write_text("{ this is not valid json")
+    main.write_text("{ this is not valid json", encoding="utf-8", newline="\n")
 
     recovered = PipelineState.load(ws, "p1", "iterative")
     assert "initial" in recovered.completed_stages, (
@@ -260,7 +262,7 @@ def test_state_save_atomic_rename(tmp_path):
     assert not tmp.exists(), "stale .tmp file left behind after save()"
 
     # Main file must always parse as valid JSON.
-    json.loads(main.read_text())
+    json.loads(main.read_text(encoding="utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -351,9 +353,9 @@ def test_github_push_directory_idempotent_on_resume(tmp_path):
 
     local = tmp_path / "artifacts"
     local.mkdir()
-    (local / "a.txt").write_text("A")
-    (local / "b.txt").write_text("B")
-    (local / "c.txt").write_text("C")
+    (local / "a.txt").write_text("A", encoding="utf-8", newline="\n")
+    (local / "b.txt").write_text("B", encoding="utf-8", newline="\n")
+    (local / "c.txt").write_text("C", encoding="utf-8", newline="\n")
 
     with patch("github.Github", mock_gh_cls):
         client = GitHubClient("tok", "user")

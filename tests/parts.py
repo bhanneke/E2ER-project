@@ -73,5 +73,5 @@ def from_junit(xml_path: Path) -> dict[str, float]:
 
 if __name__ == "__main__":
     got = from_junit(Path(sys.argv[1]))
-    DURATIONS.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    DURATIONS.write_text(json.dumps(got, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     print(f"{len(got)} files, {sum(got.values()):.0f} s -> {DURATIONS}")

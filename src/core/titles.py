@@ -109,7 +109,7 @@ def _write_cache(cache: dict[str, str]) -> None:
         f = _cache_file()
         f.parent.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f".{f.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8", newline="\n")
         os.replace(tmp, f)
     except OSError:
         pass

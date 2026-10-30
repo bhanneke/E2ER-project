@@ -135,7 +135,7 @@ async def test_write_audit_csv_creates_file(tmp_path: Path):
 
     assert count == 1
     assert out.exists()
-    rows_read = list(csv.DictReader(out.open()))
+    rows_read = list(csv.DictReader(out.open(encoding="utf-8")))
     assert len(rows_read) == 1
     assert rows_read[0]["query_type"] == "production"
     assert rows_read[0]["actual_rows"] == "9876"
@@ -150,7 +150,7 @@ async def test_write_audit_csv_empty(tmp_path: Path):
 
     assert count == 0
     assert out.exists()
-    rows_read = list(csv.DictReader(out.open()))
+    rows_read = list(csv.DictReader(out.open(encoding="utf-8")))
     assert rows_read == []
 
 
@@ -179,6 +179,6 @@ async def test_write_data_queries_sql_creates_file(tmp_path: Path):
 
     assert count == 1
     assert out.exists()
-    content = out.read_text()
+    content = out.read_text(encoding="utf-8")
     assert "SELECT date, amount FROM swaps" in content
     assert "paper_id: paper-uuid" in content

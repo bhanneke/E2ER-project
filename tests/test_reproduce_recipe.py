@@ -25,6 +25,7 @@ from src.core import reproduce as rp
 from src.core.export import reproduce_recipe as rr
 from src.core.export.structured import export_paper
 from src.core.secret_scan import find_local_paths
+from tests.platform_help import checkout_command, fake_program
 from tests.replay.backend import FIXTURES
 
 FOMC = json.loads((FIXTURES / "fomc" / "scenario.json").read_text(encoding="utf-8"))
@@ -52,6 +53,7 @@ def _fomc_workspace(tmp_path: Path) -> Path:
     (ws / "manifest.json").write_text(
         json.dumps({"paper_id": pid, "title": FOMC["title"], "research_question": FOMC["research_question"]}),
         encoding="utf-8",
+        newline="\n",
     )
     stamp = 1_759_000_000
     for sp, rec in FOMC["specialists"].items():
@@ -63,7 +65,9 @@ def _fomc_workspace(tmp_path: Path) -> Path:
                 shutil.copyfile(src, dest)
             else:
                 text = src.read_text(encoding="utf-8")
-                dest.write_text(text.replace("@@WORKSPACE@@", str(ws)).replace("@@PAPER_ID@@", pid), encoding="utf-8")
+                dest.write_text(
+                    text.replace("@@WORKSPACE@@", str(ws)).replace("@@PAPER_ID@@", pid), encoding="utf-8", newline="\n"
+                )
             # Files keep the order the run wrote them in, whatever the file system's clock resolution.
             stamp += 60
             os.utime(dest, (stamp, stamp))
@@ -146,9 +150,11 @@ def _byod_workspace(tmp_path: Path) -> Path:
     (ws / "data").mkdir(parents=True)
     own = tmp_path / "my-data"
     own.mkdir()
-    (own / "weights.csv").write_text("firm,weight\na,1.0\nb,0.5\n", encoding="utf-8")
+    (own / "weights.csv").write_text("firm,weight\na,1.0\nb,0.5\n", encoding="utf-8", newline="\n")
     (ws / "data" / "weights.csv").symlink_to(own / "weights.csv")
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-byod", "title": "Sales"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-byod", "title": "Sales"}), encoding="utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE panel (firm TEXT, year INT, sales REAL)")
     con.executemany(
@@ -160,8 +166,10 @@ def _byod_workspace(tmp_path: Path) -> Path:
     panel_load = data_folder_load("panel.csv", own / "weights.csv", "2026-10-10T08:00:00Z")
     panel_load.update({"series": "panel.csv", "tables": ["panel"], "files": []})
     weights_load = data_folder_load("weights.csv", own / "weights.csv", "2026-10-10T08:00:00Z")
-    (ws / "data_sources.json").write_text(json.dumps({"loads": [panel_load, weights_load]}), encoding="utf-8")
-    (ws / "run_estimation.py").write_text(BYOD_SCRIPT.format(ws=ws), encoding="utf-8")
+    (ws / "data_sources.json").write_text(
+        json.dumps({"loads": [panel_load, weights_load]}), encoding="utf-8", newline="\n"
+    )
+    (ws / "run_estimation.py").write_text(BYOD_SCRIPT.format(ws=ws), encoding="utf-8", newline="\n")
     # The runner runs the script in the workspace (post_execution), as in a real run.
     subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
     return ws
@@ -196,8 +204,10 @@ def test_a_study_on_the_researchers_own_data_reproduces(tmp_path: Path, this_pyt
 def test_a_study_without_an_estimation_script_says_why_there_is_no_recipe(tmp_path: Path, capsys):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-x", "title": "A field map"}), encoding="utf-8")
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"estimate": 1.0}}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-x", "title": "A field map"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "estimation_results.json").write_text(json.dumps({"main": {"estimate": 1.0}}), encoding="utf-8", newline="\n")
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
 
     assert not (out / "reproduce.json").exists()
@@ -211,7 +221,9 @@ def test_a_study_without_an_estimation_script_says_why_there_is_no_recipe(tmp_pa
 def test_a_study_without_estimation_results_says_so(tmp_path: Path, capsys):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-y", "title": "A field map"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-y", "title": "A field map"}), encoding="utf-8", newline="\n"
+    )
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
     assert not (out / "reproduce.json").exists()
     assert "the study has no estimation results" in (out / "README.md").read_text(encoding="utf-8")
@@ -245,8 +257,10 @@ def test_a_yahoo_file_is_not_shipped_and_get_data_loads_it_with_the_recorded_req
 
     ws = tmp_path / "ws"
     (ws / "data").mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-y", "title": "SPY"}), encoding="utf-8")
-    (ws / "data" / "px_SPY.csv").write_text("date,close\n2026-01-02,1.0\n2026-01-03,3.0\n", encoding="utf-8")
+    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-y", "title": "SPY"}), encoding="utf-8", newline="\n")
+    (ws / "data" / "px_SPY.csv").write_text(
+        "date,close\n2026-01-02,1.0\n2026-01-03,3.0\n", encoding="utf-8", newline="\n"
+    )
     load = {
         **yfinance_load("SPY", "2026-10-10T08:00:00Z"),
         "saved_to": "data/px_SPY.csv",
@@ -259,8 +273,8 @@ def test_a_yahoo_file_is_not_shipped_and_get_data_loads_it_with_the_recorded_req
             "adjusted": True,
         },
     }
-    (ws / "data_sources.json").write_text(json.dumps({"loads": [load]}), encoding="utf-8")
-    (ws / "run_estimation.py").write_text(YAHOO_SCRIPT, encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": [load]}), encoding="utf-8", newline="\n")
+    (ws / "run_estimation.py").write_text(YAHOO_SCRIPT, encoding="utf-8", newline="\n")
     subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
     recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
@@ -276,19 +290,22 @@ def test_a_yahoo_file_is_not_shipped_and_get_data_loads_it_with_the_recorded_req
     run.mkdir(parents=True)
     shutil.copy(out / "code" / "get_data.py", run / "get_data.py")
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FAKE_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FAKE_E2ER_DATA)
     env = {**os.environ, "E2ER_DATA": str(fake), "FAKE_LOG": str(tmp_path / "calls.txt")}
-    first = subprocess.run([sys.executable, "get_data.py"], cwd=run, env=env, capture_output=True, text=True)
+    first = subprocess.run(
+        [sys.executable, "get_data.py"], cwd=run, env=env, capture_output=True, encoding="utf-8", errors="replace"
+    )
     assert first.returncode == 0, first.stderr
-    calls = (tmp_path / "calls.txt").read_text()
+    calls = (tmp_path / "calls.txt").read_text(encoding="utf-8")
     assert (
         "yfinance history --ticker SPY --interval 1d --start 2026-01-01 --end 2026-01-31 --save-to px_SPY.csv" in calls
     )
     assert (run / "data" / "px_SPY.csv").is_file()
-    again = subprocess.run([sys.executable, "get_data.py"], cwd=run, env=env, capture_output=True, text=True)
+    again = subprocess.run(
+        [sys.executable, "get_data.py"], cwd=run, env=env, capture_output=True, encoding="utf-8", errors="replace"
+    )
     assert "the study's own copy is here" in again.stdout
-    assert (tmp_path / "calls.txt").read_text() == calls
+    assert (tmp_path / "calls.txt").read_text(encoding="utf-8") == calls
 
 
 def test_the_chain_follows_the_order_the_run_changed_the_scripts(tmp_path: Path):
@@ -296,9 +313,9 @@ def test_the_chain_follows_the_order_the_run_changed_the_scripts(tmp_path: Path)
     ws.mkdir()
     writes = 'open("estimation_results.json", "w").write("{}")\n'
     for i, name in enumerate(["early_try.py", "run_estimation.py", "zz_fix.py", "aa_patch.py", "notes.py"]):
-        (ws / name).write_text(writes if name != "notes.py" else "print(1)\n", encoding="utf-8")
+        (ws / name).write_text(writes if name != "notes.py" else "print(1)\n", encoding="utf-8", newline="\n")
         os.utime(ws / name, (1000 + i, 1000 + i))
-    (ws / "estimation_results.json").write_text('{"x": 1}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"x": 1}', encoding="utf-8", newline="\n")
     os.utime(ws / "estimation_results.json", (1010, 1010))
     assert [p.name for p in rr.estimation_chain(ws)] == ["run_estimation.py", "zz_fix.py", "aa_patch.py"]
 
@@ -340,7 +357,7 @@ def test_the_yfinance_command_records_its_request(tmp_path: Path, monkeypatch):
 
 # ── the order comes from what the run ran, not from file times ──────────────
 
-WRAPPER = Path(__file__).resolve().parent.parent / "scripts" / "e2er-run"
+WRAPPER = checkout_command("e2er-run")
 ORDERED_SCRIPTS = {
     # writes the first results
     "run_estimation.py": 'import json\njson.dump({"main": {"b": 1.0}}, open("estimation_results.json", "w"))\n',
@@ -358,14 +375,16 @@ def _ordered_workspace(tmp_path: Path) -> Path:
     """Three scripts run with e2er-run in the order estimation, revision, patch; then the file times are shuffled."""
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-o", "title": "Order"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-o", "title": "Order"}), encoding="utf-8", newline="\n")
     for name, code in ORDERED_SCRIPTS.items():
-        (ws / name).write_text(code, encoding="utf-8")
+        (ws / name).write_text(code, encoding="utf-8", newline="\n")
     env = {**os.environ, "E2ER_PYTHON": sys.executable}
     for name in ORDERED_SCRIPTS:
-        r = subprocess.run(["bash", str(WRAPPER), name], cwd=ws, env=env, capture_output=True, text=True)
+        r = subprocess.run(
+            ["bash", str(WRAPPER), name], cwd=ws, env=env, capture_output=True, encoding="utf-8", errors="replace"
+        )
         assert r.returncode == 0, r.stderr
-    assert json.loads((ws / "estimation_results.json").read_text())["main"]["b"] == 20.0
+    assert json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))["main"]["b"] == 20.0
     # A copy or checkout resets the times: here the patch looks oldest and the revision newest.
     for name, t in (("aa_patch.py", 1000), ("run_estimation.py", 2000), ("zz_revise.py", 3000)):
         os.utime(ws / name, (t, t))
@@ -380,7 +399,7 @@ def test_e2er_run_records_every_run_in_the_workspace(tmp_path: Path):
     runs = read_script_runs(ws)
     assert [r["script"] for r in runs] == list(ORDERED_SCRIPTS)
     assert all(r["exit_code"] == 0 and r["by"] == "e2er-run" and len(r["sha256"]) == 64 for r in runs)
-    (ws / "bad.py").write_text("raise SystemExit(3)\n", encoding="utf-8")
+    (ws / "bad.py").write_text("raise SystemExit(3)\n", encoding="utf-8", newline="\n")
     r = subprocess.run(["bash", str(WRAPPER), "bad.py"], cwd=ws, env={**os.environ, "E2ER_PYTHON": sys.executable})
     assert r.returncode == 3 and read_script_runs(ws)[-1]["exit_code"] == 3  # the exit code is passed on
 
@@ -388,7 +407,7 @@ def test_e2er_run_records_every_run_in_the_workspace(tmp_path: Path):
 def test_the_runner_records_the_script_it_runs(tmp_path: Path):
     from src.core.specialists.post_execution import maybe_execute_specialist_script, read_script_runs
 
-    (tmp_path / "run_estimation.py").write_text(ORDERED_SCRIPTS["run_estimation.py"], encoding="utf-8")
+    (tmp_path / "run_estimation.py").write_text(ORDERED_SCRIPTS["run_estimation.py"], encoding="utf-8", newline="\n")
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran and attempt.returncode == 0
     [run] = read_script_runs(tmp_path)
@@ -420,7 +439,7 @@ def test_without_a_script_log_the_recipe_says_the_order_comes_from_file_times(tm
 
 def test_a_script_changed_after_its_last_run_is_named(tmp_path: Path):
     ws = _ordered_workspace(tmp_path)
-    (ws / "aa_patch.py").write_text(ORDERED_SCRIPTS["aa_patch.py"] + "# edited\n", encoding="utf-8")
+    (ws / "aa_patch.py").write_text(ORDERED_SCRIPTS["aa_patch.py"] + "# edited\n", encoding="utf-8", newline="\n")
     assert any("aa_patch.py changed after the run last ran it" in n for n in rr.chain_of(ws).notes)
 
 
@@ -443,15 +462,17 @@ def test_a_script_that_queries_data_db_and_updates_files_in_place_gets_the_right
     had no data) and would have compared the weights as an input."""
     ws = tmp_path / "workspaces" / "2026-10-11-spatial"
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-sp", "title": "Spatial"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-sp", "title": "Spatial"}), encoding="utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE t (v REAL)")
     con.commit()
     con.close()
-    (ws / "figure_spec.json").write_text(json.dumps({"figures": []}), encoding="utf-8")
-    (ws / "spatial_weights.csv").write_text("from,to,weight\n", encoding="utf-8")
-    (ws / "run_estimation.py").write_text(QUERY_SCRIPT, encoding="utf-8")
-    (ws / "estimation_results.json").write_text(json.dumps({"result_kind": "spatial"}), encoding="utf-8")
+    (ws / "figure_spec.json").write_text(json.dumps({"figures": []}), encoding="utf-8", newline="\n")
+    (ws / "spatial_weights.csv").write_text("from,to,weight\n", encoding="utf-8", newline="\n")
+    (ws / "run_estimation.py").write_text(QUERY_SCRIPT, encoding="utf-8", newline="\n")
+    (ws / "estimation_results.json").write_text(json.dumps({"result_kind": "spatial"}), encoding="utf-8", newline="\n")
     assert rr.written_files([ws / "run_estimation.py"]) >= {"figure_spec.json", "estimation_results.json"}
     out = export_paper(ws, tmp_path / "exports", date_str="20261011")
     recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
@@ -464,13 +485,14 @@ def test_e2er_bookkeeping_files_and_a_bare_wildcard_are_not_inputs(tmp_path: Pat
     """The live text run's analysis tested dictionary entries with `entry.endswith("*")`: the bare "*" was globbed
     and every file of the study, the run's script log among them, became an input the rerun reported missing."""
     ws = _fomc_workspace(tmp_path)
-    (ws / ".pipeline_state.json").write_text("{}", encoding="utf-8")
-    (ws / ".lit_budget.json").write_text("{}", encoding="utf-8")
+    (ws / ".pipeline_state.json").write_text("{}", encoding="utf-8", newline="\n")
+    (ws / ".lit_budget.json").write_text("{}", encoding="utf-8", newline="\n")
     script = ws / "run_estimation.py"
     script.write_text(
         script.read_text(encoding="utf-8")
         + '\n_STATE = ".pipeline_state.json"\n_PREFIX = [e for e in ["fear*"] if e.endswith("*")]\n',
         encoding="utf-8",
+        newline="\n",
     )
     out = export_paper(ws, tmp_path / "exports", date_str="20261011")
     recipe = json.loads((out / "reproduce.json").read_text(encoding="utf-8"))
@@ -486,6 +508,7 @@ def test_a_script_that_only_reads_the_results_is_not_a_step_of_the_rerun(tmp_pat
     check.write_text(
         'import json\nr = json.load(open("estimation_results.json", encoding="utf-8"))\nassert r["figures"]\n',
         encoding="utf-8",
+        newline="\n",
     )
     stamp = (ws / "run_estimation.py").stat().st_mtime + 1  # written between the estimation and the results
     os.utime(check, (stamp, stamp))

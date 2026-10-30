@@ -46,9 +46,9 @@ ROB = {
 
 
 def _ws(tmp_path: Path, spec: dict) -> Path:
-    (tmp_path / "estimation_results.json").write_text(json.dumps(EST), encoding="utf-8")
-    (tmp_path / "robustness_results.json").write_text(json.dumps(ROB), encoding="utf-8")
-    (tmp_path / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text(json.dumps(EST), encoding="utf-8", newline="\n")
+    (tmp_path / "robustness_results.json").write_text(json.dumps(ROB), encoding="utf-8", newline="\n")
+    (tmp_path / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     return tmp_path
 
 
@@ -75,7 +75,7 @@ def test_renders_real_values_with_se_and_stars(tmp_path: Path):
     report = render_tables(ws)
     assert report.rendered == ["main.tex"]
     assert report.unresolved == []
-    tex = (ws / "tables" / "main.tex").read_text()
+    tex = (ws / "tables" / "main.tex").read_text(encoding="utf-8")
     # dp_full primary coefficient 0.01358 → 0.014; no stars (p=0.10 not < .10)
     assert "0.014" in tex
     assert "(0.008)" in tex  # SE line
@@ -108,7 +108,7 @@ def test_combination_empty_coefficients_render_dash_not_flagged(tmp_path: Path):
         ),
     )
     report = render_tables(ws)
-    tex = (ws / "tables" / "main.tex").read_text()
+    tex = (ws / "tables" / "main.tex").read_text(encoding="utf-8")
     assert "---" in tex  # empty coefficients → em dash
     assert report.unresolved == []  # empty-by-design is NOT an unresolved ref
 
@@ -122,7 +122,7 @@ def test_null_stat_renders_dash_not_flagged(tmp_path: Path):
         ),
     )
     report = render_tables(ws)
-    tex = (ws / "tables" / "main.tex").read_text()
+    tex = (ws / "tables" / "main.tex").read_text(encoding="utf-8")
     assert "---" in tex  # n_observations is null → em dash
     assert report.unresolved == []  # present-but-null is not unresolved
 
@@ -167,7 +167,7 @@ def test_robustness_key_resolves(tmp_path: Path):
     )
     report = render_tables(ws)
     assert report.unresolved == []
-    assert "1.243" in (ws / "tables" / "main.tex").read_text()
+    assert "1.243" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 # ── No spec / idempotency / bad input ──────────────────────────────────────
@@ -204,14 +204,14 @@ def test_invalid_filename_rejected(tmp_path: Path):
 
 
 def test_stub_created_for_dangling_input(tmp_path: Path):
-    (tmp_path / "paper_draft.tex").write_text("Text.\n\\input{tables/missing.tex}\n", encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text("Text.\n\\input{tables/missing.tex}\n", encoding="utf-8", newline="\n")
     created = ensure_input_stubs(tmp_path)
     assert created == ["tables/missing.tex"]
     assert (tmp_path / "tables" / "missing.tex").is_file()
 
 
 def test_stub_handles_extensionless_input(tmp_path: Path):
-    (tmp_path / "paper_draft.tex").write_text("\\input{tables/foo}\n", encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text("\\input{tables/foo}\n", encoding="utf-8", newline="\n")
     created = ensure_input_stubs(tmp_path)
     assert created == ["tables/foo.tex"]
     assert (tmp_path / "tables" / "foo.tex").is_file()
@@ -220,10 +220,10 @@ def test_stub_handles_extensionless_input(tmp_path: Path):
 def test_stub_does_not_overwrite_existing(tmp_path: Path):
     tables = tmp_path / "tables"
     tables.mkdir()
-    (tables / "main.tex").write_text("REAL TABLE", encoding="utf-8")
-    (tmp_path / "paper_draft.tex").write_text("\\input{tables/main.tex}\n", encoding="utf-8")
+    (tables / "main.tex").write_text("REAL TABLE", encoding="utf-8", newline="\n")
+    (tmp_path / "paper_draft.tex").write_text("\\input{tables/main.tex}\n", encoding="utf-8", newline="\n")
     assert ensure_input_stubs(tmp_path) == []
-    assert (tables / "main.tex").read_text() == "REAL TABLE"
+    assert (tables / "main.tex").read_text(encoding="utf-8") == "REAL TABLE"
 
 
 def test_stub_no_draft_returns_empty(tmp_path: Path):
@@ -234,8 +234,8 @@ def test_stub_no_draft_returns_empty(tmp_path: Path):
 
 
 def _ws_keys(tmp_path: Path, est: dict, spec: dict) -> Path:
-    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8")
-    (tmp_path / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8", newline="\n")
+    (tmp_path / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     return tmp_path
 
 
@@ -257,7 +257,7 @@ def test_spec_key_resolved_by_token_normalization(tmp_path: Path):
     report = render_tables(ws)
     assert report.unresolved == []
     assert [(n.requested, n.resolved) for n in report.normalized] == [("dp_full", "full_dp")]
-    assert "0.0063" in (ws / "tables" / "main.tex").read_text()
+    assert "0.0063" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 def test_coefficient_var_resolved_by_token_normalization(tmp_path: Path):
@@ -269,7 +269,7 @@ def test_coefficient_var_resolved_by_token_normalization(tmp_path: Path):
     report = render_tables(ws)
     assert report.unresolved == []
     assert any(n.kind == "coefficient" and n.resolved == "treat_post" for n in report.normalized)
-    assert "-0.231" in (ws / "tables" / "main.tex").read_text()
+    assert "-0.231" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 def test_genuinely_different_field_name_stays_unresolved(tmp_path: Path):
@@ -331,7 +331,7 @@ def test_nested_stat_resolved_by_descent(tmp_path: Path):
         n.kind == "stat" and n.requested == "p_HH_pre" and "transition_probabilities_pre.p_HH" in n.resolved
         for n in report.normalized
     ), "the substitution must be recorded so the rendered number stays auditable"
-    assert "0.2979" in (ws / "tables" / "main.tex").read_text()
+    assert "0.2979" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 def test_nested_estimate_object_renders_point_estimate(tmp_path: Path):
@@ -343,7 +343,7 @@ def test_nested_estimate_object_renders_point_estimate(tmp_path: Path):
     ws = _ws_keys(tmp_path, _nested_est(), spec)
     report = render_tables(ws)
     assert report.unresolved == []
-    assert "0.155" in (ws / "tables" / "main.tex").read_text()
+    assert "0.155" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 def test_nested_sibling_with_different_tokens_does_not_collide(tmp_path: Path):
@@ -392,7 +392,7 @@ def test_nested_agreeing_duplicates_resolve(tmp_path: Path):
     assert report.unresolved == []
     resolved = [n.resolved for n in report.normalized if n.requested == "p_HH_pre"]
     assert resolved and "==" in resolved[0], "both corroborating paths must be recorded"
-    assert "0.2979" in (ws / "tables" / "main.tex").read_text()
+    assert "0.2979" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 def test_nested_descent_skips_coefficients_block(tmp_path: Path):
@@ -420,7 +420,7 @@ def test_shallower_match_wins_over_deeper(tmp_path: Path):
     ws = _ws_keys(tmp_path, est, spec)
     report = render_tables(ws)
     assert report.unresolved == []
-    assert "1.5" in (ws / "tables" / "main.tex").read_text()
+    assert "1.5" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 def test_absent_scalar_still_halts(tmp_path: Path):
@@ -429,7 +429,7 @@ def test_absent_scalar_still_halts(tmp_path: Path):
     descent must not paper over it by borrowing from another column."""
     est = {"main": {"n_pre_treatment": 192}}
     rob = {"rv5_measure": {"specification": "5-day RV", "delta_p_HH": 0.018}}
-    (tmp_path / "robustness_results.json").write_text(json.dumps(rob), encoding="utf-8")
+    (tmp_path / "robustness_results.json").write_text(json.dumps(rob), encoding="utf-8", newline="\n")
     spec = _spec(
         [{"spec_key": "rv5_measure", "header": "(2)"}],
         [{"type": "stat", "field": "n_pre_treatment", "label": "N pre", "decimals": 0}],

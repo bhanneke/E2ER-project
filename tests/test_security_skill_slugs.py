@@ -33,7 +33,7 @@ def _pack(pack_slug: str, *skill_slugs: str) -> cat.SkillPack:
 
 
 def _files(root: Path) -> list[str]:
-    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file())
 
 
 @pytest.mark.parametrize("bad", ["../../.claude", "..", "a/b", "/abs", "UPPER", "", ".hidden", "x" * 97])
@@ -67,7 +67,7 @@ def test_remove_pack_refuses_a_path(tmp_path):
     (root / "ok").mkdir(parents=True)
     victim = tmp_path / "victim"
     victim.mkdir()
-    (victim / "keep.txt").write_text("x")
+    (victim / "keep.txt").write_text("x", encoding="utf-8", newline="\n")
     for bad in ["../victim", "..", "/tmp", "ok/../../victim"]:
         with pytest.raises(cat.CatalogueError):
             cat.remove_pack(bad, dest=root)

@@ -52,7 +52,9 @@ def _write_data_dictionary(workspace: Path) -> None:
                 "identification_rationale": "test",
                 "granularity_justification": "daily aggregate of blocks",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
 

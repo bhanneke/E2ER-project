@@ -172,6 +172,7 @@ def test_a_planted_key_blocks_the_publish(bundle: Path, platform: FakePlatform, 
         "**Research question:** Did ETFs matter? sk-ant-api03-abcdefghijklmnopqrst\n\n"
         + readme.read_text(encoding="utf-8"),
         encoding="utf-8",
+        newline="\n",
     )
     _rehash(bundle, ["README.md"])
     before = snapshot(bundle)
@@ -185,10 +186,10 @@ def test_login_stores_the_token_privately_and_whoami_uses_it(platform: FakePlatf
     out = capsys.readouterr().out
     assert f"{URL}/device" in out and "ABCD-1234" in out
     cred = tmp_path / "credentials.json"
-    assert json.loads(cred.read_text())[URL].startswith("e2er_")
+    assert json.loads(cred.read_text(encoding="utf-8"))[URL].startswith("e2er_")
     assert owner_only(cred)
     assert cli_platform.whoami(URL) == 0 and "ada@example.org" in capsys.readouterr().out
-    assert cli_platform.logout(URL) == 0 and URL not in json.loads(cred.read_text())
+    assert cli_platform.logout(URL) == 0 and URL not in json.loads(cred.read_text(encoding="utf-8"))
 
 
 def test_publish_to_the_platform_links_the_folder_and_it_still_verifies(
@@ -199,7 +200,7 @@ def test_publish_to_the_platform_links_the_folder_and_it_still_verifies(
     sent = platform.published
     assert sent["manifest"]["contributors"][0]["github"] == "ada-lab"
     assert sent["dossier"]["id"] == dossier_id(sent["dossier"]["doc"])
-    link = json.loads((bundle / ".e2er" / "link.json").read_text())
+    link = json.loads((bundle / ".e2er" / "link.json").read_text(encoding="utf-8"))
     assert link["owner_project"] == "ada-lab/showcase" and link["platform_url"] == URL
     assert all(c.status == "PASS" or _predates(c) for c in _run_checks(bundle, online=False))  # .e2er/ is not evidence
     assert cli_platform.status(str(bundle)) == 0
@@ -254,7 +255,7 @@ def test_publish_offline_writes_e2er_json_and_sends_nothing(bundle, tmp_path, mo
     monkeypatch.setattr(pc, "client_factory", no_network)
     monkeypatch.chdir(tmp_path)
     assert publish(str(bundle), offline=True, **ARGS, yes=True) == 0
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert m["dossier"]["id"] == dossier_id(m["dossier"]["doc"])
     assert not (tmp_path / "e2er-registry-entry").exists()
     out = capsys.readouterr().out

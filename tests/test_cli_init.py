@@ -234,34 +234,34 @@ class TestWriteEnvOverwrite:
         env_path = tmp_path / ".env"
         ok = _write_env(env_path, "LLM_BACKEND=claude_code\n", force=False)
         assert ok is True
-        assert env_path.read_text() == "LLM_BACKEND=claude_code\n"
+        assert env_path.read_text(encoding="utf-8") == "LLM_BACKEND=claude_code\n"
 
     def test_force_overwrites_existing(self, tmp_path: Path):
         env_path = tmp_path / ".env"
-        env_path.write_text("OLD=1\n")
+        env_path.write_text("OLD=1\n", encoding="utf-8", newline="\n")
         ok = _write_env(env_path, "NEW=2\n", force=True)
         assert ok is True
-        assert env_path.read_text() == "NEW=2\n"
+        assert env_path.read_text(encoding="utf-8") == "NEW=2\n"
 
     def test_existing_file_without_force_prompts_user(self, tmp_path: Path):
         """Without --force, an existing .env triggers a confirmation
         prompt. When the user declines (answers 'n'), the file is left
         intact."""
         env_path = tmp_path / ".env"
-        env_path.write_text("OLD=1\n")
+        env_path.write_text("OLD=1\n", encoding="utf-8", newline="\n")
         # Simulate the user typing 'n' at the overwrite prompt
         with patch("builtins.input", side_effect=["n"]):
             ok = _write_env(env_path, "NEW=2\n", force=False)
         assert ok is False
-        assert env_path.read_text() == "OLD=1\n"
+        assert env_path.read_text(encoding="utf-8") == "OLD=1\n"
 
     def test_existing_file_overwritten_on_y(self, tmp_path: Path):
         env_path = tmp_path / ".env"
-        env_path.write_text("OLD=1\n")
+        env_path.write_text("OLD=1\n", encoding="utf-8", newline="\n")
         with patch("builtins.input", side_effect=["y"]):
             ok = _write_env(env_path, "NEW=2\n", force=False)
         assert ok is True
-        assert env_path.read_text() == "NEW=2\n"
+        assert env_path.read_text(encoding="utf-8") == "NEW=2\n"
 
 
 # ---------------------------------------------------------------------------
@@ -277,17 +277,17 @@ class TestScaffolding:
         assert (data_dir / "README.md").is_file()
         assert (lit_dir / "README.md").is_file()
         # The literature README states the PDF privacy guarantee.
-        assert "never leave this machine" in (lit_dir / "README.md").read_text()
+        assert "never leave this machine" in (lit_dir / "README.md").read_text(encoding="utf-8")
 
     def test_scaffold_is_idempotent_and_preserves_user_files(self, tmp_path: Path):
         data_dir, _ = _scaffold_project_dirs(tmp_path)
         user_file = data_dir / "my.csv"
-        user_file.write_text("keep me\n")
+        user_file.write_text("keep me\n", encoding="utf-8", newline="\n")
         # Overwrite the README with custom text; scaffolding must not clobber it.
-        (data_dir / "README.md").write_text("custom\n")
+        (data_dir / "README.md").write_text("custom\n", encoding="utf-8", newline="\n")
         _scaffold_project_dirs(tmp_path)  # second run
-        assert user_file.read_text() == "keep me\n"
-        assert (data_dir / "README.md").read_text() == "custom\n"
+        assert user_file.read_text(encoding="utf-8") == "keep me\n"
+        assert (data_dir / "README.md").read_text(encoding="utf-8") == "custom\n"
 
     def test_env_block_includes_byod_dirs(self):
         body = _env_block("claude_code", False, "", "", "", "", local_data_dir="./data", literature_dir="./literature")
@@ -308,7 +308,7 @@ class TestDefaultsPath:
         assert code == 0
         assert (tmp_path / "data").is_dir()
         assert (tmp_path / "literature").is_dir()
-        env = (tmp_path / ".env").read_text()
+        env = (tmp_path / ".env").read_text(encoding="utf-8")
         assert "LLM_BACKEND=claude_code" in env
         assert "LOCAL_DATA_DIR=./data" in env
 

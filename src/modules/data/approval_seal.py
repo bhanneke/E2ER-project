@@ -57,7 +57,7 @@ def _key(create: bool) -> bytes | None:
     raw = secrets.token_bytes(32)
     tmp = p.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(raw.hex() + "\n")
     os.replace(tmp, p)
     return raw
@@ -79,7 +79,7 @@ def seal(query_id: str, status: str, sql: str) -> None:
     path = d / f"{query_id}.json"
     tmp = path.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"status": status, "mac": _mac(key, query_id, status, sql)}, fh)
     os.replace(tmp, path)
 

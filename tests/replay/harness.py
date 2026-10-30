@@ -40,7 +40,7 @@ _LOCAL = {"127.0.0.1", "::1", "localhost", "0.0.0.0", ""}
 def _note_blocked(host: str) -> None:
     path = os.environ.get(ENV_NETLOG)
     if path:
-        with open(path, "a", encoding="utf-8") as fh:
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{os.getpid()} {host}\n")
 
 

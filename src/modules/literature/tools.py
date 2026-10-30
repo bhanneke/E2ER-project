@@ -438,10 +438,10 @@ class LiteratureToolHandler(ToolHandler):
             existing = self._bib_path.read_text(encoding="utf-8")
             if key and f"{{{key}," in existing:
                 return json.dumps({"key": key, "status": "already_present"})
-            with self._bib_path.open("a", encoding="utf-8") as f:
+            with self._bib_path.open("a", encoding="utf-8", newline="\n") as f:
                 f.write("\n\n" + entry + "\n")
         else:
-            self._bib_path.write_text(entry + "\n", encoding="utf-8")
+            self._bib_path.write_text(entry + "\n", encoding="utf-8", newline="\n")
         return json.dumps({"key": key or "unknown", "status": "saved"})
 
 

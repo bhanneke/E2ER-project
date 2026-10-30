@@ -86,8 +86,8 @@ class TestLinkLocalDataDir:
         metadata)."""
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "prices.csv").write_text("a,b\n1,2\n")
-        (local / "refs.bib").write_text("@article{x, title={X}}\n")
+        (local / "prices.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
+        (local / "refs.bib").write_text("@article{x, title={X}}\n", encoding="utf-8", newline="\n")
 
         workspace = tmp_path / "ws"
         workspace.mkdir()
@@ -107,7 +107,7 @@ class TestLinkLocalDataDir:
         (local / "paper.pdf").write_bytes(b"%PDF-1.4")
         (local / "figure.png").write_bytes(b"\x89PNG")
         (local / "archive.zip").write_bytes(b"PK")
-        (local / "real_data.csv").write_text("a,b\n1,2\n")
+        (local / "real_data.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
 
         workspace = tmp_path / "ws"
         workspace.mkdir()
@@ -124,10 +124,10 @@ class TestLinkLocalDataDir:
         boundary here prevents accidental recursive symlinking."""
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "top.csv").write_text("a\n1\n")
+        (local / "top.csv").write_text("a\n1\n", encoding="utf-8", newline="\n")
         nested = local / "nested"
         nested.mkdir()
-        (nested / "deep.csv").write_text("b\n2\n")
+        (nested / "deep.csv").write_text("b\n2\n", encoding="utf-8", newline="\n")
 
         workspace = tmp_path / "ws"
         workspace.mkdir()
@@ -142,17 +142,17 @@ class TestLinkLocalDataDir:
         symlinker must NOT clobber it."""
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "prices.csv").write_text("CORPUS\n")
+        (local / "prices.csv").write_text("CORPUS\n", encoding="utf-8", newline="\n")
 
         workspace = tmp_path / "ws"
         (workspace / "data").mkdir(parents=True)
         existing = workspace / "data" / "prices.csv"
-        existing.write_text("WORKSPACE_ORIGINAL\n")
+        existing.write_text("WORKSPACE_ORIGINAL\n", encoding="utf-8", newline="\n")
 
         _link_local_data_dir_into_workspace(workspace, str(local))
 
         # The workspace's own file is preserved; the corpus file is skipped
-        assert existing.read_text() == "WORKSPACE_ORIGINAL\n"
+        assert existing.read_text(encoding="utf-8") == "WORKSPACE_ORIGINAL\n"
         assert not existing.is_symlink()
 
     def test_extension_match_is_case_insensitive(self, tmp_path: Path):
@@ -160,7 +160,7 @@ class TestLinkLocalDataDir:
         The allowlist check must be case-insensitive."""
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "loud.CSV").write_text("a\n")
+        (local / "loud.CSV").write_text("a\n", encoding="utf-8", newline="\n")
         (local / "quiet.parquet").write_bytes(b"x")
 
         workspace = tmp_path / "ws"
@@ -246,38 +246,38 @@ class TestLoadReferenceSummaryWithLocalDir:
 
     def test_only_literature_bibtex_file_v04_behavior(self, tmp_path: Path):
         bib = tmp_path / "curated.bib"
-        bib.write_text(_bib("Alpha"))
+        bib.write_text(_bib("Alpha"), encoding="utf-8", newline="\n")
 
         out = self._summary(tmp_path, literature_bibtex_file=str(bib))
         assert "The Researcher's Own Papers (1" in out
         assert "\\cite{alpha}" in out, "the researcher's own key, as it is in their .bib"
-        bibtext = (tmp_path / "ws" / "literature.bib").read_text()
+        bibtext = (tmp_path / "ws" / "literature.bib").read_text(encoding="utf-8")
         assert "@article{alpha," in bibtext and "e2er_source = {researcher}" in bibtext
 
     def test_only_local_data_dir_picks_up_bib(self, tmp_path: Path):
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "zotero_export.bib").write_text(_bib("Beta"))
+        (local / "zotero_export.bib").write_text(_bib("Beta"), encoding="utf-8", newline="\n")
 
         assert "Beta" in self._summary(tmp_path, local_data_dir=str(local))
 
     def test_both_sources_merged(self, tmp_path: Path):
         bib_curated = tmp_path / "curated.bib"
-        bib_curated.write_text(_bib("Alpha"))
+        bib_curated.write_text(_bib("Alpha"), encoding="utf-8", newline="\n")
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "zotero.bib").write_text(_bib("Beta") + _bib("Gamma"))
+        (local / "zotero.bib").write_text(_bib("Beta") + _bib("Gamma"), encoding="utf-8", newline="\n")
 
         out = self._summary(tmp_path, literature_bibtex_file=str(bib_curated), local_data_dir=str(local))
         for ref in ("Alpha", "Beta", "Gamma"):
             assert ref in out
-            assert f"{{{ref.lower()}," in (tmp_path / "ws" / "literature.bib").read_text()
+            assert f"{{{ref.lower()}," in (tmp_path / "ws" / "literature.bib").read_text(encoding="utf-8")
 
     def test_duplicate_papers_deduped_by_title_year(self, tmp_path: Path):
         local = tmp_path / "corpus"
         local.mkdir()
         shared = local / "shared.bib"
-        shared.write_text(_bib("Alpha") + _bib("Beta"))
+        shared.write_text(_bib("Alpha") + _bib("Beta"), encoding="utf-8", newline="\n")
 
         out = self._summary(tmp_path, literature_bibtex_file=str(shared), local_data_dir=str(local))
         assert out.count("Alpha") == 1
@@ -287,9 +287,9 @@ class TestLoadReferenceSummaryWithLocalDir:
     def test_non_bib_extensions_in_local_dir_ignored(self, tmp_path: Path):
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "real.bib").write_text(_bib("RealRef"))
-        (local / "not_bib.csv").write_text("a,b\n1,2\n")
-        (local / "not_bib.txt").write_text("just notes, not BibTeX")
+        (local / "real.bib").write_text(_bib("RealRef"), encoding="utf-8", newline="\n")
+        (local / "not_bib.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
+        (local / "not_bib.txt").write_text("just notes, not BibTeX", encoding="utf-8", newline="\n")
 
         out = self._summary(tmp_path, local_data_dir=str(local))
         assert "RealRef" in out
@@ -297,15 +297,15 @@ class TestLoadReferenceSummaryWithLocalDir:
     def test_unparseable_bib_skipped_gracefully(self, tmp_path: Path):
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "good.bib").write_text(_bib("Survivor"))
-        (local / "broken.bib").write_text("this is not bibtex at all")
+        (local / "good.bib").write_text(_bib("Survivor"), encoding="utf-8", newline="\n")
+        (local / "broken.bib").write_text("this is not bibtex at all", encoding="utf-8", newline="\n")
 
         assert "Survivor" in self._summary(tmp_path, local_data_dir=str(local))
 
     def test_only_bib_specialists_get_the_block(self, tmp_path: Path):
         local = tmp_path / "corpus"
         local.mkdir()
-        (local / "refs.bib").write_text(_bib("Alpha"))
+        (local / "refs.bib").write_text(_bib("Alpha"), encoding="utf-8", newline="\n")
 
         assert "Alpha" in self._summary(tmp_path, local_data_dir=str(local))
         assert self._summary(tmp_path, "data_analyst", local_data_dir=str(local)) == ""

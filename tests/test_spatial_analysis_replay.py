@@ -110,11 +110,20 @@ def test_a_spatial_study_replays_to_the_end_with_its_geometry_weights_and_maps_c
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout and "[PASS] results contract" in out.stdout, out.stdout
     assert "[PASS] method checks" in out.stdout and "spatial" in out.stdout, out.stdout
@@ -129,7 +138,13 @@ def test_a_spatial_study_replays_to_the_end_with_its_geometry_weights_and_maps_c
         w.writeheader()
         w.writerows(r for r in rows if not (r["from"] == "R01" or r["to"] == "R01"))
     out = subprocess.run(
-        [*cli, "verify", str(tampered)], cwd=study, env=env, capture_output=True, text=True, timeout=300
+        [*cli, "verify", str(tampered)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
     )
     assert "[FAIL] method checks" in out.stdout and "(g)" in out.stdout, out.stdout
 
@@ -139,7 +154,8 @@ def test_a_spatial_study_replays_to_the_end_with_its_geometry_weights_and_maps_c
         cwd=study,
         env={**env, **uv_dirs},
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=900,
     )
     uv.check_installed(out.stdout)
@@ -164,7 +180,9 @@ def test_a_data_unit_without_geometry_that_is_not_listed_stops_the_run_before_th
         }
     }
     # The same file twice: the first answer and the one after the check sent the data architect back.
-    overrides.write_text(json.dumps({"data_architect": {"attempts": [unlisted, unlisted]}}), encoding="utf-8")
+    overrides.write_text(
+        json.dumps({"data_architect": {"attempts": [unlisted, unlisted]}}), encoding="utf-8", newline="\n"
+    )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(overrides))
     study = tmp_path / "study"
     shutil.copytree(SPATIAL / "inputs" / "data", study / "data")
@@ -190,7 +208,7 @@ def test_a_data_unit_without_geometry_that_is_not_listed_stops_the_run_before_th
         # The researcher lists the unit with its reason; the check runs again on resume and passes.
         design = json.loads((ws / "spatial_design.json").read_text(encoding="utf-8"))
         design["units_without_geometry"] = [{"id": "*ZZ", "reason": "extra-regio codes, no territory"}]
-        (ws / "spatial_design.json").write_text(json.dumps(design), encoding="utf-8")
+        (ws / "spatial_design.json").write_text(json.dumps(design), encoding="utf-8", newline="\n")
         httpx.post(f"{api}/api/papers/{pid}/review", json={"action": "approve"}, headers=TOKEN, timeout=30)
         p, stops = _approve_to_the_end(api, pid)
         assert p["status"] == "completed", (p.get("last_error"), stops)

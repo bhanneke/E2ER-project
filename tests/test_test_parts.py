@@ -50,7 +50,9 @@ def test_from_junit(tmp_path: Path):
         '<testcase classname="tests.test_a" name="t1" time="1.5"/>'
         '<testcase classname="tests.test_a.TestX" name="t2" time="0.5"/>'
         '<testcase classname="tests.pipeline.test_b" name="t3" time="2"/>'
-        "</testsuite></testsuites>"
+        "</testsuite></testsuites>",
+        encoding="utf-8",
+        newline="\n",
     )
     assert from_junit(xml) == {"tests/pipeline/test_b.py": 2.0, "tests/test_a.py": 2.0}
 
@@ -64,7 +66,8 @@ def _collected(env_part: str | None, files: list[str]) -> set[str]:
         cwd=ROOT,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     ).stdout
     return {ln for ln in out.splitlines() if "::" in ln}

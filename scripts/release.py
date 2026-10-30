@@ -224,7 +224,7 @@ def future_mentions(root: Path, current: str, target: str) -> list[str]:
 
 
 def _git(root: Path, *args: str) -> str:
-    proc = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
+    proc = subprocess.run(["git", *args], cwd=root, capture_output=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise ReleaseError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -296,7 +296,7 @@ def _write_all(root: Path, texts: dict[str, str]) -> None:
         for name, text in texts.items():
             tmp = (root / name).with_name(f".{(root / name).name}.release-tmp")
             temps[name] = tmp
-            tmp.write_text(text, encoding="utf-8")
+            tmp.write_text(text, encoding="utf-8", newline="\n")
             shutil.copymode(root / name, tmp)
         done: list[str] = []
         try:

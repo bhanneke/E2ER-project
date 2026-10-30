@@ -226,7 +226,7 @@ def record_in_dictionary(workspace: Path, table: str, source: Source, record: di
         update["cite_key"] = source.cite_key
     entry.update({k: v for k, v in update.items() if v is not None})
     doc["tables"] = tables
-    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return path
 
 
@@ -243,7 +243,7 @@ def add_citation(workspace: Path, source: Source) -> bool:
         return False
     head = text.rstrip("\n") + "\n\n" if text.strip() else ""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(head + source.bibtex.strip() + "\n", encoding="utf-8")
+    path.write_text(head + source.bibtex.strip() + "\n", encoding="utf-8", newline="\n")
     return True
 
 

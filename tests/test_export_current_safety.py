@@ -34,14 +34,16 @@ def _workspace(tmp_path: Path, *, with_id: bool = True) -> Path:
     manifest = {"title": "FOMC and bank stocks"}
     if with_id:
         manifest["paper_id"] = PID
-    (ws / "manifest.json").write_text(json.dumps(manifest))
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\begin{document}Ann Smith\\end{document}")
-    (ws / "estimation_results.json").write_text('{"main": {"coef": 0.5}}')
+    (ws / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\begin{document}Ann Smith\\end{document}", encoding="utf-8", newline="\n"
+    )
+    (ws / "estimation_results.json").write_text('{"main": {"coef": 0.5}}', encoding="utf-8", newline="\n")
     return ws
 
 
 def _touch(p: Path, text: str) -> None:
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8", newline="\n")
     later = time.time() + 5
     os.utime(p, (later, later))
 
@@ -57,22 +59,22 @@ def test_a_redacted_folder_is_kept_and_the_next_change_gets_a_new_folder(tmp_pat
     first, _ = _export(ws, root)
     rd.redact(first, "Ann Smith")
     assert cur.is_amended(first)
-    redacted = (first / "paper" / "paper.tex").read_text()
+    redacted = (first / "paper" / "paper.tex").read_text(encoding="utf-8")
     assert "Ann Smith" not in redacted
     _touch(ws / "estimation_results.json", '{"main": {"coef": 0.6}}')
     second, state = _export(ws, root)
     assert state == "new" and second != first
     # The redaction is still there; nothing rebuilt the folder from the run.
-    assert (first / "paper" / "paper.tex").read_text() == redacted
+    assert (first / "paper" / "paper.tex").read_text(encoding="utf-8") == redacted
     assert cur.older_copies(root, PID) == []  # an amended folder is never offered for removal either
 
 
 def test_an_abstract_rewrite_counts_as_an_amendment(tmp_path: Path):
     ws, root = _workspace(tmp_path), tmp_path / "exports"
     first, _ = _export(ws, root)
-    prov = json.loads((first / "provenance.json").read_text())
+    prov = json.loads((first / "provenance.json").read_text(encoding="utf-8"))
     prov["amendments"] = [{"path": "paper/abstract.tex", "kind": "abstract_rewritten"}]
-    (first / "provenance.json").write_text(json.dumps(prov))
+    (first / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     _touch(ws / "estimation_results.json", '{"main": {"coef": 0.7}}')
     second, state = _export(ws, root)
     assert state == "new" and first.is_dir() and second != first
@@ -81,7 +83,7 @@ def test_an_abstract_rewrite_counts_as_an_amendment(tmp_path: Path):
 def test_a_failed_replacement_leaves_the_earlier_folder_as_it_was(tmp_path: Path, monkeypatch):
     ws, root = _workspace(tmp_path), tmp_path / "exports"
     first, _ = _export(ws, root)
-    before = (first / "provenance.json").read_text()
+    before = (first / "provenance.json").read_text(encoding="utf-8")
     _touch(ws / "estimation_results.json", '{"main": {"coef": 0.8}}')
 
     def boom(*a, **k):
@@ -92,7 +94,7 @@ def test_a_failed_replacement_leaves_the_earlier_folder_as_it_was(tmp_path: Path
     monkeypatch.setattr("src.core.export.provenance.write_provenance", boom)
     with pytest.raises(RuntimeError):
         _export(ws, root)
-    assert (first / "provenance.json").read_text() == before
+    assert (first / "provenance.json").read_text(encoding="utf-8") == before
     # No half-built folder or temporary folder is left behind.
     assert sorted(p.name for p in root.iterdir() if not p.name.startswith(".e2er-export-")) == sorted(
         [first.name, cur.INDEX]
@@ -172,12 +174,12 @@ def test_the_newest_folder_is_the_highest_number_not_the_newest_time(tmp_path: P
 def test_a_run_from_before_0_14_keeps_its_id_in_the_export(tmp_path: Path):
     ws, root = _workspace(tmp_path, with_id=False), tmp_path / "exports"
     out = structured.export_paper(ws, root, date_str="20261008")
-    assert json.loads((out / "provenance.json").read_text())["run"]["paper_id"] == PID
+    assert json.loads((out / "provenance.json").read_text(encoding="utf-8"))["run"]["paper_id"] == PID
     ws2 = tmp_path / "named"
     ws2.mkdir()
-    (ws2 / "manifest.json").write_text(json.dumps({"title": "x"}))
+    (ws2 / "manifest.json").write_text(json.dumps({"title": "x"}), encoding="utf-8", newline="\n")
     out2 = structured.export_paper(ws2, root, date_str="20261008", paper_id=PID)
-    assert json.loads((out2 / "provenance.json").read_text())["run"]["paper_id"] == PID
+    assert json.loads((out2 / "provenance.json").read_text(encoding="utf-8"))["run"]["paper_id"] == PID
     first, s1 = _export(ws2, root)
     again, s2 = _export(ws2, root)
     assert (s2, again) == ("unchanged", first)

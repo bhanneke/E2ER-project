@@ -316,7 +316,7 @@ def record_load(workspace: Path, record: dict[str, Any]) -> Path:
             "loads": [a for a in loads if not (isinstance(a, dict) and _key(a) == key)] + [record],
         }
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         if path.is_file():
             shutil.copyfile(path, path.with_name(f".{path.name}.bak"))
         os.replace(tmp, path)

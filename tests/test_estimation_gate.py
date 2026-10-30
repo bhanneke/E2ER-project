@@ -37,7 +37,7 @@ def _runner(tmp_path: Path, methodology: str = "empirical"):
 
 
 def _write_clean_econometrics(ws: Path) -> None:
-    (ws / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8")
+    (ws / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8", newline="\n")
     (ws / "estimation_results.json").write_text(
         json.dumps(
             {
@@ -48,6 +48,7 @@ def _write_clean_econometrics(ws: Path) -> None:
             }
         ),
         encoding="utf-8",
+        newline="\n",
     )
     from tests.results_script import write_results_script
 
@@ -66,7 +67,7 @@ def _contribution(success: bool) -> Contribution:
 
 async def test_gate_noop_for_theoretical(tmp_path: Path):
     runner = _runner(tmp_path, methodology="theoretical")
-    (tmp_path / "data.db").write_text("x", encoding="utf-8")
+    (tmp_path / "data.db").write_text("x", encoding="utf-8", newline="\n")
     with patch("src.core.specialists.dispatcher.execute_work_order", new=AsyncMock()) as ew:
         await runner._enforce_estimation_gate()
     ew.assert_not_awaited()
@@ -81,7 +82,7 @@ async def test_gate_noop_without_data_warehouse(tmp_path: Path):
 
 async def test_gate_passes_clean_estimation_without_dispatch(tmp_path: Path):
     runner = _runner(tmp_path)
-    (tmp_path / "data.db").write_text("x", encoding="utf-8")
+    (tmp_path / "data.db").write_text("x", encoding="utf-8", newline="\n")
     _write_clean_econometrics(tmp_path)
     with patch("src.core.specialists.dispatcher.execute_work_order", new=AsyncMock()) as ew:
         await runner._enforce_estimation_gate()
@@ -91,9 +92,9 @@ async def test_gate_passes_clean_estimation_without_dispatch(tmp_path: Path):
 async def test_gate_redispatches_until_clean(tmp_path: Path):
     """Empty {} estimation → one re-dispatch that fixes it → gate opens."""
     runner = _runner(tmp_path)
-    (tmp_path / "data.db").write_text("x", encoding="utf-8")
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8")
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "data.db").write_text("x", encoding="utf-8", newline="\n")
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8", newline="\n")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
 
     async def _fix(order, *args, **kwargs):
         _write_clean_econometrics(tmp_path)
@@ -112,9 +113,9 @@ async def test_gate_trips_breaker_after_cap(tmp_path: Path):
     """Re-dispatches that never fix the estimation end in CircuitBreakerError
     (→ resumable PAUSED), not an infinite loop and not a hollow paper."""
     runner = _runner(tmp_path)
-    (tmp_path / "data.db").write_text("x", encoding="utf-8")
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8")
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "data.db").write_text("x", encoding="utf-8", newline="\n")
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8", newline="\n")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
 
     with patch(
         "src.core.specialists.dispatcher.execute_work_order",
@@ -129,9 +130,9 @@ async def test_gate_trips_breaker_after_cap(tmp_path: Path):
 async def test_gate_respects_preexisting_failure_count(tmp_path: Path):
     """Failures accumulated during the iterative phase count toward the cap."""
     runner = _runner(tmp_path)
-    (tmp_path / "data.db").write_text("x", encoding="utf-8")
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8")
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "data.db").write_text("x", encoding="utf-8", newline="\n")
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 30, encoding="utf-8", newline="\n")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     runner._failure_counts["econometrics_specialist"] = 3
 
     with patch("src.core.specialists.dispatcher.execute_work_order", new=AsyncMock()) as ew:

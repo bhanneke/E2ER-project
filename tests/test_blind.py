@@ -64,14 +64,18 @@ def rehash(folder: Path, rels: list[str]) -> None:
     for rel in rels:
         data = (folder / rel).read_bytes()
         prov["files"][rel] = {"sha256": _sha(data), "bytes": len(data)}
-    (folder / "provenance.json").write_text(json.dumps(prov, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (folder / "provenance.json").write_text(
+        json.dumps(prov, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
 
 
 def drop(folder: Path, rel: str) -> None:
     (folder / rel).unlink()
     prov = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
     prov["files"].pop(rel, None)
-    (folder / "provenance.json").write_text(json.dumps(prov, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (folder / "provenance.json").write_text(
+        json.dumps(prov, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
 
 
 def mini(tmp_path: Path) -> Path:
@@ -86,21 +90,25 @@ def mini(tmp_path: Path) -> Path:
         "\\begin{document}\n\\maketitle\nText \\citet{quarry2024} shows it.\n"
         "\\section*{Acknowledgements}\nWe thank the Quarry family foundation.\n\\bibliography{refs}\n\\end{document}\n",
         encoding="utf-8",
+        newline="\n",
     )
     (b / "paper" / "refs.bib").write_text(
         '@article{quarry2024,\n  author = {Qu{\\"a}rry, Imogen and Smith, Ann},\n  title = {Earlier},\n'
         "  year = {2024}\n}\n@article{other2020,\n  author = {Doe, Jane},\n  title = {Other},\n  year = {2020}\n}\n",
         encoding="utf-8",
+        newline="\n",
     )
     (b / "design" / "paper_plan.md").write_text(
-        f"# Plan\nContact: {EMAIL.replace('@', ' [at] ')}\nORCID {ORCID.replace('-', ' ')}\n", encoding="utf-8"
+        f"# Plan\nContact: {EMAIL.replace('@', ' [at] ')}\nORCID {ORCID.replace('-', ' ')}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     (b / "code" / "run.py").write_text(
-        f"DATA = '/Users/{USER}/projects/x.csv'  # by @{HANDLE}\nprint('ok')\n", encoding="utf-8"
+        f"DATA = '/Users/{USER}/projects/x.csv'  # by @{HANDLE}\nprint('ok')\n", encoding="utf-8", newline="\n"
     )
-    (b / "README.md").write_text("# A Test\n\n**Research question:** Does it work?\n", encoding="utf-8")
+    (b / "README.md").write_text("# A Test\n\n**Research question:** Does it work?\n", encoding="utf-8", newline="\n")
     prov = {"schema": "e2er-provenance/1", "run": {"paper_id": "p-1"}, "files": {}}
-    (b / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+    (b / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     rehash(b, ["paper/paper.tex", "paper/refs.bib", "design/paper_plan.md", "code/run.py", "README.md"])
     return b
 
@@ -248,9 +256,11 @@ def test_the_author_affiliation_and_acknowledgements_go():
 def test_anonymise_records_each_change_without_the_text_or_the_old_fingerprint(tmp_path):
     b = mini(tmp_path)
     before = json.loads((b / "provenance.json").read_text(encoding="utf-8"))["files"]
-    (b / "e2er.json").write_text("{}", encoding="utf-8")  # an earlier publish's record: not part of the study
+    (b / "e2er.json").write_text(
+        "{}", encoding="utf-8", newline="\n"
+    )  # an earlier publish's record: not part of the study
     (b / ".e2er").mkdir()
-    (b / ".e2er" / "link.json").write_text("{}", encoding="utf-8")
+    (b / ".e2er" / "link.json").write_text("{}", encoding="utf-8", newline="\n")
     result = an.anonymise(b, ids())
     assert "e2er.json" in result.removed and not (b / ".e2er").exists()
     prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
@@ -301,10 +311,10 @@ def test_a_pre_registered_plan_keeps_its_fingerprint_and_still_verifies(tmp_path
     b = mini(tmp_path)
     plan = b / "design" / "paper_plan.md"
     frozen = _sha(plan.read_bytes())
-    (b / "design" / "preregistration.md").write_text("# Pre-registration\n", encoding="utf-8")
+    (b / "design" / "preregistration.md").write_text("# Pre-registration\n", encoding="utf-8", newline="\n")
     lock = {"file": "preregistration.md", "sha256": _sha((b / "design" / "preregistration.md").read_bytes()),
             "frozen_at": "2026-10-01T00:00:00Z", "plan_files": {"paper_plan.md": frozen}}  # fmt: skip
-    (b / "design" / "preregistration.lock.json").write_text(json.dumps(lock), encoding="utf-8")
+    (b / "design" / "preregistration.lock.json").write_text(json.dumps(lock), encoding="utf-8", newline="\n")
     rehash(b, ["design/preregistration.md", "design/preregistration.lock.json"])
     result = an.anonymise(b, ids())
     assert result.prereg == ["design/paper_plan.md"] and frozen not in result.withheld
@@ -347,7 +357,7 @@ def test_the_leak_check_passes_an_anonymised_folder_and_lists_the_citations(tmp_
     ],
 )
 def test_the_leak_check_finds_split_and_encoded_forms(tmp_path, content):
-    (tmp_path / "f.txt").write_text(f"line one\n{content}\n", encoding="utf-8")
+    (tmp_path / "f.txt").write_text(f"line one\n{content}\n", encoding="utf-8", newline="\n")
     report = an.leak_check(tmp_path, ids())
     assert [str(f) for f in report.leaks] and report.leaks[0].where == "f.txt" and report.leaks[0].line == 2
 
@@ -383,7 +393,7 @@ def test_a_compressed_data_file_is_named_as_unread(tmp_path):
 def test_self_citations_are_listed(tmp_path):
     b = mini(tmp_path)
     (b / "paper" / "intro.tex").write_text(
-        "As we showed in earlier work, and in our previous paper, X.\n", encoding="utf-8"
+        "As we showed in earlier work, and in our previous paper, X.\n", encoding="utf-8", newline="\n"
     )
     found = [str(f) for f in an.self_citations(b, ids())]
     assert any(f.startswith("paper/refs.bib:1: @article{quarry2024}") for f in found)
@@ -458,12 +468,20 @@ def study(tmp_path) -> Path:
     tex.write_text(tex.read_text(encoding="utf-8").replace("Björn Hanneke", NAME), encoding="utf-8")
     plan = b / "design" / "paper_plan.md"
     plan.write_text(
-        plan.read_text(encoding="utf-8") + f"\n\nContact {EMAIL}, ORCID {ORCID}, {AFFIL}.\n", encoding="utf-8"
+        plan.read_text(encoding="utf-8") + f"\n\nContact {EMAIL}, ORCID {ORCID}, {AFFIL}.\n",
+        encoding="utf-8",
+        newline="\n",
     )
     code = b / "code" / "run_estimation.py"
-    code.write_text(f"# data in /Users/{USER}/Desktop on {HOST}\n" + code.read_text(encoding="utf-8"), encoding="utf-8")
+    code.write_text(
+        f"# data in /Users/{USER}/Desktop on {HOST}\n" + code.read_text(encoding="utf-8"),
+        encoding="utf-8",
+        newline="\n",
+    )
     rev = b / "reviews" / "review_data.md"
-    rev.write_text(rev.read_text(encoding="utf-8") + f"\n\nAsk @{HANDLE} or github.com/{GITHUB}.\n", encoding="utf-8")
+    rev.write_text(
+        rev.read_text(encoding="utf-8") + f"\n\nAsk @{HANDLE} or github.com/{GITHUB}.\n", encoding="utf-8", newline="\n"
+    )
     rehash(b, ["paper/paper.tex", "design/paper_plan.md", "code/run_estimation.py", "reviews/review_data.md"])
     make_run_db(tmp_path / "exports", paper_id_of(b))
     return b
@@ -558,7 +576,7 @@ def test_an_identifier_left_where_it_cannot_be_taken_out_stops_the_publish(study
 def test_self_citations_need_the_authors_confirmation(study, platform, capsys):
     refs = study / "paper" / "refs.bib"
     refs.write_text(refs.read_text(encoding="utf-8") + "\n@article{quarry2023,\n  author = {Quärry, Imogen},\n"
-                    "  title = {Before},\n  year = {2023}\n}\n", encoding="utf-8")  # fmt: skip
+                    "  title = {Before},\n  year = {2023}\n}\n", encoding="utf-8", newline="\n")  # fmt: skip
     rehash(study, ["paper/refs.bib"])
     assert blind(study) == 1
     out = capsys.readouterr().out
@@ -644,9 +662,13 @@ def test_the_command_line_has_the_flags():
     import subprocess
     import sys
 
-    out = subprocess.run([sys.executable, "-m", "src", "publish", "--help"], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        [sys.executable, "-m", "src", "publish", "--help"], capture_output=True, encoding="utf-8", errors="replace"
+    ).stdout
     assert "--blind" in out and "--blind-ack-self-citations" in out and "--unblind" in out
-    out = subprocess.run([sys.executable, "-m", "src", "pack", "--help"], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        [sys.executable, "-m", "src", "pack", "--help"], capture_output=True, encoding="utf-8", errors="replace"
+    ).stdout
     assert "--blind" in out
 
 

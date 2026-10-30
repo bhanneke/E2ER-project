@@ -1108,7 +1108,7 @@ def _keep_answer_as_markdown_output(workspace: Path, specialist: str, expected: 
     if _find_output_file(workspace, specialist, target):  # written, but under a subfolder
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text + "\n", encoding="utf-8")
+    path.write_text(text + "\n", encoding="utf-8", newline="\n")
     logger.warning("%s: wrote no %s; its final answer (%d chars) was saved as that file", specialist, target, len(text))
     return True
 

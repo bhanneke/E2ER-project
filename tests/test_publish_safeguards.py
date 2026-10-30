@@ -265,7 +265,7 @@ def test_a_test_run_never_reads_or_writes_the_saved_credentials(monkeypatch, tmp
     home = tmp_path / "home"
     saved = home / ".e2er" / "credentials.json"
     saved.parent.mkdir(parents=True)
-    saved.write_text(json.dumps({"https://e2er.org": "e2er_saved"}))
+    saved.write_text(json.dumps({"https://e2er.org": "e2er_saved"}), encoding="utf-8", newline="\n")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("E2ER_CREDENTIALS")
     assert pc.credentials_path() is None
@@ -273,7 +273,7 @@ def test_a_test_run_never_reads_or_writes_the_saved_credentials(monkeypatch, tmp
     with pytest.raises(pc.PlatformError, match="keeps no login"):
         pc.save_token("https://e2er.org", "e2er_other")
     pc.forget_token("https://e2er.org")
-    assert json.loads(saved.read_text()) == {"https://e2er.org": "e2er_saved"}
+    assert json.loads(saved.read_text(encoding="utf-8")) == {"https://e2er.org": "e2er_saved"}
     monkeypatch.setenv("E2ER_TOKEN", "e2er_from_the_test")
     assert pc.load_token("https://e2er.org") == "e2er_from_the_test"  # what the test sets itself
 
@@ -319,7 +319,8 @@ def test_a_command_started_by_a_test_inherits_the_guard(tmp_path):
     r = subprocess.run(
         [sys.executable, "-m", "src", "whoami", "--url", "https://e2er.org"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         env=env,
         cwd=ROOT,
         timeout=120,

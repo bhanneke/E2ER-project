@@ -73,11 +73,13 @@ def events(monkeypatch):
 def study(tmp_path: Path, monkeypatch) -> tuple[str, Path]:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pipelines").mkdir()
-    (tmp_path / "pipelines" / "contracttest.toml").write_text(TEMPLATE)
+    (tmp_path / "pipelines" / "contracttest.toml").write_text(TEMPLATE, encoding="utf-8", newline="\n")
     pid = str(uuid.uuid4())
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": pid, "research_question": "Q?"}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": pid, "research_question": "Q?"}), encoding="utf-8", newline="\n"
+    )
     return pid, ws
 
 

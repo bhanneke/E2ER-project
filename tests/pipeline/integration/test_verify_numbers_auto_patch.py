@@ -68,12 +68,16 @@ def _make_workspace(tmp_path: Path, paper_id: str, draft: str) -> Path:
                 "methodology": "empirical",
                 "current_stage": "review",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "paper_draft.tex").write_text(draft)
+    (ws / "paper_draft.tex").write_text(draft, encoding="utf-8", newline="\n")
     # Source JSON with the *correct* value — drafter cited 0.80 (wrong),
     # estimation says 0.50 (right). Critical mismatch (rel-err = 60%).
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coef": 0.50, "se": 0.10}}))
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"main": {"coef": 0.50, "se": 0.10}}), encoding="utf-8", newline="\n"
+    )
     return ws
 
 
@@ -118,7 +122,9 @@ async def test_critical_mismatch_auto_patched_then_reviewers_run(tmp_path, mock_
                             "replace": "log RV & 0.50 & 0.10",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         else:
             review_dispatched.append(work_order.specialist)
@@ -151,11 +157,11 @@ async def test_critical_mismatch_auto_patched_then_reviewers_run(tmp_path, mock_
     # patch_revisor was invoked
     assert (ws / "paper_draft.tex.edits.json").exists()
     # Draft was patched on disk
-    patched = (ws / "paper_draft.tex").read_text()
+    patched = (ws / "paper_draft.tex").read_text(encoding="utf-8")
     assert "log RV & 0.50" in patched
     assert "log RV & 0.80" not in patched
     # verify_numbers report on disk is now clean (second pass overwrote)
-    verify = json.loads((ws / "number_verification.json").read_text())
+    verify = json.loads((ws / "number_verification.json").read_text(encoding="utf-8"))
     assert not [m for m in verify["mismatches"] if m.get("severity") == "critical"]
 
 
@@ -186,7 +192,9 @@ async def test_residual_critical_after_patch_yields_rejected(tmp_path, mock_llm)
                             "replace": "log RV & 0.95 & 0.10",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -259,7 +267,9 @@ async def test_partial_patch_resolving_all_criticals_proceeds_to_review(tmp_path
                             "replace": "y",
                         },
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -395,7 +405,9 @@ async def test_verification_report_overwritten_on_second_pass(tmp_path, mock_llm
                             "replace": "log RV & 0.50 & 0.10",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -421,7 +433,7 @@ async def test_verification_report_overwritten_on_second_pass(tmp_path, mock_llm
     ):
         await runner._run_review_phase()
 
-    report = json.loads((ws / "number_verification.json").read_text())
+    report = json.loads((ws / "number_verification.json").read_text(encoding="utf-8"))
     # After patch, no critical mismatches in the persisted report
     crits = [m for m in report["mismatches"] if m.get("severity") == "critical"]
     assert crits == []

@@ -243,7 +243,7 @@ def _amend(bundle: Path, rel: str, reason: str, kind: str | None = None) -> dict
         prov["amendments"][-1]["kind"] = kind
         from .core.export.provenance import dump
 
-        prov_path.write_text(dump(prov), encoding="utf-8")
+        prov_path.write_text(dump(prov), encoding="utf-8", newline="\n")
         entry["kind"] = kind
     return entry
 
@@ -370,7 +370,7 @@ def _save_zenodo_record(b: Path, record: dict[str, Any], sandbox: bool = False) 
     hosts[zen.service(sandbox)] = {k: v for k, v in record.items() if k != "sandbox"}
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps({"hosts": hosts}, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps({"hosts": hosts}, indent=2) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, p)
 
 
@@ -680,7 +680,7 @@ def _describe(
         text = tex.read_text(encoding="utf-8")
         fixed = point_bibliography(text, tex.parent)
         if fixed != text:
-            tex.write_text(fixed, encoding="utf-8")
+            tex.write_text(fixed, encoding="utf-8", newline="\n")
             _amend(b, "paper/paper.tex", "pointed at the bibliography the bundle ships (refs.bib)")
             print("✓ Pointed paper.tex at the bibliography the bundle ships (refs.bib)")
     for report in (b / "reproduction_report.md", b / "misc" / "reproduction_report.md"):
@@ -694,7 +694,7 @@ def _describe(
         raw = refs.read_text(encoding="utf-8")
         escaped = escape_bib(raw)
         if escaped != raw:
-            refs.write_text(escaped, encoding="utf-8")
+            refs.write_text(escaped, encoding="utf-8", newline="\n")
             _amend(b, "paper/refs.bib", "escaped & % # so the paper compiles")
             print("✓ Escaped & % # in refs.bib so the paper compiles")
 
@@ -1037,7 +1037,7 @@ def _describe(
         entry_root = Path(out).expanduser() if out else Path.cwd() / "e2er-registry-entry"
         entry = entry_root / REGISTRY_DIR / owner / f"{project}.json"
         entry.parent.mkdir(parents=True, exist_ok=True)
-        entry.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        entry.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
 
     agents = manifest["ai"]["agents"]
     print(f"✓ Bundle verified ({len(checks)} checks)")
@@ -1665,7 +1665,8 @@ def recompile_paper(bundle: Path) -> None:
             ["tectonic", "--untrusted", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
             cwd=work,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         produced = (work / "paper.pdf").is_file()
         missing = unresolved_citations(work) if produced else []
@@ -1720,13 +1721,13 @@ def _stamp_and_compile(
             "engine e2er uses) is not installed. Install it (https://tectonic-typesetting.github.io) and publish "
             "again; nothing was sent."
         )
-    tex.write_text(new, encoding="utf-8")
+    tex.write_text(new, encoding="utf-8", newline="\n")
     rels = ["paper/paper.tex"]
     if shutil.which("tectonic"):
         try:
             recompile_paper(bundle)
         except PublishError:
-            tex.write_text(old, encoding="utf-8")
+            tex.write_text(old, encoding="utf-8", newline="\n")
             raise
         rels.append("paper/paper.pdf")
     else:
@@ -2108,7 +2109,7 @@ def _write_readme(b: Path, **kw: Any) -> bool:
     new = readme_block(b, **kw) + (f"\n---\n\n{rest}" if rest.strip() else "")
     if new == old:
         return False
-    readme.write_text(new, encoding="utf-8")
+    readme.write_text(new, encoding="utf-8", newline="\n")
     _amend(b, "README.md", "the study's summary for its GitHub repository, at the top", kind="readme")
     return True
 

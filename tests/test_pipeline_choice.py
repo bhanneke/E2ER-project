@@ -48,7 +48,7 @@ def two_pipelines(tmp_path: Path, monkeypatch) -> Path:
     """A project-local pipelines dir, plus the builtin one."""
     local = tmp_path / "pipelines"
     local.mkdir()
-    (local / "theory.toml").write_text(SECOND_PIPELINE)
+    (local / "theory.toml").write_text(SECOND_PIPELINE, encoding="utf-8", newline="\n")
     builtin = Path(__file__).resolve().parents[1] / "pipelines"
     monkeypatch.setattr(spec, "search_paths", lambda project=None: [local, builtin])
     return local
@@ -78,7 +78,7 @@ def test_a_pipeline_that_does_not_parse_is_listed_not_hidden(tmp_path, monkeypat
     """A typo in a TOML file must not present as "my pipeline vanished"."""
     local = tmp_path / "pipelines"
     local.mkdir()
-    (local / "broken.toml").write_text("name = = broken")
+    (local / "broken.toml").write_text("name = = broken", encoding="utf-8", newline="\n")
     monkeypatch.setattr(spec, "search_paths", lambda project=None: [local])
 
     names = [c["name"] for c in _pipeline_choices()]
@@ -90,7 +90,7 @@ def test_a_pipeline_that_does_not_parse_is_listed_not_hidden(tmp_path, monkeypat
 def test_listing_pipelines_survives_a_broken_one(client, tmp_path, monkeypatch):
     local = tmp_path / "pipelines"
     local.mkdir()
-    (local / "broken.toml").write_text("this is not toml = = =")
+    (local / "broken.toml").write_text("this is not toml = = =", encoding="utf-8", newline="\n")
     monkeypatch.setattr(spec, "search_paths", lambda project=None: [local])
 
     assert client.get("/papers/new").status_code == 200
@@ -216,8 +216,8 @@ def test_the_postgres_migration_is_additive():
     migration = sqldir / "014_papers_pipeline.sql"
 
     assert migration.exists()
-    assert "ALTER TABLE papers" in migration.read_text()
-    assert "ADD COLUMN pipeline" in migration.read_text()
+    assert "ALTER TABLE papers" in migration.read_text(encoding="utf-8")
+    assert "ADD COLUMN pipeline" in migration.read_text(encoding="utf-8")
 
 
 def test_the_pipeline_column_is_not_constrained_to_a_fixed_list():
@@ -227,7 +227,7 @@ def test_the_pipeline_column_is_not_constrained_to_a_fixed_list():
     the prompts. Pipelines are user files, so the legal set is open.
     """
     sqldir = Path(__file__).resolve().parents[1] / "sql"
-    text = (sqldir / "014_papers_pipeline.sql").read_text()
+    text = (sqldir / "014_papers_pipeline.sql").read_text(encoding="utf-8")
 
     assert "CHECK" not in text.upper().replace("-- ", "").split("ALTER TABLE")[-1].upper()
 

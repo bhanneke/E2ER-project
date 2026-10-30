@@ -443,7 +443,7 @@ def write_summary(out_dir: Path, rows: list[dict], config: ExperimentConfig) -> 
         lines += variance
         lines.append("")
 
-    (out_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8")
+    (out_dir / "summary.md").write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def _provenance_lines(rows: list[dict]) -> list[str]:
@@ -615,7 +615,7 @@ def run_from_config(config: ExperimentConfig, out_dir: str | Path, monitor_secon
     identity = server_identity()
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "run_identity.json").write_text(json.dumps(identity, indent=2), encoding="utf-8")
+    (out / "run_identity.json").write_text(json.dumps(identity, indent=2), encoding="utf-8", newline="\n")
     warning = check_server_is_current(identity)
     if warning:
         print(f"WARNING: {warning}")

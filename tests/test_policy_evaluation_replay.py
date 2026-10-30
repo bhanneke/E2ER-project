@@ -132,11 +132,20 @@ def test_a_staggered_did_study_replays_to_the_end_with_its_design_and_results_ch
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout
     assert "[PASS] spec" in out.stdout  # the identified design: no fixed effects, clustered by unit
@@ -149,9 +158,15 @@ def test_a_staggered_did_study_replays_to_the_end_with_its_design_and_results_ch
     doc = json.loads(res.read_text(encoding="utf-8"))
     doc.pop("placebo")
     doc.pop("sensitivity")
-    res.write_text(json.dumps(doc), encoding="utf-8")
+    res.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
     out = subprocess.run(
-        [*cli, "verify", str(tampered)], cwd=study, env=env, capture_output=True, text=True, timeout=300
+        [*cli, "verify", str(tampered)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
     )
     assert "[FAIL] method checks" in out.stdout and "(g)" in out.stdout, out.stdout
 
@@ -162,7 +177,8 @@ def test_a_staggered_did_study_replays_to_the_end_with_its_design_and_results_ch
         cwd=study,
         env={**env, **uv_dirs},
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=900,
     )
     uv.check_installed(out.stdout)

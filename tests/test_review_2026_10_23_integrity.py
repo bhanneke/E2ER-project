@@ -31,12 +31,16 @@ def _two_sources(tmp_path: Path, estimation: dict | None = None) -> Path:
 
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"title": "Two", "paper_id": "p2", "governance": "full"}))
-    (ws / "paper_draft.tex").write_text(TWO_SOURCES_TEX)
-    (ws / "literature.bib").write_text("@article{smith2021, title={X}, doi={10.1/x}, year={2021}}\n")
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Two", "paper_id": "p2", "governance": "full"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(TWO_SOURCES_TEX, encoding="utf-8", newline="\n")
+    (ws / "literature.bib").write_text(
+        "@article{smith2021, title={X}, doi={10.1/x}, year={2021}}\n", encoding="utf-8", newline="\n"
+    )
     est = estimation or {"main": {"coefficients": {"treat": {"estimate": 12.5}}}}
-    (ws / "estimation_results.json").write_text(json.dumps(est))
-    (ws / "summary_statistics.json").write_text(json.dumps({"n_obs": 4321}))
+    (ws / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8", newline="\n")
+    (ws / "summary_statistics.json").write_text(json.dumps({"n_obs": 4321}), encoding="utf-8", newline="\n")
     write_results_script(ws)
     from src.core.pipeline.verify_numbers import verify_and_save
 
@@ -67,7 +71,7 @@ def test_a_fabricated_cell_with_a_left_out_file_fails(tmp_path: Path):
     bundle = _two_sources(tmp_path)
     (bundle / "results" / "summary_statistics.json").unlink()
     tex = bundle / "paper" / "paper.tex"
-    tex.write_text(tex.read_text().replace("12.5", "20.0"))
+    tex.write_text(tex.read_text(encoding="utf-8").replace("12.5", "20.0"), encoding="utf-8", newline="\n")
     c = _numbers(bundle, {LEFT["path"]: LEFT})
     assert c.status == FAIL and "20.0" in c.detail and "4321" not in c.detail
     checks = {x.name: x for x in _run_checks(bundle, False, {LEFT["path"]: LEFT})}
@@ -90,8 +94,10 @@ def _tables_ws(tmp_path: Path) -> tuple[Path, Path]:
     bundle, ws = tmp_path / "b", tmp_path / "ws"
     (bundle / "paper" / "tables").mkdir(parents=True)
     ws.mkdir()
-    (ws / "estimation_results.json").write_text(json.dumps({"rows": {"a": {"v": 1.25}}}))
-    (ws / "summary_statistics.json").write_text(json.dumps({"rows": {"a": {"v": 7.5}}}))
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"rows": {"a": {"v": 1.25}}}), encoding="utf-8", newline="\n"
+    )
+    (ws / "summary_statistics.json").write_text(json.dumps({"rows": {"a": {"v": 7.5}}}), encoding="utf-8", newline="\n")
     cols = [{"field": "v", "header": "V", "decimals": 2}]
     tables = [
         {"filename": "est.tex", "layout": "records", "source": "estimation_results.json", "path": "rows",
@@ -99,7 +105,7 @@ def _tables_ws(tmp_path: Path) -> tuple[Path, Path]:
         {"filename": "sum.tex", "layout": "records", "source": "summary_statistics.json", "path": "rows",
          "columns": cols},
     ]  # fmt: skip
-    (ws / "table_spec.json").write_text(json.dumps({"tables": tables}))
+    (ws / "table_spec.json").write_text(json.dumps({"tables": tables}), encoding="utf-8", newline="\n")
     render_tables(ws)
     for name in ("est.tex", "sum.tex"):
         shutil.copy2(ws / "tables" / name, bundle / "paper" / "tables" / name)
@@ -114,7 +120,9 @@ def test_a_table_of_a_left_out_file_is_skipped_and_any_other_that_differs_fails(
     c = _check_tables(bundle, ws, left)
     assert c.status == SKIP and "summary_statistics.json" in c.detail
     shipped = bundle / "paper" / "tables" / "est.tex"
-    shipped.write_text(shipped.read_text().replace("1.25", "9.99"))  # a fabricated cell in another table
+    shipped.write_text(
+        shipped.read_text(encoding="utf-8").replace("1.25", "9.99"), encoding="utf-8", newline="\n"
+    )  # a fabricated cell in another table
     shutil.rmtree(ws / "tables")
     c = _check_tables(bundle, ws, left)
     assert c.status == FAIL and "est.tex" in c.detail and "sum.tex" not in c.detail
@@ -186,9 +194,9 @@ def test_reproduce_refuses_an_edited_recipe(tmp_path: Path, capsys):
     from src.cli_reproduce import reproduce
 
     folder = _exported_study(tmp_path)
-    recipe = json.loads((folder / "reproduce.json").read_text())
+    recipe = json.loads((folder / "reproduce.json").read_text(encoding="utf-8"))
     recipe["steps"][0]["about"] = "something else"
-    (folder / "reproduce.json").write_text(json.dumps(recipe))
+    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     assert reproduce(str(folder), yes=True, sandbox=False) == 2
     out = capsys.readouterr().out
     assert "not the study as exported" in out and "reproduce.json" in out and "Reproduced" not in out
@@ -198,9 +206,9 @@ def test_reproduce_refuses_an_unlisted_recipe_and_edited_results(tmp_path: Path,
     from src.cli_reproduce import reproduce
 
     folder = _exported_study(tmp_path)
-    prov = json.loads((folder / "provenance.json").read_text())
+    prov = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
     del prov["files"]["reproduce.json"]
-    (folder / "provenance.json").write_text(json.dumps(prov))
+    (folder / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     assert reproduce(str(folder), yes=True, sandbox=False) == 2
     assert "unlisted (reproduce.json)" in capsys.readouterr().out
 
@@ -232,15 +240,21 @@ def _tables_study(tmp_path: Path) -> tuple[Path, Path]:
         {"filename": "sum.tex", "layout": "records", "source": "summary_statistics.json", "path": "rows",
          "columns": cols},
     ]  # fmt: skip
-    (folder / "results" / "table_spec.json").write_text(json.dumps({"tables": tables}))
-    (folder / "results" / "estimation_results.json").write_text(json.dumps({"rows": {"a": {"v": 1.25}}}))
-    (folder / "results" / "summary_statistics.json").write_text(json.dumps({"rows": {"a": {"v": 7.5}}}))
+    (folder / "results" / "table_spec.json").write_text(json.dumps({"tables": tables}), encoding="utf-8", newline="\n")
+    (folder / "results" / "estimation_results.json").write_text(
+        json.dumps({"rows": {"a": {"v": 1.25}}}), encoding="utf-8", newline="\n"
+    )
+    (folder / "results" / "summary_statistics.json").write_text(
+        json.dumps({"rows": {"a": {"v": 7.5}}}), encoding="utf-8", newline="\n"
+    )
     scratch = tmp_path / "scratch"
     shutil.copytree(folder / "results", scratch)
     render_tables(scratch)
     for name in ("est.tex", "sum.tex"):
         shutil.copy2(scratch / "tables" / name, folder / "paper" / "tables" / name)
-    (run_dir / "estimation_results.json").write_text(json.dumps({"rows": {"a": {"v": 1.25}}}))
+    (run_dir / "estimation_results.json").write_text(
+        json.dumps({"rows": {"a": {"v": 1.25}}}), encoding="utf-8", newline="\n"
+    )
     return folder, run_dir
 
 
@@ -280,8 +294,8 @@ def test_an_empty_compared_file_reproduces_nothing(tmp_path: Path):
 
     for doc in ({}, {"main": {}, "rows": []}):
         pub, new = tmp_path / "p.json", tmp_path / "n.json"
-        pub.write_text(json.dumps(doc))
-        new.write_text(json.dumps(doc))
+        pub.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
+        new.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
         fc = rp.compare_json(pub, new, "results/p.json", "n.json")
         assert fc.problem == rp.EMPTY and not fc.matches
         text, code = rp.verdict([fc], None, [])
@@ -295,10 +309,10 @@ def test_an_empty_compared_file_reproduces_nothing(tmp_path: Path):
 def _paper(tmp_path: Path, tex: str, files: dict[str, str]) -> Path:
     b = tmp_path / "b"
     (b / "paper").mkdir(parents=True)
-    (b / "paper" / "paper.tex").write_text(tex)
+    (b / "paper" / "paper.tex").write_text(tex, encoding="utf-8", newline="\n")
     for rel, text in files.items():
         (b / "paper" / rel).parent.mkdir(parents=True, exist_ok=True)
-        (b / "paper" / rel).write_text(text)
+        (b / "paper" / rel).write_text(text, encoding="utf-8", newline="\n")
     return b
 
 
@@ -332,7 +346,7 @@ def test_keys_resolve_in_every_named_bib_file(tmp_path: Path):
 def test_an_input_outside_the_paper_folder_is_not_read(tmp_path: Path):
     from src.cli_verify import _inlined
 
-    (tmp_path / "secret.tex").write_text("\\cite{outside}")
+    (tmp_path / "secret.tex").write_text("\\cite{outside}", encoding="utf-8", newline="\n")
     b = _paper(tmp_path, "\\input{../../secret}\n", {})
     assert "outside" not in _inlined(b / "paper" / "paper.tex", b / "paper")
 

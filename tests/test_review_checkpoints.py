@@ -46,7 +46,7 @@ def test_state_loads_legacy_file_without_new_keys(tmp_path: Path):
     # A state file written by an older version lacks approved_stages /
     # pending_review_stage — it must still load, with defaults.
     (tmp_path / ".pipeline_state.json").write_text(
-        '{"paper_id": "p", "mode": "single_pass", "completed_stages": ["initial"]}'
+        '{"paper_id": "p", "mode": "single_pass", "completed_stages": ["initial"]}', encoding="utf-8", newline="\n"
     )
     loaded = PipelineState.load(tmp_path, "p", "single_pass")
     assert loaded.completed_stages == ["initial"]

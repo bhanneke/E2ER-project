@@ -103,7 +103,7 @@ class FileToolHandler(ToolHandler):
             elif tool_name == "write_file":
                 p = self._resolve(tool_input["path"])
                 p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(tool_input["content"], encoding="utf-8")
+                p.write_text(tool_input["content"], encoding="utf-8", newline="\n")
                 return f"Written {len(tool_input['content'])} chars to {tool_input['path']}"
 
             elif tool_name == "edit_file":
@@ -115,7 +115,7 @@ class FileToolHandler(ToolHandler):
                 if old not in content:
                     return f"Error: old_string not found in {tool_input['path']}"
                 new_content = content.replace(old, tool_input["new_string"], 1)
-                p.write_text(new_content, encoding="utf-8")
+                p.write_text(new_content, encoding="utf-8", newline="\n")
                 return f"Edited {tool_input['path']}"
 
             elif tool_name == "list_directory":

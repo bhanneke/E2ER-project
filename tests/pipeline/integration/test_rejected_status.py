@@ -47,7 +47,9 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
                 "methodology": "empirical",
                 "current_stage": "idea",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     return ws
 
@@ -154,9 +156,13 @@ Variable & Coef & SE \\
 log RV & 0.80 & 0.10 \\
 \bottomrule
 \end{tabular}
-"""
+""",
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "estimation_results.json").write_text(json.dumps({"log_rv": {"coef": 0.50, "se": 0.10}}))
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"log_rv": {"coef": 0.50, "se": 0.10}}), encoding="utf-8", newline="\n"
+    )
 
     with patch(
         "src.core.strategist.runner.execute_parallel",
@@ -187,7 +193,9 @@ async def test_verify_numbers_no_source_files_runs_reviewers_anyway(tmp_path, mo
 \begin{tabular}{lc}
 x & 0.42 \\
 \end{tabular}
-"""
+""",
+        encoding="utf-8",
+        newline="\n",
     )
     # No estimation_results.json or summary_statistics.json files.
 
@@ -273,7 +281,9 @@ async def test_hard_reject_code_completes_the_run(tmp_path, mock_llm):
 
     # Write one reviewer file so the file-on-disk reader path picks up
     # at least one parseable score.
-    (ws / "review_technical.md").write_text("Technical review.\n\nOVERALL SCORE: 2/10\nRECOMMENDATION: Reject\n")
+    (ws / "review_technical.md").write_text(
+        "Technical review.\n\nOVERALL SCORE: 2/10\nRECOMMENDATION: Reject\n", encoding="utf-8", newline="\n"
+    )
 
     with (
         patch.object(

@@ -204,5 +204,5 @@ async def write_data_queries_sql(paper_id: str, output_path: Path) -> int:
         lines.append(row.get("query_sql", "").strip())
         lines.append("")
 
-    output_path.write_text("\n".join(lines), encoding="utf-8")
+    output_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
     return len(production)

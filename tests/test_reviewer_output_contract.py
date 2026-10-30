@@ -110,7 +110,7 @@ def _result(scores: list[ReviewScore]) -> AggregationResult:
 
 
 def _written(runner: PipelineRunner) -> dict:
-    return json.loads((runner._workspace / "review_aggregation.json").read_text())
+    return json.loads((runner._workspace / "review_aggregation.json").read_text(encoding="utf-8"))
 
 
 def test_aggregation_artifact_records_panel_completeness(tmp_path):
@@ -191,7 +191,7 @@ def test_salvaged_scores_are_marked_when_read_from_contributions(tmp_path):
 def test_scores_read_from_a_real_file_are_marked_file(tmp_path):
     runner = _runner(tmp_path)
     (runner._workspace / "review_writing.md").write_text(
-        "Solid.\n\nOVERALL SCORE: 6/10\nRECOMMENDATION: Minor Revision\n"
+        "Solid.\n\nOVERALL SCORE: 6/10\nRECOMMENDATION: Minor Revision\n", encoding="utf-8", newline="\n"
     )
     scores = runner._read_review_scores()
     assert [s.reviewer for s in scores] == ["writing_reviewer"]

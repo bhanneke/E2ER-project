@@ -47,10 +47,12 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
                 "methodology": "empirical",
                 "current_stage": "in_progress",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     # Rounds 2+ edit a draft: the guard applies once there is one to drift from.
-    (ws / "paper_draft.tex").write_text("\\section{Introduction}\n", encoding="utf-8")
+    (ws / "paper_draft.tex").write_text("\\section{Introduction}\n", encoding="utf-8", newline="\n")
     return ws
 
 
@@ -89,7 +91,7 @@ def _write_artifact(runner: PipelineRunner, specialist: str) -> None:
     if art:
         path = runner._workspace / art
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("ok")
+        path.write_text("ok", encoding="utf-8", newline="\n")
 
 
 # ---------------------------------------------------------------------------

@@ -244,7 +244,7 @@ def _normalize_output(workspace: Path, convention: ExecutionConvention) -> str:
         alt_path = workspace / alt
         if _is_populated(alt_path):
             try:
-                sidecar_path.write_text(alt_path.read_text(encoding="utf-8"), encoding="utf-8")
+                sidecar_path.write_text(alt_path.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
             except OSError as e:
                 logger.warning("post-specialist exec: could not normalize %s -> %s: %s", alt, convention.sidecar, e)
                 return ""
@@ -378,6 +378,7 @@ def maybe_execute_specialist_script(workspace: Path, specialist: str) -> Executi
             f"--- stdout ---\n{stdout}\n"
             f"--- stderr ---\n{stderr}\n",
             encoding="utf-8",
+            newline="\n",
         )
     except OSError as e:
         logger.warning("post-specialist exec: could not write %s: %s", convention.log, e)
@@ -622,7 +623,7 @@ def confirm_results_from_code(workspace: Path, specialist: str) -> dict[str, dic
             entry["same"] = False
             new.write_bytes(originals[n])  # as the specialist left it; the contract check reports it
             record[n] = entry
-        (workspace / RERUN_RECORD).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        (workspace / RERUN_RECORD).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
     except Exception as e:  # noqa: BLE001 — a check that cannot run must not break the step
         logger.warning("results check: could not run the script again: %s", e)
     return record

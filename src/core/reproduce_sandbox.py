@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .pipeline.sandbox import Limits, _docker_up, _image_present, _installed, _kill, docker_binary
+from .pipeline.sandbox import Limits, _docker_up, _image_present, _installed, _kill, bind_mount, docker_binary
 
 RUN_MOUNT = "/work/run"
 E2ER_MOUNT = "/opt/e2er-src"
@@ -188,11 +188,11 @@ def install_argv(
     if wheels is not None:
         argv += ["--network", "none"]
     argv += [
-        "--mount", f"type=bind,source={requirements.resolve()},target={_REQ_MOUNT},readonly",
-        "--mount", f"type=bind,source={guard.resolve()},target={_GUARD_MOUNT},readonly",
+        "--mount", bind_mount(requirements.resolve(), _REQ_MOUNT, readonly=True),
+        "--mount", bind_mount(guard.resolve(), _GUARD_MOUNT, readonly=True),
     ]  # fmt: skip
     if wheels is not None:
-        argv += ["--mount", f"type=bind,source={wheels.resolve()},target={_WHEELS_MOUNT},readonly"]
+        argv += ["--mount", bind_mount(wheels.resolve(), _WHEELS_MOUNT, readonly=True)]
     return [*argv, base, "sh", "-c", script]
 
 
@@ -213,10 +213,10 @@ def run_argv(box: Box, name: str, run_dir: Path, argv: list[str], env: dict[str,
         f"--pids-limit={lim.pids}", "--user", _user(),
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",
         "--tmpfs", f"/tmp:rw,exec,size={lim.tmp_gb}g",
-        "--mount", f"type=bind,source={run_dir.resolve()},target={RUN_MOUNT}",
+        "--mount", bind_mount(run_dir.resolve(), RUN_MOUNT),
     ]  # fmt: skip
     if box.e2er:
-        out += ["--mount", f"type=bind,source={e2er_source()},target={E2ER_MOUNT}/src,readonly"]
+        out += ["--mount", bind_mount(e2er_source(), f"{E2ER_MOUNT}/src", readonly=True)]
     for k, v in sorted(env.items()):
         out += ["-e", f"{k}={v}"]
     return [*out, "-w", RUN_MOUNT, box.image, *argv]
@@ -371,13 +371,13 @@ def _call_out(
     except subprocess.TimeoutExpired:
         if kill:
             _kill(runner, *kill)
-        log.write_text(f"stopped after {timeout:.0f} s\n", encoding="utf-8")
+        log.write_text(f"stopped after {timeout:.0f} s\n", encoding="utf-8", newline="\n")
         return 124, f"stopped after {timeout / 60:.0f} minutes", ""
     except OSError as e:
-        log.write_text(f"{e}\n", encoding="utf-8")
+        log.write_text(f"{e}\n", encoding="utf-8", newline="\n")
         return 127, str(e), ""
     out = cp.stdout.decode("utf-8", "replace") if isinstance(cp.stdout, bytes) else (cp.stdout or "")
     err = cp.stderr.decode("utf-8", "replace") if isinstance(cp.stderr, bytes) else (cp.stderr or "")
-    log.write_text(out + err, encoding="utf-8")
+    log.write_text(out + err, encoding="utf-8", newline="\n")
     tail = "\n".join((err + out).strip().splitlines()[-6:])
     return cp.returncode, tail, out

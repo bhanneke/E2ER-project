@@ -73,8 +73,8 @@ def _edit(passage: str, **kw) -> dict:
 def _workspace(tmp_path: Path, edits: list[dict], findings: list[Finding]) -> Path:
     import hashlib
 
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
-    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
+    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8", newline="\n")
     record = {
         "findings": [
             {
@@ -91,7 +91,7 @@ def _workspace(tmp_path: Path, edits: list[dict], findings: list[Finding]) -> Pa
         ],
         "draft_sha256": hashlib.sha256(DRAFT.encode()).hexdigest(),
     }
-    (tmp_path / REVISION_FINDINGS_FILE).write_text(json.dumps(record), encoding="utf-8")
+    (tmp_path / REVISION_FINDINGS_FILE).write_text(json.dumps(record), encoding="utf-8", newline="\n")
     return tmp_path
 
 
@@ -141,7 +141,7 @@ def test_a_corrected_passage_that_occurs_again_unchanged_is_left_open(tmp_path: 
     f = _finding(locations=(), target="section:results")
     draft = DRAFT.replace(DATA, DATA + " " + RESULTS)  # the same sentence in the data section too
     ws = _workspace(tmp_path, [_edit(RESULTS, target="section:results")], [f])
-    (ws / "paper_draft.tex").write_text(draft, encoding="utf-8")
+    (ws / "paper_draft.tex").write_text(draft, encoding="utf-8", newline="\n")
     (problem,) = _open(ws, [f])
     assert "occurs 1 more time(s) elsewhere in the draft, unchanged" in problem
 
@@ -158,7 +158,7 @@ def test_a_location_the_draft_does_not_contain_and_table_cells_are_not_checked(t
 def test_findings_about_another_draft_are_not_checked(tmp_path: Path):
     f = _finding()
     ws = _workspace(tmp_path, [_edit(RESULTS)], [f])
-    (ws / "paper_draft.tex").write_text(DRAFT + "\n% changed since\n", encoding="utf-8")
+    (ws / "paper_draft.tex").write_text(DRAFT + "\n% changed since\n", encoding="utf-8", newline="\n")
     assert all(c.ok for c in check_specialist_artifacts(ws, "patch_revisor"))
 
 
@@ -199,13 +199,15 @@ async def test_the_dispatch_records_the_findings_and_tells_the_revisor_to_fix_ev
         events.append((kind, kw.get("payload")))
 
     monkeypatch.setattr("src.db.events.log_event", _log_event)
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
     seen: dict = {}
 
     async def _run(order, *a, **kw):
         seen["focus"] = order.focus
         # The revisor fixes one passage of three (the live run's failure), on every attempt.
-        (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps([_edit(RESULTS)]), encoding="utf-8")
+        (tmp_path / "paper_draft.tex.edits.json").write_text(
+            json.dumps([_edit(RESULTS)]), encoding="utf-8", newline="\n"
+        )
         return Contribution(paper_id="p", specialist="patch_revisor", output="")
 
     monkeypatch.setattr("src.core.specialists.dispatcher.run_with_attempts", _run)

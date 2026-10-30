@@ -512,7 +512,7 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
     for text in texts:
         with tempfile.TemporaryDirectory() as td:
             scratch = Path(td)
-            (scratch / "provenance.json").write_text(text, encoding="utf-8")
+            (scratch / "provenance.json").write_text(text, encoding="utf-8", newline="\n")
             if (bundle / "e2er.json").is_file():
                 shutil.copy2(bundle / "e2er.json", scratch / "e2er.json")
             if (bundle / ".e2er" / "link.json").is_file():
@@ -755,7 +755,7 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
         shutil.copy2(bundle / "data" / "data_dictionary.json", ws / "data_dictionary.json")
     template = ((_load_json(bundle / "provenance.json") or {}).get("run") or {}).get("template")
     if template and not (ws / "manifest.json").exists():
-        (ws / "manifest.json").write_text(json.dumps({"pipeline": template}), encoding="utf-8")
+        (ws / "manifest.json").write_text(json.dumps({"pipeline": template}), encoding="utf-8", newline="\n")
     # A text study's checks recount the corpus: its design, the corpus (data.db) and
     # the word lists the design names (stop words, lemmas, dictionaries, lexicons).
     if (bundle / "design" / "corpus_design.json").is_file():

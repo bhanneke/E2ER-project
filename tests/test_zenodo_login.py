@@ -152,17 +152,17 @@ def test_nothing_pasted_stores_nothing_and_asks_zenodo_nothing(monkeypatch, caps
 
 def test_without_a_keychain_the_credentials_file_mode_600(monkeypatch, capsys, fake, creds, browser):
     monkeypatch.setattr(pc, "_keyring", lambda: None)
-    creds.write_text(json.dumps({"https://e2er.org": "e2er_keep"}))
+    creds.write_text(json.dumps({"https://e2er.org": "e2er_keep"}), encoding="utf-8", newline="\n")
     paste(monkeypatch, TOKEN)
     assert cli_zenodo.login() == 0
     assert str(creds) in capsys.readouterr().out
-    assert json.loads(creds.read_text()) == {"https://e2er.org": "e2er_keep", "zenodo.org": TOKEN}
+    assert json.loads(creds.read_text(encoding="utf-8")) == {"https://e2er.org": "e2er_keep", "zenodo.org": TOKEN}
     assert owner_only(creds)
     assert zen.load_token() == TOKEN and zen.load_token(sandbox=True) is None
     # A keychain that refuses (no GUI session) falls back the same way.
     monkeypatch.setattr(pc, "_keyring", lambda: FakeKeyring(refuse=True))
     assert zen.save_token(TOKEN, sandbox=True) == str(creds)
-    assert json.loads(creds.read_text())["sandbox.zenodo.org"] == TOKEN
+    assert json.loads(creds.read_text(encoding="utf-8"))["sandbox.zenodo.org"] == TOKEN
 
 
 def test_status_says_whether_a_token_is_stored_and_works(monkeypatch, capsys, fake, keychain):
@@ -185,12 +185,12 @@ def test_status_says_whether_a_token_is_stored_and_works(monkeypatch, capsys, fa
 def test_logout_removes_it_from_keychain_and_file(monkeypatch, capsys, keychain, creds):
     keychain.store[("zenodo.org", "token")] = TOKEN
     keychain.store[("sandbox.zenodo.org", "token")] = "sandbox-one"
-    creds.write_text(json.dumps({"zenodo.org": TOKEN, "https://e2er.org": "e2er_keep"}))
+    creds.write_text(json.dumps({"zenodo.org": TOKEN, "https://e2er.org": "e2er_keep"}), encoding="utf-8", newline="\n")
     assert cli_zenodo.logout() == 0
     out = capsys.readouterr().out
     assert "the system keychain" in out and str(creds) in out and TOKEN not in out
     assert keychain.store == {("sandbox.zenodo.org", "token"): "sandbox-one"}
-    assert json.loads(creds.read_text()) == {"https://e2er.org": "e2er_keep"}
+    assert json.loads(creds.read_text(encoding="utf-8")) == {"https://e2er.org": "e2er_keep"}
     assert owner_only(creds)
     assert cli_zenodo.logout() == 0
     assert "No zenodo.org token was stored" in capsys.readouterr().out
@@ -213,7 +213,9 @@ def test_the_cli_dispatches_zenodo(monkeypatch):
 def test_preregister_deposit_uses_the_stored_token(monkeypatch, tmp_path, keychain, capsys):
     from src.core.pipeline import preregistration as pr
 
-    (tmp_path / pr.LOCK_FILE).write_text(json.dumps({"file": "preregistration.md", "sha256": "a" * 64}))
+    (tmp_path / pr.LOCK_FILE).write_text(
+        json.dumps({"file": "preregistration.md", "sha256": "a" * 64}), encoding="utf-8", newline="\n"
+    )
     assert cli_review.deposit(str(tmp_path), zenodo=True, sandbox=True) == 1
     assert "e2er zenodo login --sandbox" in capsys.readouterr().err
     calls: list[Any] = []

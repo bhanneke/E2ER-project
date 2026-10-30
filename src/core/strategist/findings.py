@@ -433,6 +433,8 @@ def write_abstract_findings(workspace: Path, findings: list[Finding]) -> None:
 
     doc = {"findings": [asdict(f) for f in findings]}
     try:
-        (workspace / FINDINGS_FILE).write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        (workspace / FINDINGS_FILE).write_text(
+            json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+        )
     except OSError:
         pass

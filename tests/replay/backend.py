@@ -273,7 +273,7 @@ class ReplayBackend(LLMBackend):
             if old not in text:
                 raise AssertionError(f"replay override: {old!r} not found in {specialist}/{rel}")
             text = text.replace(old, new)
-        dest.write_text(text, encoding="utf-8")
+        dest.write_text(text, encoding="utf-8", newline="\n")
 
     def _strategist(self, system: str, messages: list[dict[str, Any]], t0: float) -> ToolLoopResult:
         prompt = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
@@ -349,6 +349,6 @@ def _merge(src: Path, dest: Path) -> None:
 
         seen = {key(x) for x in mine.get("loads") or []}
         mine["loads"] = (mine.get("loads") or []) + [x for x in recorded.get("loads") or [] if key(x) not in seen]
-        dest.write_text(json.dumps(mine, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        dest.write_text(json.dumps(mine, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         return
     raise AssertionError(f"replay: no merge for {dest.name}")

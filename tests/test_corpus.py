@@ -685,7 +685,7 @@ def test_export_writes_schema_valid_records(tmp_path, db):
     written = export_corpus(db, tmp_path / "out")
 
     assert written == 2
-    index = json.loads((tmp_path / "out" / "index.json").read_text())
+    index = json.loads((tmp_path / "out" / "index.json").read_text(encoding="utf-8"))
     assert index["papers"] == 2
     assert len(index["index"]) == 2
 
@@ -697,7 +697,7 @@ def test_export_writes_schema_valid_records(tmp_path, db):
 
 def test_an_empty_corpus_exports_cleanly(tmp_path, db):
     assert export_corpus(db, tmp_path / "out") == 0
-    assert json.loads((tmp_path / "out" / "index.json").read_text())["papers"] == 0
+    assert json.loads((tmp_path / "out" / "index.json").read_text(encoding="utf-8"))["papers"] == 0
 
 
 # ---------------------------------------------------------------------------

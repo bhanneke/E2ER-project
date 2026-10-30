@@ -156,7 +156,9 @@ def test_python_and_the_sites_javascript_agree_on_tricky_documents():
         docs[f"live_{f.stem}"] = json.loads(f.read_text(encoding="utf-8"))
     # What travels to the site is JSON text; Python's own document is what it hashes.
     wire = {name: json.dumps(doc, ensure_ascii=False) for name, doc in docs.items()}
-    res = subprocess.run(["node", "-e", JS], input=json.dumps(wire), capture_output=True, text=True, timeout=60)
+    res = subprocess.run(
+        ["node", "-e", JS], input=json.dumps(wire), capture_output=True, encoding="utf-8", errors="replace", timeout=60
+    )
     assert res.returncode == 0, res.stderr
     js = json.loads(res.stdout)
     for name, doc in docs.items():

@@ -25,7 +25,9 @@ from src.core.dossier import dossier_id, short_id
 from tests.test_publish_data_terms import plain_bundle  # noqa: F401 — fixture
 from tests.test_publish_github import ID, _git, github, who_study  # noqa: F401 — fixtures
 
-SCHEMA = json.loads((Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text())
+SCHEMA = json.loads(
+    (Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text(encoding="utf-8")
+)
 SITE = "https://e2er.example"
 
 
@@ -109,7 +111,7 @@ def test_a_new_version_on_github_carries_over_the_dossier_with_its_steps(
     capsys,
 ):
     first = _published_without_db(who_study, tmp_path, platform)
-    v1_manifest = json.loads((who_study / "e2er.json").read_text())
+    v1_manifest = json.loads((who_study / "e2er.json").read_text(encoding="utf-8"))
     capsys.readouterr()
     rc = publish(
         str(who_study),
@@ -141,7 +143,7 @@ def test_a_new_version_on_github_carries_over_the_dossier_with_its_steps(
         "published again with files on GitHub; run database not available, dossier carried over from version 1"
     )
     # e2er.json describes the run as version 1 did (recorded agents), and matches the site's format.
-    m = json.loads((who_study / "e2er.json").read_text())
+    m = json.loads((who_study / "e2er.json").read_text(encoding="utf-8"))
     assert m["ai"] == v1_manifest["ai"] and m["ai"]["agents_source"] == "recorded"
     assert m["components"] == v1_manifest["components"]
     d = body["dossier"]
@@ -152,8 +154,8 @@ def test_a_new_version_on_github_carries_over_the_dossier_with_its_steps(
     bare = github / "ada" / "demos.git"
     pushed = json.loads(_git("--git-dir", str(bare), "show", "main:who/e2er.json"))
     assert pushed["dossier"]["doc"]["workflow"] == first["workflow"]
-    assert short_id(d["id"]) in (who_study / "paper" / "paper.tex").read_text()
-    link = json.loads((who_study / ".e2er" / "link.json").read_text())
+    assert short_id(d["id"]) in (who_study / "paper" / "paper.tex").read_text(encoding="utf-8")
+    link = json.loads((who_study / ".e2er" / "link.json").read_text(encoding="utf-8"))
     assert link["version"] == 2 and link["dossier_id"] == d["id"]
 
 

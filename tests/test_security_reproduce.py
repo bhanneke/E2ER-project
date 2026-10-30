@@ -31,16 +31,16 @@ def _study(tmp_path: Path, script: str, *, requirements: str = "# none\n", extra
     folder = tmp_path / "study"
     (folder / "code").mkdir(parents=True)
     (folder / "results").mkdir()
-    (folder / "code" / "run.py").write_text(script, encoding="utf-8")
-    (folder / "code" / "requirements.txt").write_text(requirements, encoding="utf-8")
-    (folder / "results" / "estimation_results.json").write_text('{"a": 1}', encoding="utf-8")
+    (folder / "code" / "run.py").write_text(script, encoding="utf-8", newline="\n")
+    (folder / "code" / "requirements.txt").write_text(requirements, encoding="utf-8", newline="\n")
+    (folder / "results" / "estimation_results.json").write_text('{"a": 1}', encoding="utf-8", newline="\n")
     recipe = {
         "schema": rp.SCHEMA,
         "requirements": "code/requirements.txt",
         "steps": [*(extra_steps or []), {"run": ["python", "code/run.py"]}],
         "compare": [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}],
     }
-    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8")
+    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     return folder
 
 
@@ -117,11 +117,11 @@ def test_without_docker_nothing_runs_unless_no_sandbox(tmp_path, capsys, monkeyp
 
 def test_the_reload_steps_ask_on_their_own(tmp_path, monkeypatch):
     folder = _study(tmp_path, "print(1)\n")
-    recipe = json.loads((folder / rp.RECIPE_FILE).read_text())
-    (folder / "code" / "get_data.py").write_text("print('load')\n")
+    recipe = json.loads((folder / rp.RECIPE_FILE).read_text(encoding="utf-8"))
+    (folder / "code" / "get_data.py").write_text("print('load')\n", encoding="utf-8", newline="\n")
     recipe["steps"].insert(0, {"run": ["python", "code/get_data.py"]})
     recipe["inputs"] = [{"path": "data/x.csv", "sha256": "0" * 64, "reload": "get_data.py"}]
-    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe))
+    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     monkeypatch.setattr(rs, "available", lambda runner=None: (None, "no docker"))
     monkeypatch.setattr(cr, "_interactive", lambda: True)
     answers = iter(["y", "n"])
@@ -163,7 +163,7 @@ def test_the_reload_steps_ask_on_their_own(tmp_path, monkeypatch):
 )
 def test_installer_options_and_url_requirements_are_refused(tmp_path, line):
     req = tmp_path / "r.txt"
-    req.write_text(f"numpy==1.26.4\n{line}\n")
+    req.write_text(f"numpy==1.26.4\n{line}\n", encoding="utf-8", newline="\n")
     assert rp.requirements_problems(req), line
 
 
@@ -173,7 +173,9 @@ def test_a_hashed_lock_and_plain_pins_pass(tmp_path):
         "# a lock\n"
         "numpy==1.26.4 \\\n    --hash=sha256:" + "a" * 64 + " \\\n    --hash=sha256:" + "b" * 64 + "\n"
         "pandas[excel]>=2.0,<3 ; python_version >= '3.10'\n"
-        "scipy~=1.11\n"
+        "scipy~=1.11\n",
+        encoding="utf-8",
+        newline="\n",
     )
     assert rp.requirements_problems(req) == []
     assert rp.requirement_lines(req) == [
@@ -186,7 +188,7 @@ def test_a_hashed_lock_and_plain_pins_pass(tmp_path):
 def test_a_symbolic_link_in_the_study_folder_is_refused(tmp_path, capsys):
     secret = tmp_path / "outside" / "id_rsa"
     secret.parent.mkdir()
-    secret.write_text("PRIVATE")
+    secret.write_text("PRIVATE", encoding="utf-8", newline="\n")
     folder = _study(tmp_path, "print(1)\n")
     (folder / "code" / "key").symlink_to(secret)
     assert reproduce(str(folder), yes=True, sandbox=False) == 2
@@ -258,7 +260,7 @@ def test_the_steps_get_an_empty_home_and_no_credentials(tmp_path, monkeypatch):
 def test_no_sandbox_steps_cannot_read_the_users_e2er_credentials(tmp_path, monkeypatch, capsys):
     real_home = tmp_path / "realhome"
     (real_home / ".e2er").mkdir(parents=True)
-    (real_home / ".e2er" / "credentials.json").write_text('{"token": "e2er_FAKE"}')
+    (real_home / ".e2er" / "credentials.json").write_text('{"token": "e2er_FAKE"}', encoding="utf-8", newline="\n")
     monkeypatch.setenv("HOME", str(real_home))
     script = (
         "import json, os\n"
@@ -267,11 +269,13 @@ def test_no_sandbox_steps_cannot_read_the_users_e2er_credentials(tmp_path, monke
         "json.dump(out, open('estimation_results.json', 'w'))\n"
     )
     folder = _study(tmp_path, script)
-    (folder / "results" / "estimation_results.json").write_text('{"a": 1, "seen": false}')
+    (folder / "results" / "estimation_results.json").write_text(
+        '{"a": 1, "seen": false}', encoding="utf-8", newline="\n"
+    )
     reproduce(str(folder), yes=True, sandbox=False, keep=True)
     out = capsys.readouterr().out
     run = Path(out.split("The run folder is kept: ")[1].split()[0])
-    produced = json.loads((run / "estimation_results.json").read_text())
+    produced = json.loads((run / "estimation_results.json").read_text(encoding="utf-8"))
     shutil.rmtree(run, ignore_errors=True)
     assert produced["seen"] is False and produced["home"].endswith(".e2er-home")
 
@@ -297,7 +301,7 @@ class FakeDocker:
 def test_the_sandbox_runs_each_step_in_a_locked_container(tmp_path, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-FAKE")
     folder = _study(tmp_path, "print(1)\n", requirements="numpy==1.26.4\n")
-    (folder / "code" / "get_data.py").write_text("print('load')\n")
+    (folder / "code" / "get_data.py").write_text("print('load')\n", encoding="utf-8", newline="\n")
     recipe = rp.load_recipe(folder)
     recipe["steps"].insert(0, {"run": ["python", "code/get_data.py"]})
     recipe["inputs"] = [{"path": "data/x.csv", "sha256": "0" * 64, "reload": "get_data.py"}]
@@ -336,7 +340,7 @@ def test_the_sandbox_runs_each_step_in_a_locked_container(tmp_path, monkeypatch)
 
 def test_a_declined_reload_step_gets_no_network_in_the_sandbox(tmp_path):
     folder = _study(tmp_path, "print(1)\n")
-    (folder / "code" / "get_data.py").write_text("print('load')\n")
+    (folder / "code" / "get_data.py").write_text("print('load')\n", encoding="utf-8", newline="\n")
     recipe = rp.load_recipe(folder)
     recipe["steps"].insert(0, {"run": ["python", "code/get_data.py"]})
     recipe["inputs"] = [{"path": "data/x.csv", "sha256": "0" * 64, "reload": "get_data.py"}]
@@ -369,7 +373,9 @@ def test_a_real_sandbox_run_has_no_network_and_no_home(tmp_path, capsys):
         " open('estimation_results.json', 'w'))\n"
     )
     folder = _study(tmp_path, script)
-    (folder / "results" / "estimation_results.json").write_text('{"a": 1, "net": false, "home": "/tmp", "root": false}')
+    (folder / "results" / "estimation_results.json").write_text(
+        '{"a": 1, "net": false, "home": "/tmp", "root": false}', encoding="utf-8", newline="\n"
+    )
     assert reproduce(str(folder), yes=True, sandbox=True) == 0, capsys.readouterr().out
 
 

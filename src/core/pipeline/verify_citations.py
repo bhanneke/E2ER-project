@@ -730,10 +730,7 @@ async def verify_and_save(
     """
     report = await verify(draft_path, bib_path=bib_path, strict=strict)
     output_path = workspace / "citation_integrity.json"
-    output_path.write_text(
-        json.dumps(report.to_dict(), indent=2, default=str),
-        encoding="utf-8",
-    )
+    output_path.write_text(json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8", newline="\n")
     logger.info(
         "verify_citations: verified=%d unverifiable=%d missing_in_bib=%d total=%d "
         "bibbed_uncited=%d passed=%s strict=%s",

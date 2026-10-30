@@ -135,7 +135,11 @@ def _run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None 
             check_github()
         except RefusedInTestError as e:
             raise GitHubError(str(e)) from e
-    return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
+    # By its full path: on Windows a program found through PATHEXT (gh.exe, a .cmd shim) is started only that way.
+    exe = shutil.which(cmd[0], path=(env or os.environ).get("PATH")) or cmd[0]
+    return subprocess.run(
+        [exe, *cmd[1:]], cwd=cwd, env=env, capture_output=True, encoding="utf-8", errors="replace", timeout=600
+    )
 
 
 def _last_line(proc: subprocess.CompletedProcess) -> str:
@@ -470,5 +474,5 @@ def save_record(bundle: Path, record: dict[str, Any]) -> Path:
     """``.e2er/github.json``: where the files went, at which commit (a local record, never published)."""
     p = bundle / RECORD
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    p.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
     return p

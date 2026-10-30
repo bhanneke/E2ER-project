@@ -25,6 +25,7 @@ from src.core import reproduce as rp
 from src.core.export import package as pkg
 from src.core.export.structured import export_paper
 from src.core.specialists.post_execution import _run_recorded
+from tests.platform_help import fake_program
 
 RAW_ROWS = "source_id,parallax,ruwe\n1,7.3,1.0\n2,7.4,2.0\n3,7.2,1.1\n4,0.5,1.0\n"
 
@@ -71,8 +72,10 @@ print(json.dumps({"saved_to": "data/" + name}))
 def _gaia_workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "workspaces" / "2026-10-14-pleiades"
     (ws / "data").mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-gaia", "title": "Pleiades"}), encoding="utf-8")
-    (ws / "data" / "gaia_dr3.csv").write_text(RAW_ROWS, encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-gaia", "title": "Pleiades"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "data" / "gaia_dr3.csv").write_text(RAW_ROWS, encoding="utf-8", newline="\n")
     load = {
         "connector": "gaia",
         "dataset": "Gaia Data Release 3",
@@ -82,9 +85,9 @@ def _gaia_workspace(tmp_path: Path) -> Path:
         "request": {"command": "query", "adql": "SELECT source_id, parallax, ruwe FROM gaiadr3.gaia_source"},
         "retrieved_at": "2026-10-13T21:02:56Z",
     }
-    (ws / "data_sources.json").write_text(json.dumps({"loads": [load]}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": [load]}), encoding="utf-8", newline="\n")
     for name, text in (("clean_gaia.py", CLEAN), ("run_estimation.py", ESTIMATE)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 60, by="e2er-run") == 0
     return ws
 
@@ -92,8 +95,7 @@ def _gaia_workspace(tmp_path: Path) -> Path:
 @pytest.fixture
 def rerun_here(monkeypatch, tmp_path):
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FAKE_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FAKE_E2ER_DATA)
 
     def make_environment(run_dir, recipe, folder, logs):
         return Path(sys.executable), {"python": sys.version.split()[0], "packages": {}, "installer": "tests"}
@@ -154,7 +156,7 @@ def test_an_older_export_gets_the_rebuild_step_from_the_package(tmp_path, rerun_
     recipe["steps"] = [s for s in recipe["steps"] if not s.get("when_missing")]
     for i in recipe["inputs"]:
         i.pop("rebuild", None)
-    path.write_text(json.dumps(recipe), encoding="utf-8")
+    path.write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     from src.core.export.provenance import write_provenance
 
     prov = json.loads((folder / "provenance.json").read_text(encoding="utf-8"))
@@ -172,21 +174,25 @@ def test_derived_data_is_found_transitively_and_unrelated_files_are_not(tmp_path
     (tmp_path / "data").mkdir()
     (tmp_path / "code").mkdir()
     loads = [{"connector": "yfinance", "saved_to": "data/prices.csv"}]
-    (tmp_path / "data" / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (tmp_path / "data" / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     for name in ("prices.csv", "returns.csv", "panel.parquet", "weather.csv"):
-        (tmp_path / "data" / name).write_text("x\n", encoding="utf-8")
+        (tmp_path / "data" / name).write_text("x\n", encoding="utf-8", newline="\n")
     (tmp_path / "code" / "a.py").write_text(
         'import os\nimport pandas as pd\nIN = os.path.join("data", "prices.csv")\n'
         'pd.read_csv(IN).pct_change().to_csv("data/returns.csv")\n',
         encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / "code" / "b.py").write_text(
         'import pandas as pd\nfrom pathlib import Path\nOUT = Path("data") / "panel.parquet"\n'
         'pd.read_csv("data/returns.csv").to_parquet(OUT)\n',
         encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / "code" / "c.py").write_text(
-        'import pandas as pd\npd.read_csv("data/raw_weather.csv").to_csv("data/weather.csv")\n', encoding="utf-8"
+        'import pandas as pd\npd.read_csv("data/raw_weather.csv").to_csv("data/weather.csv")\n',
+        encoding="utf-8",
+        newline="\n",
     )
     found = {d.path: d for d in dd.derived(tmp_path)}
     assert set(found) == {"data/returns.csv", "data/panel.parquet"}
@@ -230,7 +236,7 @@ def test_publish_treats_derived_data_like_the_sources_and_says_when_it_cannot_be
     for i in recipe["inputs"]:
         i.pop("rebuild", None)
     recipe["files"].pop("clean_gaia.py", None)
-    path.write_text(json.dumps(recipe), encoding="utf-8")
+    path.write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     from src.core.export.provenance import write_provenance
 
     write_provenance(
@@ -257,7 +263,7 @@ def _plant(folder: Path, left: list[str]) -> None:
         "format": pkg.FORMAT,
         "left_out": [{"path": p, "reason": "packed with --no-data", "rebuilt_by": None} for p in left],
     }
-    (folder / pkg.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / pkg.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
 
 
 def test_a_planted_manifest_does_not_excuse_a_missing_data_file(tmp_path):

@@ -38,7 +38,13 @@ def reproduce_env() -> dict[str, str]:
     uv_dirs = {"UV_OFFLINE": "1"}
     for var, cmd in (("UV_CACHE_DIR", "cache"), ("UV_PYTHON_INSTALL_DIR", "python")):
         # The test's HOME is a fresh folder: point uv at the real cache and Pythons.
-        found = subprocess.run(["uv", cmd, "dir"], capture_output=True, text=True, env={**os.environ, "NO_COLOR": "1"})
+        found = subprocess.run(
+            ["uv", cmd, "dir"],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, "NO_COLOR": "1"},
+        )
         if found.returncode == 0 and found.stdout.strip():
             uv_dirs[var] = found.stdout.strip()
     return uv_dirs

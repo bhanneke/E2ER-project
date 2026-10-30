@@ -73,7 +73,7 @@ def _snapshot(b: Path) -> dict[str, bytes]:
 
 
 def _manifest(b: Path) -> dict:
-    return json.loads((b / "e2er.json").read_text())
+    return json.loads((b / "e2er.json").read_text(encoding="utf-8"))
 
 
 # ── 1: the run's database is found, checked and required ─────────────────────
@@ -115,7 +115,7 @@ def test_no_db_publishes_loudly_and_the_dossier_and_footnote_say_the_steps_are_m
     assert "WARNING: --no-db" in capsys.readouterr().out
     doc = _manifest(bundle)["dossier"]["doc"]
     assert doc["workflow"] == [] and doc["run"]["workflow_recorded"] is False and doc["e2er"]["commit"] is None
-    tex = (bundle / "paper" / "paper.tex").read_text()
+    tex = (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
     assert "the steps of the run are not recorded" in tex and "lists every step" not in tex
 
 
@@ -125,7 +125,11 @@ def test_no_db_publishes_loudly_and_the_dossier_and_footnote_say_the_steps_are_m
 def test_a_folder_edited_after_export_is_refused_before_anything_changes(bundle: Path, tmp_path: Path, capsys):
     make_run_db(tmp_path / "study", paper_id_of(bundle))
     tex = bundle / "paper" / "paper.tex"
-    tex.write_text(tex.read_text().replace("\\begin{document}", "\\begin{document}\nWe find a huge effect.", 1))
+    tex.write_text(
+        tex.read_text(encoding="utf-8").replace("\\begin{document}", "\\begin{document}\nWe find a huge effect.", 1),
+        encoding="utf-8",
+        newline="\n",
+    )
     before = _snapshot(bundle)
     assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 1
     out = capsys.readouterr().out
@@ -135,9 +139,11 @@ def test_a_folder_edited_after_export_is_refused_before_anything_changes(bundle:
 
 def test_each_change_publish_makes_keeps_the_exported_fingerprint(bundle: Path, tmp_path: Path):
     make_run_db(tmp_path / "study", paper_id_of(bundle))
-    exported = json.loads((bundle / "provenance.json").read_text())["files"]["paper/paper.tex"]["sha256"]
+    exported = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))["files"]["paper/paper.tex"][
+        "sha256"
+    ]
     assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     tex_amendments = [a for a in prov["amendments"] if a["path"] == "paper/paper.tex"]
     assert tex_amendments[0]["sha256_before"] == exported
     assert tex_amendments[-1]["sha256_after"] == _sha(bundle / "paper" / "paper.tex")
@@ -145,7 +151,7 @@ def test_each_change_publish_makes_keeps_the_exported_fingerprint(bundle: Path, 
     assert not any(c.status == FAIL for c in _run_checks(bundle, online=False))
     # publishing again changes nothing and still verifies
     assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
-    assert json.loads((bundle / "provenance.json").read_text())["amendments"] == prov["amendments"]
+    assert json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))["amendments"] == prov["amendments"]
 
 
 # ── 3: Zenodo: the id is the document's, irreversible steps last, retries reuse ─
@@ -249,9 +255,9 @@ def test_retrying_after_a_server_error_reuses_the_deposits_and_the_dossier(
 def test_a_pdf_compiled_by_publish_is_added_to_provenance(bundle: Path, tmp_path: Path, monkeypatch):
     make_run_db(tmp_path / "study", paper_id_of(bundle))
     (bundle / "paper" / "paper.pdf").unlink()
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     del prov["files"]["paper/paper.pdf"]
-    (bundle / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (bundle / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     import subprocess
 
     def tectonic(cmd, cwd, **kw):
@@ -262,7 +268,7 @@ def test_a_pdf_compiled_by_publish_is_added_to_provenance(bundle: Path, tmp_path
     monkeypatch.setattr("src.cli_publish.subprocess.run", tectonic)
     monkeypatch.setattr("src.cli_publish.unresolved_citations", lambda work: [])
     assert publish(str(bundle), **ARGS, name="Ada Lovelace", out=str(tmp_path / "e"), yes=True) == 0
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     assert prov["files"]["paper/paper.pdf"]["sha256"] == _sha(bundle / "paper" / "paper.pdf")
     [added] = [a for a in prov["amendments"] if a["path"] == "paper/paper.pdf"]
     assert added["sha256_before"] is None and added["kind"] == "stamp"
@@ -278,7 +284,9 @@ def _repl_bundle(tmp_path: Path) -> Path:
 
     ws = tmp_path / "study" / "workspaces" / "ws"
     shutil.copytree(ROOT / "tests" / "fixtures" / "replication_demo", ws)
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n")
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\author{X}\\begin{document}R\\end{document}\n", encoding="utf-8", newline="\n"
+    )
     assert check_reproduction(ws).passed
     b = export_paper(ws, tmp_path / "study" / "exports", date_str="20260930", template="replication")
     make_run_db(tmp_path / "study", paper_id_of(b), workspace=ws)
@@ -290,38 +298,44 @@ def test_a_changed_wording_replaces_the_disclaimer_and_no_purpose_removes_it(tmp
     from src.core.demonstration import mark_report
 
     p = tmp_path / "r.md"
-    p.write_text("\ufeff# Report\n")
+    p.write_text("\ufeff# Report\n", encoding="utf-8", newline="\n")
     assert mark_report(p, "replication") and not mark_report(p, "replication")
-    assert p.read_text().startswith("\ufeff<!-- e2er:disclaimer begin -->")
+    assert p.read_text(encoding="utf-8").startswith("\ufeff<!-- e2er:disclaimer begin -->")
     monkeypatch.setitem(demo.DISCLAIMERS, "replication", "Demonstration. New wording.")
     assert mark_report(p, "replication")
-    assert p.read_text().count("Demonstration.") == 1 and "New wording" in p.read_text()
+    assert p.read_text(encoding="utf-8").count("Demonstration.") == 1 and "New wording" in p.read_text(encoding="utf-8")
     assert mark_report(p, "replication", purpose=None)
-    assert p.read_text() == "\ufeff# Report\n"
+    assert p.read_text(encoding="utf-8") == "\ufeff# Report\n"
     old = tmp_path / "old.md"
-    old.write_text("> Demonstration. This reproduction was run as is (older wording).\n\n# Report\n")
-    assert mark_report(old, "replication") and old.read_text().count("Demonstration.") == 1
+    old.write_text(
+        "> Demonstration. This reproduction was run as is (older wording).\n\n# Report\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    assert mark_report(old, "replication") and old.read_text(encoding="utf-8").count("Demonstration.") == 1
 
 
 def test_republishing_without_a_purpose_removes_the_disclaimer_everywhere(tmp_path: Path):
     b = _repl_bundle(tmp_path)
     report = b / "misc" / "reproduction_report.md"
     assert publish(str(b), **ARGS, demonstration=True, out=str(tmp_path / "e"), yes=True) == 0
-    assert disclaimer("replication") in report.read_text()
-    assert disclaimer("replication") in (b / "paper" / "paper.tex").read_text()
+    assert disclaimer("replication") in report.read_text(encoding="utf-8")
+    assert disclaimer("replication") in (b / "paper" / "paper.tex").read_text(encoding="utf-8")
     assert publish(str(b), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(b)
     assert "purpose" not in m and "purpose" not in m["dossier"]["doc"]
-    assert "Demonstration." not in report.read_text()
-    assert "Demonstration." not in (b / "paper" / "paper.tex").read_text()
+    assert "Demonstration." not in report.read_text(encoding="utf-8")
+    assert "Demonstration." not in (b / "paper" / "paper.tex").read_text(encoding="utf-8")
     assert not any(c.status == FAIL for c in _run_checks(b, online=False))
 
 
 def test_a_purpose_recorded_on_the_study_is_honoured_without_the_flag(tmp_path: Path):
     b = _repl_bundle(tmp_path)
     ws = tmp_path / "study" / "workspaces" / "ws"
-    manifest = json.loads((ws / "manifest.json").read_text())
-    (ws / "manifest.json").write_text(json.dumps({**manifest, "purpose": "demonstration"}))
+    manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
+    (ws / "manifest.json").write_text(
+        json.dumps({**manifest, "purpose": "demonstration"}), encoding="utf-8", newline="\n"
+    )
     assert publish(str(b), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     m = _manifest(b)
     assert m["purpose"] == "demonstration" and m["kind"] == "replication"
@@ -359,9 +373,11 @@ def test_a_local_path_in_the_runs_record_is_cut_to_its_last_part(bundle: Path, t
 def test_without_a_name_the_paper_still_carries_the_dossier_link_and_keeps_its_author(bundle: Path, tmp_path: Path):
     make_run_db(tmp_path / "study", paper_id_of(bundle))
     tex = bundle / "paper" / "paper.tex"
-    own = tex.read_text().split("\\author{", 1)[1].split("\\thanks", 1)[0]  # the paper's own author text
+    own = (
+        tex.read_text(encoding="utf-8").split("\\author{", 1)[1].split("\\thanks", 1)[0]
+    )  # the paper's own author text
     assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e"), yes=True) == 0
-    text = tex.read_text()
+    text = tex.read_text(encoding="utf-8")
     m = _manifest(bundle)
     assert m["dossier"]["url"] in text and disclaimer() in text
     assert f"\\author{{{own}\\thanks{{This paper was produced with e2er" in text  # its author line, kept
@@ -369,7 +385,7 @@ def test_without_a_name_the_paper_still_carries_the_dossier_link_and_keeps_its_a
     # unresolved pins (the run's commit is not in this checkout): the footnote does not claim exact versions
     assert "where E2ER's repository holds them" in text
     assert publish(str(bundle), **ARGS, demonstration=True, out=str(tmp_path / "e"), yes=True) == 0
-    assert tex.read_text() == text  # stamping again changes nothing
+    assert tex.read_text(encoding="utf-8") == text  # stamping again changes nothing
 
 
 def test_deposits_hold_only_the_files_the_bundle_fingerprints(bundle: Path, tmp_path: Path, fake_zenodo):

@@ -123,7 +123,7 @@ def _write(ws: Path, rid: str, data: bytes, origin: str, url: str = "") -> dict[
         return {"status": "not available", "reason": f"the PDF from {origin} has no text layer (a scan?)"}
     out = ws / DIR / f"{rid}.txt"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(pages_text(pages), encoding="utf-8")
+    out.write_text(pages_text(pages), encoding="utf-8", newline="\n")
     return {
         "status": "ok",
         "origin": origin,
@@ -209,5 +209,5 @@ def fulltext_step(ws: Path, candidates: list[dict[str, Any]], *, max_downloads: 
         "not_retrieved": sum(1 for v in out.values() if v["status"] != "ok"),
     }
     log = {"records": out, "counts": counts}
-    log_path.write_text(json.dumps(log, indent=2), encoding="utf-8")
+    log_path.write_text(json.dumps(log, indent=2), encoding="utf-8", newline="\n")
     return log

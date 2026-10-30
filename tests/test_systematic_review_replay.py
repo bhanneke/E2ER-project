@@ -116,11 +116,20 @@ def test_a_systematic_review_replays_from_the_protocol_to_a_reproduced_meta_anal
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout and "[PASS] results contract" in out.stdout, out.stdout
     assert "[PASS] method checks" in out.stdout and "meta-analysis" in out.stdout, out.stdout
@@ -131,9 +140,15 @@ def test_a_systematic_review_replays_from_the_protocol_to_a_reproduced_meta_anal
     ext = tampered / "design" / "extraction.json"
     data = json.loads(ext.read_text(encoding="utf-8"))
     data["studies"][0]["n_total"] = 421
-    ext.write_text(json.dumps(data), encoding="utf-8")
+    ext.write_text(json.dumps(data), encoding="utf-8", newline="\n")
     out = subprocess.run(
-        [*cli, "verify", str(tampered)], cwd=study, env=env, capture_output=True, text=True, timeout=300
+        [*cli, "verify", str(tampered)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
     )
     assert "[FAIL] method checks" in out.stdout and "not printed in its quote" in out.stdout, out.stdout
 
@@ -143,7 +158,8 @@ def test_a_systematic_review_replays_from_the_protocol_to_a_reproduced_meta_anal
         cwd=study,
         env={**env, **uv_dirs},
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=900,
     )
     uv.check_installed(out.stdout)
@@ -157,7 +173,9 @@ def test_an_extracted_number_that_is_not_in_its_quote_stops_the_run_before_the_s
     """The extractor cites a passage that does not print the number: e2er stops before anything is pooled."""
     overrides = tmp_path / "overrides.json"
     wrong = {"replace": {"extraction.json": [['"n_total": 412', '"n_total": 421']]}}
-    overrides.write_text(json.dumps({"study_extractor": {"attempts": [wrong, wrong, wrong]}}), encoding="utf-8")
+    overrides.write_text(
+        json.dumps({"study_extractor": {"attempts": [wrong, wrong, wrong]}}), encoding="utf-8", newline="\n"
+    )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(overrides))
     with _replay_server(tmp_path, "systematic-review", []) as (api, _):
         pid = _start(api)
@@ -178,9 +196,11 @@ def test_an_extracted_number_that_is_not_in_its_quote_stops_the_run_before_the_s
         # The researcher corrects the number to what the paper prints and approves: the check runs
         # again, passes, and the review goes on to the synthesis.
         ext = ws / "extraction.json"
-        ext.write_text(ext.read_text(encoding="utf-8").replace('"n_total": 421', '"n_total": 412'), encoding="utf-8")
+        ext.write_text(
+            ext.read_text(encoding="utf-8").replace('"n_total": 421', '"n_total": 412'), encoding="utf-8", newline="\n"
+        )
         monkeypatch.delenv("E2ER_REPLAY_OVERRIDES")
-        overrides.write_text("{}", encoding="utf-8")
+        overrides.write_text("{}", encoding="utf-8", newline="\n")
         httpx.post(f"{api}/api/papers/{pid}/review", json={"action": "approve"}, headers=TOKEN, timeout=30)
         p, stops = _approve_to_the_end(api, pid)
         assert p["status"] == "completed", (p.get("last_error"), stops)

@@ -44,15 +44,15 @@ def _folder(tmp_path: Path, recipe: dict) -> Path:
     b = tmp_path / "study"
     (b / "code" / "scratch").mkdir(parents=True)
     (b / "results").mkdir()
-    (b / "code" / "requirements.txt").write_text("pandas==2.3.3\n")
-    (b / "code" / "run_estimation.py").write_text("print(1)\n")
+    (b / "code" / "requirements.txt").write_text("pandas==2.3.3\n", encoding="utf-8", newline="\n")
+    (b / "code" / "run_estimation.py").write_text("print(1)\n", encoding="utf-8", newline="\n")
     (b / "code" / "scratch" / "build_data.py").write_text(
-        "import pandas as pd\npd.DataFrame().to_csv('units_all.csv')\n"
+        "import pandas as pd\npd.DataFrame().to_csv('units_all.csv')\n", encoding="utf-8", newline="\n"
     )
-    (b / "results" / "estimation_results.json").write_text("{}")
-    (b / "results" / "weights.csv").write_text("x\n")
-    (b / "results" / "units_all.csv").write_text("id\n")
-    (b / "reproduce.json").write_text(json.dumps(recipe))
+    (b / "results" / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
+    (b / "results" / "weights.csv").write_text("x\n", encoding="utf-8", newline="\n")
+    (b / "results" / "units_all.csv").write_text("id\n", encoding="utf-8", newline="\n")
+    (b / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     return b
 
 
@@ -85,13 +85,15 @@ def _spec_folder(tmp_path: Path) -> tuple[Path, dict]:
     recipe = _recipe([])
     recipe["files"].update({"figure_spec.json": "results/figure_spec.json", "moran.csv": "results/moran.csv"})
     b = _folder(tmp_path, recipe)
-    (b / "code" / "run_estimation.py").write_text(SPEC_UPDATER)
+    (b / "code" / "run_estimation.py").write_text(SPEC_UPDATER, encoding="utf-8", newline="\n")
     (b / "code" / "scratch" / "fill_fig.py").write_text(
-        "import json\nf = json.load(open('figure_spec.json'))\njson.dump(f, open('figure_spec.json', 'w'))\n"
+        "import json\nf = json.load(open('figure_spec.json'))\njson.dump(f, open('figure_spec.json', 'w'))\n",
+        encoding="utf-8",
+        newline="\n",
     )
     # export's copy of the estimation script, which writes the same files: not a script of the run of its own.
     (b / "replication").mkdir()
-    (b / "replication" / "estimation.py").write_text("# copy\n" + SPEC_UPDATER)
+    (b / "replication" / "estimation.py").write_text("# copy\n" + SPEC_UPDATER, encoding="utf-8", newline="\n")
     rebuild = [
         {
             "path": p,
@@ -124,8 +126,8 @@ def test_the_report_labels_it_and_the_verdict_is_unchanged(tmp_path: Path):
             item["not_compared"] = why
     run = tmp_path / "run"
     run.mkdir()
-    (run / "figure_spec.json").write_text('{"figures": []}')
-    (run / "moran.csv").write_text("z,wz\n")
+    (run / "figure_spec.json").write_text('{"figures": []}', encoding="utf-8", newline="\n")
+    (run / "moran.csv").write_text("z,wz\n", encoding="utf-8", newline="\n")
     inputs = rp.compare_inputs(run, [i for i in recipe["inputs"] if i.get("output")])
     by = {i["path"]: i for i in inputs}
     assert by["figure_spec.json"]["status"] == rp.NOT_COMPARED and "figure step" in by["figure_spec.json"]["why"]
@@ -133,6 +135,6 @@ def test_the_report_labels_it_and_the_verdict_is_unchanged(tmp_path: Path):
     text = render(b, recipe, None, [], inputs, [], None, "verdict")
     assert "  figure_spec.json: not compared: the study's copy comes from the figure step" in text
     assert "figure_spec.json: differs" not in text
-    (run / "est.json").write_text('{"b": 1.5}')
+    (run / "est.json").write_text('{"b": 1.5}', encoding="utf-8", newline="\n")
     same = rp.compare_json(run / "est.json", run / "est.json", "results/est.json", "est.json")
     assert rp.verdict([same], None, [], inputs)[1] == 0, "left-out outputs never decide the verdict"

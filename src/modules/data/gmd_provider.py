@@ -293,7 +293,7 @@ class GMDProvider:
             "bytes": target.stat().st_size,
             "retrieved_at": _now(),
         }
-        meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+        meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8", newline="\n")
         return target, {**meta, "from_cache": False}
 
     async def series(
@@ -469,7 +469,7 @@ def record_in_dictionary(workspace: Path, table: str, record: dict[str, Any]) ->
         }
     )
     doc["tables"] = tables
-    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return path
 
 
@@ -484,5 +484,5 @@ def add_citation(workspace: Path) -> bool:
         return False
     head = text.rstrip("\n") + "\n\n" if text.strip() else ""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(head + BIBTEX + "\n", encoding="utf-8")
+    path.write_text(head + BIBTEX + "\n", encoding="utf-8", newline="\n")
     return True

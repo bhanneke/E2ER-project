@@ -45,12 +45,12 @@ def test_parse_corpus_roots_empty():
 
 
 def _make_corpus(root: Path) -> None:
-    (root / "top.csv").write_text("a\n1\n")
-    (root / "refs.bib").write_text("@article{x, title={X}}")
+    (root / "top.csv").write_text("a\n1\n", encoding="utf-8", newline="\n")
+    (root / "refs.bib").write_text("@article{x, title={X}}", encoding="utf-8", newline="\n")
     (root / "paper.pdf").write_bytes(b"%PDF-1.4")
     sub = root / "raw"
     sub.mkdir()
-    (sub / "deep.csv").write_text("a\n1\n")
+    (sub / "deep.csv").write_text("a\n1\n", encoding="utf-8", newline="\n")
     (sub / "deep.pdf").write_bytes(b"%PDF-1.4")
 
 
@@ -84,8 +84,8 @@ def test_local_bib_library_multi_root(tmp_path):
     b = tmp_path / "b"
     a.mkdir()
     b.mkdir()
-    (a / "alpha.bib").write_text(_bib("Alpha"))
-    (b / "beta.bib").write_text(_bib("Beta"))
+    (a / "alpha.bib").write_text(_bib("Alpha"), encoding="utf-8", newline="\n")
+    (b / "beta.bib").write_text(_bib("Beta"), encoding="utf-8", newline="\n")
 
     lib = LocalBibLibrary(None, f"{a},{b}", recursive=False)
     titles = sorted(p.title for p in lib.entries())
@@ -95,10 +95,10 @@ def test_local_bib_library_multi_root(tmp_path):
 def test_local_bib_library_recursive(tmp_path):
     from src.modules.literature.providers import LocalBibLibrary
 
-    (tmp_path / "top.bib").write_text(_bib("Top"))
+    (tmp_path / "top.bib").write_text(_bib("Top"), encoding="utf-8", newline="\n")
     nested = tmp_path / "nested"
     nested.mkdir()
-    (nested / "deep.bib").write_text(_bib("Deep"))
+    (nested / "deep.bib").write_text(_bib("Deep"), encoding="utf-8", newline="\n")
 
     flat = LocalBibLibrary(None, str(tmp_path), recursive=False)
     assert {p.title for p in flat.entries()} == {"Top"}
@@ -120,8 +120,8 @@ def test_staging_recursive_data_preserves_subdirs(tmp_path):
 
     corpus = tmp_path / "corpus"
     (corpus / "raw").mkdir(parents=True)
-    (corpus / "top.csv").write_text("a\n")
-    (corpus / "raw" / "deep.csv").write_text("b\n")
+    (corpus / "top.csv").write_text("a\n", encoding="utf-8", newline="\n")
+    (corpus / "raw" / "deep.csv").write_text("b\n", encoding="utf-8", newline="\n")
 
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -137,7 +137,7 @@ def test_staging_pdfs_land_in_literature_dir(tmp_path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     (corpus / "smith2024.pdf").write_bytes(b"%PDF-1.4 fake")
-    (corpus / "data.csv").write_text("a\n")
+    (corpus / "data.csv").write_text("a\n", encoding="utf-8", newline="\n")
 
     ws = tmp_path / "ws"
     ws.mkdir()

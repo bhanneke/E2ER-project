@@ -118,7 +118,7 @@ def _salt() -> bytes:
     value = secrets.token_hex(32)
     tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(value + "\n")
     os.replace(tmp, p)
     return bytes.fromhex(value)

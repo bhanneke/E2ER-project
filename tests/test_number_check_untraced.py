@@ -42,7 +42,7 @@ def _include_tables(ws: Path) -> None:
     draft = ws / "paper_draft.tex"
     text = draft.read_text(encoding="utf-8")
     assert "\\end{document}" in text
-    draft.write_text(text.replace("\\end{document}", INPUTS + "\\end{document}"), encoding="utf-8")
+    draft.write_text(text.replace("\\end{document}", INPUTS + "\\end{document}"), encoding="utf-8", newline="\n")
 
 
 # ── the check on the run's own files ───────────────────────────────────────
@@ -82,9 +82,11 @@ def test_with_the_tables_included_every_cell_traces(tmp_path: Path, rounding: bo
 
 def test_rendered_tables_come_from_the_render_report_and_inputs_ignore_comments(tmp_path: Path):
     assert rendered_tables(tmp_path) == []
-    (tmp_path / "table_render_report.json").write_text("not json")
+    (tmp_path / "table_render_report.json").write_text("not json", encoding="utf-8", newline="\n")
     assert rendered_tables(tmp_path) == []
-    (tmp_path / "table_render_report.json").write_text(json.dumps({"rendered": ["main.tex", "a.tex", 3]}))
+    (tmp_path / "table_render_report.json").write_text(
+        json.dumps({"rendered": ["main.tex", "a.tex", 3]}), encoding="utf-8", newline="\n"
+    )
     assert rendered_tables(tmp_path) == ["a.tex", "main.tex"]
 
     tex = "% \\input{tables/a.tex}\n\\input{tables/main}\n50\\% \\input{tables/b.tex} % \\input{tables/c.tex}\n"
@@ -94,10 +96,12 @@ def test_rendered_tables_come_from_the_render_report_and_inputs_ignore_comments(
 def test_tables_in_the_paper_with_no_number_in_them_are_untraced_too(tmp_path: Path):
     ws = tmp_path / "ws"
     (ws / "tables").mkdir(parents=True)
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coef": 0.5}}))
-    (ws / "table_render_report.json").write_text(json.dumps({"rendered": ["main.tex"]}))
-    (ws / "tables" / "main.tex").write_text("\\begin{tabular}{lc}\nx & y \\\\\nCoef & --- \\\\\n\\end{tabular}\n")
-    (ws / "paper_draft.tex").write_text("We find 0.5.\n\\input{tables/main.tex}\n")
+    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coef": 0.5}}), encoding="utf-8", newline="\n")
+    (ws / "table_render_report.json").write_text(json.dumps({"rendered": ["main.tex"]}), encoding="utf-8", newline="\n")
+    (ws / "tables" / "main.tex").write_text(
+        "\\begin{tabular}{lc}\nx & y \\\\\nCoef & --- \\\\\n\\end{tabular}\n", encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text("We find 0.5.\n\\input{tables/main.tex}\n", encoding="utf-8", newline="\n")
     report = verify(ws / "paper_draft.tex", ws)
     assert report.tables_untraced
     assert "hold no number the check can read" in report.untraced_reason
@@ -105,7 +109,7 @@ def test_tables_in_the_paper_with_no_number_in_them_are_untraced_too(tmp_path: P
 
 def test_no_rendered_tables_means_nothing_to_flag(tmp_path: Path):
     ws = _copy(tmp_path / "ws")
-    (ws / "table_render_report.json").write_text(json.dumps({"rendered": []}))
+    (ws / "table_render_report.json").write_text(json.dumps({"rendered": []}), encoding="utf-8", newline="\n")
     report = verify(ws / "paper_draft.tex", ws)
     assert not report.tables_untraced and report.untraced_reason == ""
 
@@ -130,7 +134,11 @@ def test_the_drafter_contract_catches_declared_tables_the_draft_leaves_out(tmp_p
 def test_the_drafter_contract_names_the_one_table_left_out(tmp_path: Path):
     ws = _copy(tmp_path / "ws")
     draft = ws / "paper_draft.tex"
-    draft.write_text(draft.read_text().replace("\\end{document}", "\\input{tables/main}\n\\end{document}"))
+    draft.write_text(
+        draft.read_text(encoding="utf-8").replace("\\end{document}", "\\input{tables/main}\n\\end{document}"),
+        encoding="utf-8",
+        newline="\n",
+    )
     check = check_draft_includes_declared_tables(ws)
     assert not check.ok
     assert "includes 1 of them: add \\input{tables/descriptive_stats.tex}" in check.reason
@@ -140,9 +148,9 @@ def test_the_drafter_contract_does_not_apply_without_a_table_spec(tmp_path: Path
     ws = _copy(tmp_path / "ws")
     (ws / "table_spec.json").unlink()
     assert check_draft_includes_declared_tables(ws).ok
-    (ws / "table_spec.json").write_text("{broken")
+    (ws / "table_spec.json").write_text("{broken", encoding="utf-8", newline="\n")
     assert check_draft_includes_declared_tables(ws).ok
-    (ws / "table_spec.json").write_text(json.dumps({"tables": []}))
+    (ws / "table_spec.json").write_text(json.dumps({"tables": []}), encoding="utf-8", newline="\n")
     assert check_draft_includes_declared_tables(ws).ok
 
 
@@ -168,10 +176,12 @@ def events(monkeypatch) -> list[tuple[str, str | None, dict]]:
 def study(tmp_path: Path, monkeypatch) -> tuple[str, Path]:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pipelines").mkdir()
-    (tmp_path / "pipelines" / "numgate.toml").write_text(TEMPLATE)
+    (tmp_path / "pipelines" / "numgate.toml").write_text(TEMPLATE, encoding="utf-8", newline="\n")
     pid = str(uuid.uuid4())
     ws = _copy(tmp_path / "ws")
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": pid, "research_question": "Q?"}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": pid, "research_question": "Q?"}), encoding="utf-8", newline="\n"
+    )
     return pid, ws
 
 
@@ -199,7 +209,7 @@ async def test_the_run_stops_at_the_number_check_when_no_table_cell_was_traced(s
     assert check["mismatches"] == [] and check["untraced"]["not_in_draft"] == TABLES
     gate = [p for k, s, p in events if k == "gate_enforced" and s == "numbers"]
     assert gate and gate[-1]["passed"] is False and "none of its 2 rendered" in gate[-1]["detail"]
-    saved = json.loads((ws / "number_verification.json").read_text())
+    saved = json.loads((ws / "number_verification.json").read_text(encoding="utf-8"))
     assert saved["tables_untraced"] is True
 
 
@@ -215,12 +225,12 @@ async def test_an_edit_that_includes_the_tables_lets_the_run_finish(study, event
     pid, ws = study
     run = _Run()
     await run(pid, ws, _Backend())
-    text = (ws / "paper_draft.tex").read_text().replace("\\end{document}", INPUTS + "\\end{document}")
+    text = (ws / "paper_draft.tex").read_text(encoding="utf-8").replace("\\end{document}", INPUTS + "\\end{document}")
     _act(ws, pid, {"action": "edit", "file": "paper_draft.tex", "content": text})
     out = await run(pid, ws, _Backend())
     assert out["status"] == "completed", out
     assert not (ws / "number_check.json").exists()
-    saved = json.loads((ws / "number_verification.json").read_text())
+    saved = json.loads((ws / "number_verification.json").read_text(encoding="utf-8"))
     assert saved["tables_untraced"] is False and saved["matched"] == saved["total_values_in_tables"] == 19
 
 
@@ -237,7 +247,7 @@ async def test_approving_continues_without_the_table_check_and_records_it(study,
     out = await run(pid, ws, backend)
     assert out["status"] == "completed", out
     assert len([s for s in backend.specialist_calls if s.endswith("_reviewer")]) == 6
-    note = json.loads((ws / "number_check.json").read_text())
+    note = json.loads((ws / "number_check.json").read_text(encoding="utf-8"))
     assert note["decision"] == "accepted_by_researcher"
     assert note["untraced"]["not_in_draft"] == TABLES
     assert "compared no table cell with the results" in note["note"]
@@ -252,7 +262,7 @@ async def test_under_contracts_or_off_it_is_recorded_and_the_run_continues(study
     run = _Run()
     out = await run(pid, ws, backend, governance=regime)
     assert out["status"] == "completed", out
-    note = json.loads((ws / "number_check.json").read_text())
+    note = json.loads((ws / "number_check.json").read_text(encoding="utf-8"))
     assert note["decision"] == "recorded_and_continued" and note["governance"] == regime
     assert note["untraced"]["rendered_tables"] == TABLES
     [text] = run_notes(ws)

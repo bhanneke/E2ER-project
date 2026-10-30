@@ -29,6 +29,7 @@ from src.core import reproduce as rp
 from src.core.export import package as pkg
 from src.core.export.structured import export_paper
 from src.core.specialists.post_execution import _run_recorded
+from tests.platform_help import fake_program
 
 # ── a Gaia-like study: 120 stars, a figure spec with a point per star ────────
 
@@ -89,8 +90,10 @@ with open("figure_spec.json", "w") as f:
 def _gaia_workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "workspaces" / "2026-10-20-stars"
     (ws / "data").mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-stars", "title": "Stars"}), encoding="utf-8")
-    (ws / "data" / "gaia_dr3.csv").write_text(RAW_ROWS, encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-stars", "title": "Stars"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "data" / "gaia_dr3.csv").write_text(RAW_ROWS, encoding="utf-8", newline="\n")
     load = {
         "connector": "gaia",
         "dataset": "Gaia Data Release 3",
@@ -101,9 +104,9 @@ def _gaia_workspace(tmp_path: Path) -> Path:
         "request": {"command": "query", "adql": "SELECT source_id, parallax, ruwe FROM gaiadr3.gaia_source"},
         "retrieved_at": "2026-10-13T21:02:56Z",
     }
-    (ws / "data_sources.json").write_text(json.dumps({"loads": [load]}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": [load]}), encoding="utf-8", newline="\n")
     for name, text in (("clean_gaia.py", CLEAN), ("run_estimation.py", ESTIMATE), ("make_figures.py", FIGURES)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 60, by="e2er-run") == 0
     return ws
 
@@ -183,7 +186,9 @@ print(json.dumps({"table": table, "rows": con.execute(f'SELECT COUNT(*) FROM "{t
 def _gisco_workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "workspaces" / "2026-10-20-regions"
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-regions", "title": "Regions"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-regions", "title": "Regions"}), encoding="utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE nuts2_boundaries (nuts_id TEXT, name_latn TEXT, geometry TEXT)")
     con.executemany("INSERT INTO nuts2_boundaries VALUES (?,?,?)", REGIONS)
@@ -213,9 +218,9 @@ def _gisco_workspace(tmp_path: Path) -> Path:
             "retrieved_at": "2026-10-14T17:36:16Z",
         },
     ]
-    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     for name, text in (("build_units.py", BUILD), ("run_estimation.py", SPATIAL)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 60, by="e2er-run") == 0
     return ws
 
@@ -224,8 +229,7 @@ def _gisco_workspace(tmp_path: Path) -> Path:
 def rerun_here(monkeypatch, tmp_path):
     """`e2er reproduce` with the tests' interpreter and an e2er-data that loads both studies' sources offline."""
     tables = tmp_path / "fake-e2er-data"
-    tables.write_text(f"#!{sys.executable}\n" + FAKE_TABLE_DATA, encoding="utf-8")
-    tables.chmod(0o755)
+    tables = fake_program(tables, FAKE_TABLE_DATA)
 
     def make_environment(run_dir, recipe, folder, logs):
         return Path(sys.executable), {"python": sys.version.split()[0], "packages": {}, "installer": "tests"}
@@ -279,14 +283,16 @@ def test_the_limits_follow_the_source_and_labels_are_no_points(tmp_path):
     assert shape.limits(["unknown"]) == (10, 10)
     p = tmp_path / "x.json"
     p.write_text(
-        json.dumps({"clusters": [f"R{i}" for i in range(40)], "by_country": {f"C{i}": {"n": i} for i in range(20)}})
+        json.dumps({"clusters": [f"R{i}" for i in range(40)], "by_country": {f"C{i}": {"n": i} for i in range(20)}}),
+        encoding="utf-8",
+        newline="\n",
     )
     assert dr.row_level(p, ["gisco"], shape) is None, "labels and 20 country aggregates are not the source's rows"
-    p.write_text(json.dumps({"x": list(range(11))}))
+    p.write_text(json.dumps({"x": list(range(11))}), encoding="utf-8", newline="\n")
     assert "an array of 11 values" in str(dr.row_level(p, ["gisco"], shape))
-    p.write_text(json.dumps({"units": {f"C{i}": {"n": i} for i in range(30)}}))
+    p.write_text(json.dumps({"units": {f"C{i}": {"n": i} for i in range(30)}}), encoding="utf-8", newline="\n")
     assert "30 records" in str(dr.row_level(p, ["gisco"], shape))
-    p.write_text(json.dumps({"star": 5000000000}))
+    p.write_text(json.dumps({"star": 5000000000}), encoding="utf-8", newline="\n")
     assert "identifier" in str(dr.row_level(p, ["gaia"], shape))
     p = tmp_path / "x.parquet"
     p.write_bytes(b"PAR1")
@@ -381,7 +387,7 @@ def test_a_planted_declaration_of_a_results_file_does_not_excuse_it(tmp_path):
     folder = _export(_gisco_workspace(tmp_path), tmp_path)
     (folder / "results" / "by_group.csv").unlink()  # an aggregate: it goes up, so it may not be missing
     manifest = {"format": pkg.FORMAT, "left_out": [{"path": "results/by_group.csv", "reason": "planted"}]}
-    (folder / pkg.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / pkg.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
     check = _check_integrity(folder)
     assert check.status == "FAIL" and "missing (results/by_group.csv)" in check.detail
 
@@ -397,8 +403,7 @@ def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, mon
     from tests.test_publish_github import FAKE_GH
 
     gh = bin_dir / "gh"
-    gh.write_text(f"#!{sys.executable}\n" + FAKE_GH, encoding="utf-8")
-    gh.chmod(0o755)
+    gh = fake_program(gh, FAKE_GH)
     import os
 
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")

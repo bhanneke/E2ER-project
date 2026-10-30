@@ -947,7 +947,9 @@ def export_corpus(conn: sqlite3.Connection, dest: Path) -> int:
             record["verification"] = extraction["verification"]
 
         name = re.sub(r"[^A-Za-z0-9._-]", "_", paper.key) + ".json"
-        (dest / "reviews" / name).write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
+        (dest / "reviews" / name).write_text(
+            json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8", newline="\n"
+        )
         index.append(
             {"key": paper.key, "doi": paper.doi, "title": paper.title, "year": paper.year, "file": f"reviews/{name}"}
         )
@@ -966,5 +968,6 @@ def export_corpus(conn: sqlite3.Connection, dest: Path) -> int:
             ensure_ascii=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
     return written

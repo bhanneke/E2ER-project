@@ -64,7 +64,7 @@ def test_entry_count_absent_file(tmp_path: Path):
 
 
 def test_entry_count_reads_entries(tmp_path: Path):
-    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
     assert bib_entry_count(tmp_path) == 1
 
 
@@ -100,7 +100,7 @@ async def test_a_hit_off_the_questions_topic_is_left_out(tmp_path: Path):
 async def test_runs_in_addition_to_a_researchers_own_library_marked_as_found_on_the_web(tmp_path: Path):
     """Since 0.15.0 the web search runs in addition to the researcher's papers, never silently:
     the researcher's entries stay as they are, and every web entry says it came from the web."""
-    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
     same = _paper("Impact of macroeconomic news on the volatility of bitcoin", "Lyócsa", 2020)
     src = _source("openalex", [_paper("Something else"), same])
 
@@ -115,7 +115,7 @@ async def test_runs_in_addition_to_a_researchers_own_library_marked_as_found_on_
 
 @pytest.mark.asyncio
 async def test_use_only_my_papers_sends_no_request(tmp_path: Path):
-    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
     src = _source("openalex", [_paper("Something else")])
 
     with _with_sources(src), _no_storage():
@@ -131,7 +131,7 @@ async def test_a_web_hit_never_replaces_a_researchers_entry_with_the_same_key(tm
     mine = PaperMetadata(
         title="Spot trading", authors=["Ann Smith"], year=2020, source="bibtex", cite_key="smith2020spot"
     )
-    (tmp_path / "literature.bib").write_text(mine.to_bibtex() + "\n", encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(mine.to_bibtex() + "\n", encoding="utf-8", newline="\n")
     other = _paper("Spot markets elsewhere", "Bob Smith", 2020)  # derives the same key, smith2020spot
     assert other.bibtex_key == "smith2020spot"
 

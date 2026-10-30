@@ -71,7 +71,9 @@ def test_assert_artifacts_written_raises_on_missing(tmp_path):
 
     # Once the artifact exists, it passes.
     (tmp_path / SPECIALIST_ARTIFACTS["paper_drafter"]).parent.mkdir(parents=True, exist_ok=True)
-    (tmp_path / SPECIALIST_ARTIFACTS["paper_drafter"]).write_text("\\documentclass{article}")
+    (tmp_path / SPECIALIST_ARTIFACTS["paper_drafter"]).write_text(
+        "\\documentclass{article}", encoding="utf-8", newline="\n"
+    )
     assert_artifacts_written(contribs, tmp_path)  # no raise
 
 

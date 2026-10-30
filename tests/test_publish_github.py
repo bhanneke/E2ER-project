@@ -11,7 +11,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +20,7 @@ from src.cli_verify import FAIL, _run_checks
 from src.core import github_files as gf
 from src.core.export import package as pkg
 from src.core.export.structured import export_paper
+from tests.platform_help import fake_program, rmtree
 from tests.test_derived_data import _gaia_workspace
 from tests.test_publish_data_terms import _add, plain_bundle  # noqa: F401 — fixture
 
@@ -114,8 +114,7 @@ def github(tmp_path: Path, monkeypatch) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
-    gh.write_text(f"#!{sys.executable}\n" + FAKE_GH, encoding="utf-8")
-    gh.chmod(0o755)
+    gh = fake_program(gh, FAKE_GH)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("FAKE_GH_ROOT", str(root))
     # In a test run e2er uses gh only when told that it is a fake one (src/core/test_guard.py).
@@ -151,7 +150,7 @@ def _fake_platform(root: Path, refuse: str | None = None):
     studies: dict[str, list[dict]] = {}
 
     def request(base, method, path, token=None, body=None):
-        with open(root / "platform.log", "a") as f:
+        with open(root / "platform.log", "a", encoding="utf-8", newline="\n") as f:
             f.write(f"{method} {base}{path}\n")
         if method == "GET" and path == "/api/v1/me":
             return 200, {"name": "Ada", "handles": ["ada"]}
@@ -159,7 +158,7 @@ def _fake_platform(root: Path, refuse: str | None = None):
             if refuse:
                 return 409, {"error": refuse}
             oid = body["manifest"]["id"]
-            (root / "registered.jsonl").open("a").write(json.dumps(body) + "\n")
+            (root / "registered.jsonl").open("a", encoding="utf-8", newline="\n").write(json.dumps(body) + "\n")
             versions = studies.setdefault(oid, [])
             same = next((v for v in versions if v["content_id"] == body["manifest"]["content_id"]), None)
             if same is None:
@@ -186,7 +185,9 @@ def _fake_platform(root: Path, refuse: str | None = None):
 
 
 def _git(*args: str, cwd: Path | None = None) -> str:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(
+        ["git", *args], cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", check=True
+    ).stdout.strip()
 
 
 def _tree(bare: Path, ref: str = "main") -> list[str]:
@@ -208,16 +209,16 @@ def _seed(root: Path, full: str, files: dict[str, str]) -> Path:
     _git("clone", "--quiet", str(bare), str(work))
     for rel, text in files.items():
         (work / rel).parent.mkdir(parents=True, exist_ok=True)
-        (work / rel).write_text(text, encoding="utf-8")
+        (work / rel).write_text(text, encoding="utf-8", newline="\n")
     _git("add", "-A", cwd=work)
     _git("-c", "user.name=t", "-c", "user.email=t@example.org", "commit", "--quiet", "-m", "seed", cwd=work)
     _git("push", "--quiet", "origin", "HEAD:main", cwd=work)
-    shutil.rmtree(work)
+    rmtree(work)  # git's objects are read-only on Windows
     return bare
 
 
 def _manifest(b: Path) -> dict:
-    return json.loads((b / "e2er.json").read_text())
+    return json.loads((b / "e2er.json").read_text(encoding="utf-8"))
 
 
 @pytest.fixture
@@ -240,7 +241,7 @@ def who_study(plain_bundle: Path) -> Path:  # noqa: F811
     prov_path = plain_bundle / "provenance.json"
     prov = json.loads(prov_path.read_text(encoding="utf-8"))
     prov["edges"] = _edges(plain_bundle)
-    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8", newline="\n")
     return plain_bundle
 
 
@@ -263,7 +264,9 @@ def test_a_gaia_study_goes_up_without_its_restricted_or_derived_data_and_verifie
     out = capsys.readouterr().out
     assert rc == 0, out
     bare = github / "ada" / "demos.git"
-    assert "repo create ada/demos --public" in (github / "calls.log").read_text(), "a missing repository is created"
+    assert "repo create ada/demos --public" in (github / "calls.log").read_text(encoding="utf-8"), (
+        "a missing repository is created"
+    )
     tree = _tree(bare)
     assert all(p.startswith("pleiades/") for p in tree)
     assert "pleiades/data/gaia_clean.csv" not in tree and "pleiades/data/gaia_dr3.csv" not in tree
@@ -284,14 +287,14 @@ def test_a_gaia_study_goes_up_without_its_restricted_or_derived_data_and_verifie
     assert m["availability"]["code"] == {"access": "public", "url": "https://github.com/ada/demos"}
     assert m["availability"]["data"] == {"access": "private"}, "no data file went up, so no data are public"
     assert f"https://github.com/ada/demos/tree/{sha}/pleiades" in out
-    record = json.loads((gaia_study / ".e2er" / "github.json").read_text())
+    record = json.loads((gaia_study / ".e2er" / "github.json").read_text(encoding="utf-8"))
     assert record["commit"] == sha and "data/gaia_clean.csv" not in record["files"]
     # The copy in the repository: e2er.json without the commit, README with the dossier and what is left out.
     clone = _clone(bare, tmp_path / "clone")
-    pushed = json.loads((clone / "pleiades" / "e2er.json").read_text())
+    pushed = json.loads((clone / "pleiades" / "e2er.json").read_text(encoding="utf-8"))
     assert "commit" not in pushed["repository"] and "access" not in pushed
     assert pushed["dossier"]["id"] == m["dossier"]["id"] and pushed["content_id"] == m["content_id"]
-    readme = (clone / "pleiades" / "README.md").read_text()
+    readme = (clone / "pleiades" / "README.md").read_text(encoding="utf-8")
     assert m["dossier"]["url"] in readme and "data/gaia_clean.csv" in readme and "Gaia" in readme
     assert "No licence was set" in readme
     # Anyone can verify the clone: the left-out file is declared and the folder's own records restrict it.
@@ -395,7 +398,7 @@ def test_two_studies_share_a_repository_and_files_outside_their_folders_stay(
     assert any(p.startswith("studies/pleiades/") for p in tree) and any(p.startswith("studies/who/") for p in tree)
     assert _manifest(gaia_study)["repository"]["commit"] == first
     assert _manifest(who_study)["repository"]["commit"] == second
-    assert "repo create" not in (github / "calls.log").read_text()
+    assert "repo create" not in (github / "calls.log").read_text(encoding="utf-8")
 
 
 def test_a_new_version_is_a_new_commit_and_the_same_files_make_none(
@@ -468,7 +471,7 @@ def test_a_folder_inside_another_studys_folder_is_refused(
 
 def test_a_private_repository_is_refused(who_study: Path, github: Path, tmp_path: Path, capsys):
     bare = _seed(github, "ada/demos", {"x.txt": "x\n"})
-    (bare / "PRIVATE").write_text("")
+    (bare / "PRIVATE").write_text("", encoding="utf-8", newline="\n")
     assert (
         publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
         == 1
@@ -478,7 +481,7 @@ def test_a_private_repository_is_refused(who_study: Path, github: Path, tmp_path
 
 def test_an_archived_repository_is_refused(who_study: Path, github: Path, tmp_path: Path, capsys):
     bare = _seed(github, "ada/demos", {"x.txt": "x\n"})
-    (bare / "ARCHIVED").write_text("")
+    (bare / "ARCHIVED").write_text("", encoding="utf-8", newline="\n")
     before = _git("--git-dir", str(bare), "rev-parse", "main")
     rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", out=str(tmp_path / "e"), yes=True)
     out = capsys.readouterr().out
@@ -584,7 +587,9 @@ def test_publishing_to_e2er_org_sends_the_repository_at_the_pushed_commit_and_no
 
     from src.core import platform_client as pc
 
-    schema = json.loads((Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text())
+    schema = json.loads(
+        (Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text(encoding="utf-8")
+    )
     sent: list[dict] = []
 
     def server(base, method, path, token=None, body=None):
@@ -613,7 +618,7 @@ def test_publishing_to_e2er_org_sends_the_repository_at_the_pushed_commit_and_no
     jsonschema.Draft202012Validator(schema).validate(
         {**body["manifest"], "dossier": {"id": d["id"], "url": body["manifest"]["dossier"]["url"], "doc": d["doc"]}}
     )
-    link = json.loads((who_study / ".e2er" / "link.json").read_text())
+    link = json.loads((who_study / ".e2er" / "link.json").read_text(encoding="utf-8"))
     assert link["files"] == f"https://github.com/ada/demos/tree/{sha}/who"
     assert f"files https://github.com/ada/demos/tree/{sha}/who" in out
 
@@ -635,13 +640,13 @@ def test_the_summary_at_the_top_of_readme_changes_neither_the_title_nor_the_ques
     prov_path = gaia_study / "provenance.json"
     prov = json.loads(prov_path.read_text(encoding="utf-8"))
     prov["edges"] = _edges(gaia_study)
-    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8", newline="\n")
     before = _question_and_title(gaia_study)
     rc = publish(
         str(gaia_study), **ID, no_db=True, github_repo="ada/demos", github_path="p", out=str(tmp_path / "e"), yes=True
     )
     assert rc == 0, capsys.readouterr().out
-    text = (gaia_study / "README.md").read_text()
+    text = (gaia_study / "README.md").read_text(encoding="utf-8")
     assert text.startswith("<!-- e2er:github begin -->\n# Which Stars Are Pleiades Members? A Full Title")
     assert text.endswith(readme), "the export's README stays below the summary"
     assert _question_and_title(gaia_study) == before
@@ -677,7 +682,7 @@ def test_a_file_github_would_refuse_for_its_size_stops_publish_before_anything_i
     prov_path = who_study / "provenance.json"
     prov = json.loads(prov_path.read_text(encoding="utf-8"))
     prov["files"]["paper/appendix.pdf"] = {"sha256": digest.hexdigest(), "bytes": big.stat().st_size}
-    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     rc = publish(str(who_study), **ID, github_repo="ada/demos", github_path="who", dry_run=True)
     captured = capsys.readouterr()
@@ -698,13 +703,16 @@ def test_github_without_to_publishes_on_e2er_org_and_registers_the_pushed_commit
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "--github publishes on https://e2er.org (the default platform)" in out
-    log = (github / "platform.log").read_text().splitlines()
+    log = (github / "platform.log").read_text(encoding="utf-8").splitlines()
     assert log[0] == "GET https://e2er.org/api/v1/me", "the sign-in is checked before anything is pushed"
     assert log[-1] == "POST https://e2er.org/api/v1/studies"
-    (body,) = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
+    (body,) = [json.loads(line) for line in (github / "registered.jsonl").read_text(encoding="utf-8").splitlines()]
     sha = _git("--git-dir", str(github / "ada" / "demos.git"), "rev-parse", "main")
     assert body["repository"]["commit"] == sha
-    assert json.loads((who_study / ".e2er" / "link.json").read_text())["platform_url"] == "https://e2er.org"
+    assert (
+        json.loads((who_study / ".e2er" / "link.json").read_text(encoding="utf-8"))["platform_url"]
+        == "https://e2er.org"
+    )
 
 
 def test_github_without_to_publishes_where_the_folder_was_published_before(
@@ -717,7 +725,7 @@ def test_github_without_to_publishes_where_the_folder_was_published_before(
     out = capsys.readouterr().out
     assert rc == 0, out
     assert "--github publishes on https://staging.e2er.example (where this folder was published before" in out
-    log = (github / "platform.log").read_text()
+    log = (github / "platform.log").read_text(encoding="utf-8")
     assert log.count("POST https://staging.e2er.example/api/v1/studies") == 2 and "https://e2er.org" not in log
 
 
@@ -792,7 +800,7 @@ def test_a_registration_refused_after_the_push_rolls_forward_when_run_again(
     assert "Already on GitHub" in out
     assert _git("--git-dir", str(bare), "rev-parse", "main") == sha
     assert _git("--git-dir", str(bare), "rev-list", "--count", "main") == "1"
-    (body,) = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
+    (body,) = [json.loads(line) for line in (github / "registered.jsonl").read_text(encoding="utf-8").splitlines()]
     assert body["repository"]["commit"] == sha
 
 
@@ -825,18 +833,18 @@ def test_a_published_study_redacted_afterwards_verifies_and_publishes_again_with
     assert "before 1 change(s) recorded as redactions by the researcher" in checks["anchor"].detail
     capsys.readouterr()
     assert publish(str(who_study), **args, yes=True) == 0, capsys.readouterr().out
-    bodies = [json.loads(line) for line in (github / "registered.jsonl").read_text().splitlines()]
+    bodies = [json.loads(line) for line in (github / "registered.jsonl").read_text(encoding="utf-8").splitlines()]
     shown = [a for a in bodies[-1]["dossier"]["doc"]["amendments"] if a.get("kind") == "redacted"]
     assert [a["path"] for a in shown] == ["design/paper_plan.md"]
     assert shown[0]["reason"] == "personal contact details removed by the researcher"
     clone = _clone(github / "ada" / "demos.git", tmp_path / "clone")
-    assert email not in (clone / "who" / "design" / "paper_plan.md").read_text()
-    pushed = json.loads((clone / "who" / "provenance.json").read_text())
+    assert email not in (clone / "who" / "design" / "paper_plan.md").read_text(encoding="utf-8")
+    pushed = json.loads((clone / "who" / "provenance.json").read_text(encoding="utf-8"))
     assert [a["path"] for a in pushed["amendments"] if a.get("kind") == "redacted"] == ["design/paper_plan.md"]
     assert rd.check(clone / "who", email)[0].startswith("✓ design/paper_plan.md")
     # A further change after publishing is still a changed folder.
     p = who_study / "design" / "paper_plan.md"
-    p.write_text(p.read_text() + "x\n")
+    p.write_text(p.read_text(encoding="utf-8") + "x\n", encoding="utf-8", newline="\n")
     assert {c.name: c.status for c in _run_checks(who_study, online=False)}["integrity"] == FAIL
 
 
@@ -855,7 +863,7 @@ def test_publish_asks_before_it_pushes_and_names_the_repository_and_folder(
     assert "GitHub github.com/ada/demos, folder who: the study's files" in out
     assert "Not published: nothing was sent or pushed." in out
     assert not (github / "ada" / "demos.git").exists(), "nothing was pushed"
-    log = (github / "platform.log").read_text() if (github / "platform.log").is_file() else ""
+    log = (github / "platform.log").read_text(encoding="utf-8") if (github / "platform.log").is_file() else ""
     assert "POST" not in log
 
 

@@ -512,6 +512,8 @@ def _run_in(
             "exit_code": code,
             "run_folder_kept": keep,
         }
-        Path(json_out).expanduser().write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
+        Path(json_out).expanduser().write_text(
+            json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8", newline="\n"
+        )
         print(f"Report written to {json_out}")
     return code

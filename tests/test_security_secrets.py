@@ -73,7 +73,7 @@ def test_the_github_push_uses_the_shared_scan(tmp_path):
     from src.core import github_files as gf
 
     (tmp_path / "code").mkdir()
-    (tmp_path / "code" / "notes.txt").write_text("zenodo_token=" + "aB3x9Q" * 8)
+    (tmp_path / "code" / "notes.txt").write_text("zenodo_token=" + "aB3x9Q" * 8, encoding="utf-8", newline="\n")
     (tmp_path / "code" / "big.log").write_bytes(
         b"\x80" * 10 + b"z" * (60 << 20) + b"\n" + ("gho_" + "A1b2" * 9).encode()
     )
@@ -92,9 +92,11 @@ def test_pack_refuses_a_study_file_with_a_key(tmp_path):
 
     folder = tmp_path / "study"
     (folder / "code" / "scratch").mkdir(parents=True)
-    (folder / "README.md").write_text("# a study\n")
-    (folder / "provenance.json").write_text(json.dumps({"files": {}}))
-    (folder / "code" / "scratch" / "run.log").write_text("env: " + SAMPLES["OpenAI project key"] + "\n")
+    (folder / "README.md").write_text("# a study\n", encoding="utf-8", newline="\n")
+    (folder / "provenance.json").write_text(json.dumps({"files": {}}), encoding="utf-8", newline="\n")
+    (folder / "code" / "scratch" / "run.log").write_text(
+        "env: " + SAMPLES["OpenAI project key"] + "\n", encoding="utf-8", newline="\n"
+    )
     with pytest.raises(pkg.PackageError, match="looks like a key or token"):
         pkg.build(folder, tmp_path / "out.e2er")
     assert not (tmp_path / "out.e2er").exists()
@@ -105,11 +107,13 @@ def test_the_export_takes_keys_out_of_scratch_logs(tmp_path):
 
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "explore.log").write_text("GET " + SAMPLES["FRED key in a URL"] + "\nrows: 10\n")
+    (ws / "explore.log").write_text(
+        "GET " + SAMPLES["FRED key in a URL"] + "\nrows: 10\n", encoding="utf-8", newline="\n"
+    )
     dest = tmp_path / "out" / "code" / "scratch"
     notes: list[str] = []
     structured._copy_matches(ws, dest, "*.log", None, set(), notes)
-    out = (dest / "explore.log").read_text()
+    out = (dest / "explore.log").read_text(encoding="utf-8")
     assert "0123456789abcdef0123456789abcdef" not in out and "rows: 10" in out and "[removed" in out
     assert notes and "explore.log" in notes[0]
 
@@ -151,14 +155,14 @@ def test_the_credentials_file_is_written_owner_only_through_a_temporary_file(mon
 def test_a_damaged_credentials_file_is_read_with_a_warning_and_kept(monkeypatch, creds, capsys):
     monkeypatch.setitem(sys.modules, "keyring", None)
     creds.parent.mkdir(parents=True)
-    creds.write_text("{not json")
+    creds.write_text("{not json", encoding="utf-8", newline="\n")
     assert pc.load_token("https://e2er.org") is None
     assert zen.stored_token() == (None, None)
     assert "cannot be read" in capsys.readouterr().err
     pc.save_token("https://e2er.org", "e2er_tok")
     assert pc.load_token("https://e2er.org") == "e2er_tok"
     kept = creds.with_name("credentials.json.damaged")
-    assert kept.read_text() == "{not json" and owner_only(kept)
+    assert kept.read_text(encoding="utf-8") == "{not json" and owner_only(kept)
 
 
 def test_a_token_in_the_keychain_removes_the_files_old_copy(monkeypatch, creds):
@@ -169,7 +173,7 @@ def test_a_token_in_the_keychain_removes_the_files_old_copy(monkeypatch, creds):
     monkeypatch.setitem(sys.modules, "keyring", stand_in(backend))
     assert pc.save_token("https://e2er.org", "new") == "the system keychain"
     assert zen.save_token("zen_new") == "the system keychain"
-    assert json.loads(creds.read_text()) == {}
+    assert json.loads(creds.read_text(encoding="utf-8")) == {}
 
 
 class WriteRefused(Backend):

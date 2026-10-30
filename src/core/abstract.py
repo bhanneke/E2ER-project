@@ -715,7 +715,7 @@ def insert_into_file(paper: Path, abstract: Path) -> bool:
     after = insert(before, abstract.read_text(encoding="utf-8"))
     if after == before:
         return False
-    paper.write_text(after, encoding="utf-8")
+    paper.write_text(after, encoding="utf-8", newline="\n")
     return True
 
 
@@ -1038,7 +1038,7 @@ async def write_abstract(
     outcome = AbstractOutcome(passed=result.passed, attempts=attempts, check=result, history=history)
     try:
         (workspace / CHECK_FILE).write_text(
-            json.dumps(outcome.record(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            json.dumps(outcome.record(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
         )
     except OSError as e:
         logger.warning("could not write %s: %s", CHECK_FILE, e)

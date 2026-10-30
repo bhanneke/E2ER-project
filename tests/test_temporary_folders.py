@@ -62,7 +62,7 @@ def test_the_test_suites_opt_out_keeps_the_current_folder(nothing_set_up: Path, 
 
 
 def test_a_temporary_folder_the_researcher_chose_is_used_with_a_warning(nothing_set_up: Path):
-    (nothing_set_up / ".env").write_text("LLM_BACKEND=claude_code\n", encoding="utf-8")
+    (nothing_set_up / ".env").write_text("LLM_BACKEND=claude_code\n", encoding="utf-8", newline="\n")
     assert home.project_dir() == nothing_set_up
     (warning,) = home.storage_warnings()
     assert warning.startswith("warning: the studies folder") and "may delete it" in warning

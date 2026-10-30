@@ -25,6 +25,7 @@ from src.cli_reproduce import reproduce
 from src.core import reproduce as rp
 from src.core.export.structured import export_paper
 from src.core.specialists.post_execution import _run_recorded
+from tests.platform_help import fake_program
 
 RATES = [("AAA", "COUNTRY", 12.5), ("BBB", "COUNTRY", 3.25), ("CCC", "COUNTRY", None), ("AFR", "REGION", 19.4)]
 NAMES = [("AAA", "Avalon"), ("BBB", "Brigadoon"), ("CCC", "Cockaigne")]
@@ -90,7 +91,9 @@ def _load(connector: str, table: str, request: dict, dataset: str) -> dict:
 def _workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "workspaces" / "2026-10-13-road-deaths"
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-who", "title": "Road deaths"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-who", "title": "Road deaths"}), encoding="utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE rates_raw (location TEXT, spatial_type TEXT, value REAL)")
     con.executemany("INSERT INTO rates_raw VALUES (?,?,?)", RATES)
@@ -104,10 +107,10 @@ def _workspace(tmp_path: Path) -> Path:
         ),
         _load("naturalearth", "country_names", {"command": "countries", "scale": "50m"}, "Natural Earth"),
     ]
-    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     # As the run did: the data analyst's cleaning script, then the estimation (both recorded in the script log).
     for name, text in (("clean_rates.py", CLEAN), ("run_estimation.py", ESTIMATE)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 60, by="e2er-run") == 0
     return ws
 
@@ -116,8 +119,7 @@ def _workspace(tmp_path: Path) -> Path:
 def rerun_here(monkeypatch, tmp_path):
     """`e2er reproduce` with the tests' interpreter and an e2er-data that loads the tables offline."""
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FAKE_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FAKE_E2ER_DATA)
 
     def make_environment(run_dir, recipe, folder, logs):
         return Path(sys.executable), {"python": sys.version.split()[0], "packages": {}, "installer": "tests"}
@@ -183,7 +185,7 @@ def test_with_its_data_the_preparation_does_not_run_again(tmp_path: Path, rerun_
 
 
 def _csv(path: Path, rows: list[str]) -> Path:
-    path.write_text("ra,dec,parallax\n" + "".join(r + "\n" for r in rows), encoding="utf-8")
+    path.write_text("ra,dec,parallax\n" + "".join(r + "\n" for r in rows), encoding="utf-8", newline="\n")
     return path
 
 
@@ -316,7 +318,7 @@ def test_the_package_names_what_a_rerun_loads_and_what_the_studys_steps_build(tm
     assert set(pkg.left_out_content(folder)) == {"data/data.db"}
     doc = json.loads((folder / pkg.MANIFEST).read_text(encoding="utf-8"))
     doc["left_out"].append({"path": "data/own.csv", "reason": "planted", "content": {"content_sha256": "x"}})
-    (folder / pkg.MANIFEST).write_text(json.dumps(doc), encoding="utf-8")
+    (folder / pkg.MANIFEST).write_text(json.dumps(doc), encoding="utf-8", newline="\n")
     assert set(pkg.left_out_content(folder)) == {"data/data.db"}
     assert "data/own.csv" in pkg.left_out_content(folder, trusted=True)
 

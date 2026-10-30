@@ -63,7 +63,7 @@ def test_db_uses_psycopg_dict_row():
     protocol and made every DB read raise TypeError on the live system."""
     from src.db import client as dbclient
 
-    src = Path(dbclient.__file__).read_text()
+    src = Path(dbclient.__file__).read_text(encoding="utf-8")
     # Must NOT define a 2-arg _dict_row that takes (cursor, data) directly.
     assert "def _dict_row(cursor, data):" not in src, (
         "Custom _dict_row(cursor, data) is the broken signature — use psycopg.rows.dict_row instead."
@@ -582,7 +582,9 @@ async def test_dispatcher_auto_fills_canonical_output_file(tmp_path):
                 "datasets": [],
                 "current_stage": "designing",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     wo = WorkOrder(
         paper_id="p",
@@ -618,7 +620,7 @@ def test_runner_passes_model_and_backend_to_strategist():
     from src.core.strategist.runner import PipelineRunner  # noqa: F401  (imported to validate the module exists)
 
     runner_path = Path(__file__).resolve().parent.parent / "src/core/strategist/runner.py"
-    src_text = runner_path.read_text()
+    src_text = runner_path.read_text(encoding="utf-8")
     # The construction site must pass model= and backend_name=
     assert "StrategistEngine(" in src_text
     # In a single block: backend, workspace, paper_id, mode, model=..., backend_name=...
@@ -655,7 +657,9 @@ def _make_workspace_with_manifest(tmp_path: Path, paper_id: str) -> Path:
                 "mode": "single_pass",
                 "current_stage": "idea",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     return ws
 
@@ -687,7 +691,9 @@ async def test_finalize_runs_compile_even_when_pipeline_failed(tmp_path):
     paper_id = str(uuid.uuid4())
     workspace = _make_workspace_with_manifest(tmp_path, paper_id)
     # A draft to compile
-    (workspace / "paper_draft.tex").write_text("\\section{Introduction}\nFailed mid-run but draft exists.\n")
+    (workspace / "paper_draft.tex").write_text(
+        "\\section{Introduction}\nFailed mid-run but draft exists.\n", encoding="utf-8", newline="\n"
+    )
 
     runner = _make_pipeline_runner(workspace, paper_id)
     runner._run_initial_phase = AsyncMock(side_effect=RuntimeError("simulated all-specialists failure"))
@@ -768,8 +774,8 @@ async def test_partial_artifacts_preserved_on_failure(tmp_path):
     paper_id = str(uuid.uuid4())
     workspace = _make_workspace_with_manifest(tmp_path, paper_id)
     # Pretend an earlier specialist already wrote artifacts
-    (workspace / "paper_plan.md").write_text("# Plan\n\nReal content.")
-    (workspace / "literature_review.md").write_text("# Lit review\n\nReal content.")
+    (workspace / "paper_plan.md").write_text("# Plan\n\nReal content.", encoding="utf-8", newline="\n")
+    (workspace / "literature_review.md").write_text("# Lit review\n\nReal content.", encoding="utf-8", newline="\n")
 
     runner = _make_pipeline_runner(workspace, paper_id)
     runner._run_initial_phase = AsyncMock(side_effect=RuntimeError("late failure"))
@@ -784,8 +790,8 @@ async def test_partial_artifacts_preserved_on_failure(tmp_path):
         await runner.run()
 
     # Files written before the failure must still be there.
-    assert (workspace / "paper_plan.md").read_text().startswith("# Plan")
-    assert (workspace / "literature_review.md").read_text().startswith("# Lit review")
+    assert (workspace / "paper_plan.md").read_text(encoding="utf-8").startswith("# Plan")
+    assert (workspace / "literature_review.md").read_text(encoding="utf-8").startswith("# Lit review")
     assert (workspace / "manifest.json").exists()
     # State checkpoint must be saved so resume works.
     assert (workspace / ".pipeline_state.json").exists()
@@ -835,11 +841,11 @@ async def test_audit_export_runs_independent_of_replication_packager(tmp_path):
     written: list[str] = []
 
     async def fake_audit_csv(pid, path):
-        Path(path).write_text("query_id,sql,status\n")
+        Path(path).write_text("query_id,sql,status\n", encoding="utf-8", newline="\n")
         written.append(str(path))
 
     async def fake_data_sql(pid, path):
-        Path(path).write_text("-- queries\n")
+        Path(path).write_text("-- queries\n", encoding="utf-8", newline="\n")
         written.append(str(path))
 
     with (
@@ -863,8 +869,8 @@ async def test_audit_export_skips_when_files_already_exist(tmp_path):
     rep = workspace / "replication"
     rep.mkdir()
     # Pretend replication phase already wrote real content
-    (rep / "audit_log.csv").write_text("REAL CONTENT FROM REAL RUN\n")
-    (rep / "data_queries.sql").write_text("-- REAL QUERIES\n")
+    (rep / "audit_log.csv").write_text("REAL CONTENT FROM REAL RUN\n", encoding="utf-8", newline="\n")
+    (rep / "data_queries.sql").write_text("-- REAL QUERIES\n", encoding="utf-8", newline="\n")
 
     runner = _make_pipeline_runner(workspace, paper_id)
     overwrite_attempted = AsyncMock()
@@ -877,7 +883,7 @@ async def test_audit_export_skips_when_files_already_exist(tmp_path):
 
     assert not overwrite_attempted.called, "must not clobber existing audit files"
     # Real content preserved.
-    assert (rep / "audit_log.csv").read_text() == "REAL CONTENT FROM REAL RUN\n"
+    assert (rep / "audit_log.csv").read_text(encoding="utf-8") == "REAL CONTENT FROM REAL RUN\n"
 
 
 async def test_pipeline_failure_returns_useful_summary(tmp_path):
@@ -932,7 +938,7 @@ async def test_specialist_failure_in_dispatcher_records_failed_contribution():
 
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
-        (ws / "manifest.json").write_text("{}")
+        (ws / "manifest.json").write_text("{}", encoding="utf-8", newline="\n")
         with (
             patch("src.db.client.execute", new_callable=AsyncMock),
             patch("src.modules.tracking.usage.save_usage", new_callable=AsyncMock),
@@ -1010,7 +1016,7 @@ async def test_state_checkpoint_written_before_each_phase_save(tmp_path):
     # State file must record initial as complete (so resume skips it).
     state_file = workspace / ".pipeline_state.json"
     assert state_file.exists()
-    state = json.loads(state_file.read_text())
+    state = json.loads(state_file.read_text(encoding="utf-8"))
     assert "initial" in state.get("completed_stages", [])
     # Review must NOT be marked complete (it failed).
     assert "review" not in state.get("completed_stages", [])

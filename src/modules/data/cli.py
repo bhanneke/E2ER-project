@@ -461,7 +461,7 @@ def _maybe_save_csv(result: dict, args: argparse.Namespace) -> None:
         if norm_notes:
             result["normalized"] = norm_notes
         df.to_csv(target, index=False)
-        result["saved_to"] = str(target.relative_to(workspace))
+        result["saved_to"] = target.relative_to(workspace).as_posix()
         result["saved_rows"] = len(df)
     except Exception as e:
         result["save_error"] = f"{type(e).__name__}: {e}"
@@ -1134,7 +1134,7 @@ def _refuse_in_rerun(args: argparse.Namespace) -> int:
     log = os.environ.get("E2ER_REPRODUCE_NETWORK_LOG", "").strip()
     if log:
         try:
-            with open(log, "a", encoding="utf-8") as f:
+            with open(log, "a", encoding="utf-8", newline="\n") as f:
                 f.write(json.dumps({"command": command, "blocked": True}) + "\n")
         except OSError:
             pass

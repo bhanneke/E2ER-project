@@ -150,5 +150,5 @@ def list_available_skills() -> list[str]:
             continue
         for p in skills_dir.rglob("*.md"):
             rel = p.relative_to(skills_dir).with_suffix("")
-            seen.add(str(rel))
+            seen.add(rel.as_posix())
     return sorted(seen)

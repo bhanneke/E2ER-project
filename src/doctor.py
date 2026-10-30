@@ -254,7 +254,6 @@ def signin_command(backend: str, path: str | None) -> str:
     The bare name when the terminal finds that same program; otherwise the full
     path (the Codex inside the ChatGPT app is not on PATH).
     """
-    import shlex
     import shutil
 
     exe = _BACKEND_CLI.get(backend)
@@ -266,7 +265,9 @@ def signin_command(backend: str, path: str | None) -> str:
         same = on_path is not None and Path(on_path).resolve() == Path(path).resolve()
     except OSError:
         same = False
-    prog = exe if same else shlex.quote(str(path))
+    from .console import shell_program
+
+    prog = exe if same else shell_program(path)
     return f"{prog} login" if backend == "codex" else prog
 
 

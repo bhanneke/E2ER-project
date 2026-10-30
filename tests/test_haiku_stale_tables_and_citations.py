@@ -42,7 +42,7 @@ def _copy(dest: Path) -> Path:
 
 
 def _four_table_spec(ws: Path) -> dict:
-    spec = json.loads((ws / "table_spec.json").read_text())
+    spec = json.loads((ws / "table_spec.json").read_text(encoding="utf-8"))
     two = spec["tables"]
     extra = [
         {**two[1], "filename": name, "label": f"tab:{name[:-4]}", "rows": [{"type": "coefficient", "var": "nope"}]}
@@ -54,16 +54,18 @@ def _four_table_spec(ws: Path) -> dict:
 def test_tables_the_spec_no_longer_declares_are_set_aside(tmp_path: Path):
     ws = _copy(tmp_path / "ws")
     shutil.rmtree(ws / "tables")
-    two = (ws / "table_spec.json").read_text()
-    (ws / "table_spec.json").write_text(json.dumps(_four_table_spec(ws)))
+    two = (ws / "table_spec.json").read_text(encoding="utf-8")
+    (ws / "table_spec.json").write_text(json.dumps(_four_table_spec(ws)), encoding="utf-8", newline="\n")
     first = render_tables(ws)
     assert sorted(first.rendered) == ["decomposition.tex", "descriptive_stats.tex", "main.tex", "robustness.tex"]
-    assert "---" in (ws / "tables" / "decomposition.tex").read_text()
+    assert "---" in (ws / "tables" / "decomposition.tex").read_text(encoding="utf-8")
     # Not the renderer's: a field-map table and an \input stub stay where they are.
-    (ws / "tables" / "field_map_summary.tex").write_text("\\begin{tabular}{l}x\\end{tabular}\n")
-    (ws / "tables" / "stub.tex").write_text("% stub\n")
+    (ws / "tables" / "field_map_summary.tex").write_text(
+        "\\begin{tabular}{l}x\\end{tabular}\n", encoding="utf-8", newline="\n"
+    )
+    (ws / "tables" / "stub.tex").write_text("% stub\n", encoding="utf-8", newline="\n")
 
-    (ws / "table_spec.json").write_text(two)  # section_writer's rewrite: two tables
+    (ws / "table_spec.json").write_text(two, encoding="utf-8", newline="\n")  # section_writer's rewrite: two tables
     second = render_tables(ws)
 
     assert sorted(second.rendered) == ["descriptive_stats.tex", "main.tex"]
@@ -74,22 +76,22 @@ def test_tables_the_spec_no_longer_declares_are_set_aside(tmp_path: Path):
         "stub.tex",
     ]
     assert second.set_aside == [".history/tables/decomposition.tex.1", ".history/tables/robustness.tex.1"]
-    assert "---" in (ws / ".history" / "tables" / "decomposition.tex.1").read_text()
-    saved = json.loads((ws / "table_render_report.json").read_text())
+    assert "---" in (ws / ".history" / "tables" / "decomposition.tex.1").read_text(encoding="utf-8")
+    saved = json.loads((ws / "table_render_report.json").read_text(encoding="utf-8"))
     assert saved["set_aside"] == second.set_aside
 
     # A render that changes nothing sets nothing aside; a table dropped again counts up.
     assert render_tables(ws).set_aside == []
-    (ws / "table_spec.json").write_text(json.dumps(_four_table_spec(ws)))
+    (ws / "table_spec.json").write_text(json.dumps(_four_table_spec(ws)), encoding="utf-8", newline="\n")
     render_tables(ws)
-    (ws / "table_spec.json").write_text(two)
+    (ws / "table_spec.json").write_text(two, encoding="utf-8", newline="\n")
     assert render_tables(ws).set_aside == [".history/tables/decomposition.tex.2", ".history/tables/robustness.tex.2"]
 
 
 def test_an_unreadable_spec_sets_nothing_aside(tmp_path: Path):
     ws = _copy(tmp_path / "ws")
     render_tables(ws)
-    (ws / "table_spec.json").write_text("{broken")
+    (ws / "table_spec.json").write_text("{broken", encoding="utf-8", newline="\n")
     render_tables(ws)
     assert (ws / "tables" / "main.tex").is_file() and (ws / "tables" / "descriptive_stats.tex").is_file()
 
@@ -99,10 +101,16 @@ def test_the_export_leaves_out_a_stale_table_from_an_older_workspace(tmp_path: P
     from src.core.export.structured import export_paper
 
     ws = _copy(tmp_path / "ws")
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": str(uuid.uuid4()), "title": "Banks"}))
-    (ws / "tables" / "stub.tex").write_text("% stub\n")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": str(uuid.uuid4()), "title": "Banks"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "tables" / "stub.tex").write_text("% stub\n", encoding="utf-8", newline="\n")
     draft = ws / "paper_draft.tex"
-    draft.write_text(draft.read_text().replace("\\end{document}", "\\input{tables/stub.tex}\n\\end{document}"))
+    draft.write_text(
+        draft.read_text(encoding="utf-8").replace("\\end{document}", "\\input{tables/stub.tex}\n\\end{document}"),
+        encoding="utf-8",
+        newline="\n",
+    )
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
     shipped = sorted(p.name for p in (out / "paper" / "tables").iterdir())
     # The rendered tables, and what the paper includes; not the stale placeholder.
@@ -122,7 +130,11 @@ def test_the_haiku_draft_fails_the_drafters_contract(tmp_path: Path):
     assert check not in check_specialist_artifacts(ws, "revisor")
 
     draft = ws / "paper_draft.tex"
-    draft.write_text(draft.read_text().replace("\\end{document}", "As in \\citet{x}.\n\\end{document}"))
+    draft.write_text(
+        draft.read_text(encoding="utf-8").replace("\\end{document}", "As in \\citet{x}.\n\\end{document}"),
+        encoding="utf-8",
+        newline="\n",
+    )
     assert check_draft_cites(ws).ok
 
 
@@ -130,11 +142,13 @@ def test_a_study_with_no_references_is_not_held_to_it(tmp_path: Path):
     ws = _copy(tmp_path / "ws")
     (ws / "literature.bib").unlink()
     assert study_references(ws) == 0 and check_draft_cites(ws).ok
-    (ws / "literature.bib").write_text("% nothing found\n")
+    (ws / "literature.bib").write_text("% nothing found\n", encoding="utf-8", newline="\n")
     assert check_draft_cites(ws).ok
     # Papers chosen for the study count, even before they reach the bibliography.
     (ws / ".study_inputs.json").write_text(
-        json.dumps({"papers": {"chosen": True, "items": [{"key": "a", "title": "A", "kind": "pdf"}]}})
+        json.dumps({"papers": {"chosen": True, "items": [{"key": "a", "title": "A", "kind": "pdf"}]}}),
+        encoding="utf-8",
+        newline="\n",
     )
     assert study_references(ws) == 1
     assert check_draft_cites(ws).reason == NO_CITES
@@ -154,14 +168,14 @@ def _bundle(tmp_path: Path, bib: str | None) -> Path:
     (b / "paper").mkdir(parents=True)
     shutil.copy(FIXTURE / "paper_draft.tex", b / "paper" / "paper.tex")
     if bib is not None:
-        (b / "paper" / "refs.bib").write_text(bib)
+        (b / "paper" / "refs.bib").write_text(bib, encoding="utf-8", newline="\n")
     return b
 
 
 def test_e2er_verify_fails_a_paper_that_cites_none_of_its_bibliography(tmp_path: Path):
     from src.cli_verify import _check_citations_offline
 
-    check = _check_citations_offline(_bundle(tmp_path, (FIXTURE / "literature.bib").read_text()))
+    check = _check_citations_offline(_bundle(tmp_path, (FIXTURE / "literature.bib").read_text(encoding="utf-8")))
     assert check.status == "FAIL" and check.detail == "paper.tex cites none of the 21 work(s) in refs.bib"
 
 
@@ -186,7 +200,7 @@ class _Drafter(MockLLMBackend):
             return await super().tool_loop(system, messages, tools, tool_handler, max_turns, **kw)
         self.specialist_calls.append(sp)
         self.prompts.append(str(messages[0]["content"]))
-        text = (FIXTURE / "paper_draft.tex").read_text()
+        text = (FIXTURE / "paper_draft.tex").read_text(encoding="utf-8")
         await tool_handler.handle("write_file", {"path": "paper_draft.tex", "content": text})
         return ToolLoopResult(success=True, output="done", usage=TokenUsage(input_tokens=1, output_tokens=1))
 

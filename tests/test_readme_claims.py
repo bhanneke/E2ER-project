@@ -174,7 +174,8 @@ def _help(*command: str) -> str:
     out = subprocess.run(
         [sys.executable, "-m", "src", *command, "--help"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=ROOT,
         env={**os.environ, "COLUMNS": "400"},
     )

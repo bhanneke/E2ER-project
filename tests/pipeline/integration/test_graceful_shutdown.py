@@ -38,7 +38,9 @@ async def test_shutdown_cancels_running_tasks_and_marks_paused(tmp_path, monkeyp
     # treats this as in-flight (not genuinely completed).
     ws = tmp_path / paper_id
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": paper_id, "mode": "iterative"}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": paper_id, "mode": "iterative"}), encoding="utf-8", newline="\n"
+    )
 
     monkeypatch.setattr(
         "src.api.app.get_settings",
@@ -96,7 +98,9 @@ async def test_shutdown_skips_genuinely_completed_papers(tmp_path, monkeypatch):
 
     ws = tmp_path / paper_id
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": paper_id, "mode": "iterative"}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": paper_id, "mode": "iterative"}), encoding="utf-8", newline="\n"
+    )
     # PipelineState with every stage complete + last_status=completed
     from src.core.pipeline.state import PipelineState
 

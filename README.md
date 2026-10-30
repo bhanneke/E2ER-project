@@ -46,7 +46,7 @@ Example:
 
 ## Installation in detail
 
-e2er works with Python 3.11, 3.12, 3.13 and 3.14. The automated tests run on Ubuntu with all four, and e2er is developed on macOS. Windows is untested so far. `e2er --version` prints the installed version.
+e2er works with Python 3.11, 3.12, 3.13 and 3.14, on Linux, macOS and Windows. The automated tests run on Ubuntu with all four, and on macOS and Windows with Python 3.12. `e2er --version` prints the installed version. Reviewers who check a published study find what they need in [docs/REVIEWING.md](docs/REVIEWING.md).
 
 The installer uv downloads Python together with e2er. On Mac and Linux, in a terminal:
 

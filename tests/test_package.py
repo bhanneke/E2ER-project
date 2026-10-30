@@ -30,6 +30,7 @@ from src.core import reproduce as rp
 from src.core.export import package as pkg
 from src.core.export.structured import export_paper
 from src.core.specialists.post_execution import _run_recorded
+from tests.platform_help import fake_program
 
 from .test_browser_setup import live_db, session  # noqa: F401 — fixtures
 
@@ -88,7 +89,9 @@ def _workspace(tmp_path: Path, *, restricted: bool) -> Path:
     """A finished study: rates loaded from a source (the GMD when ``restricted``), cleaned, estimated."""
     ws = tmp_path / "workspaces" / ("2026-10-14-gmd" if restricted else "2026-10-14-wb")
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-pack", "title": "Road deaths"}), encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-pack", "title": "Road deaths"}), encoding="utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE rates_raw (location TEXT, spatial_type TEXT, value REAL)")
     con.executemany("INSERT INTO rates_raw VALUES (?,?,?)", RATES)
@@ -125,9 +128,9 @@ def _workspace(tmp_path: Path, *, restricted: bool) -> Path:
             "retrieved_at": "2026-10-13T21:10:05Z",
         },
     ]
-    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     for name, text in (("clean_rates.py", CLEAN), ("run_estimation.py", ESTIMATE)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 60, by="e2er-run") == 0
     return ws
 
@@ -149,8 +152,7 @@ def offline_lock(monkeypatch):
 def rerun_here(monkeypatch, tmp_path):
     """`e2er reproduce` with the tests' interpreter and an e2er-data that loads the tables offline."""
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FAKE_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FAKE_E2ER_DATA)
     seen: list[dict] = []
 
     def make_environment(run_dir, recipe, folder, logs):
@@ -255,7 +257,7 @@ def test_no_data_leaves_every_data_file_out_and_says_what_cannot_be_rebuilt(tmp_
     recipe.pop("database")
     for item in recipe["inputs"]:
         item.pop("reload", None)
-    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8")
+    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     packed = pkg.build(folder, tmp_path / "old.e2er", no_data=True)
     [left] = packed.manifest["left_out"]
     assert {k: v for k, v in left.items() if k != "content"} == {
@@ -276,7 +278,7 @@ def test_restricted_data_the_code_does_not_read_is_left_out_without_a_warning(tm
     (folder / "data").mkdir(parents=True)
     (folder / "data" / "data.db").write_bytes(b"db")
     loads = [{"connector": "gaia", "table": "gaia_dr3", "version": "DR3"}]
-    (folder / "data" / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (folder / "data" / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     files = {"data/data.db": folder / "data" / "data.db"}
     [item] = pkg.left_out_data(folder, files, {"files": {}, "inputs": []}, no_data=False)
     assert item["path"] == "data/data.db" and "Gaia" in item["reason"]
@@ -316,7 +318,7 @@ def test_the_same_export_packs_to_the_same_bytes(tmp_path, offline_lock):
     with zipfile.ZipFile(a.path) as zf:
         assert {i.date_time for i in zf.infolist()} == {(1980, 1, 1, 0, 0, 0)}
     # A changed file changes the fingerprint.
-    (other / "README.md").write_text("changed\n", encoding="utf-8")
+    (other / "README.md").write_text("changed\n", encoding="utf-8", newline="\n")
     assert pkg.build(other, tmp_path / "c.e2er").manifest["fingerprint"] != a.manifest["fingerprint"]
 
 
@@ -410,7 +412,16 @@ def _package(path: Path, files: dict[str, bytes], *, link: str = "") -> Path:
         ({"../escape.txt": b"x"}, "", "leaves the folder"),
         ({"code/../../escape.txt": b"x"}, "", "leaves the folder"),
         ({"C:/Windows/x": b"x"}, "", "is an absolute path"),
-        ({"code\\x.py": b"x"}, "", "backslash"),
+        pytest.param(
+            {"code\\x.py": b"x"},
+            "",
+            "backslash",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="zipfile on Windows turns a backslash in a name into / (writing and reading): the name is "
+                "code/x.py there, and a backslash name with .. still fails as leaving the folder",
+            ),
+        ),
         ({"code/link": b"/etc/passwd"}, "code/link", "symbolic link"),
         ({"README.md": b"a", "readme.md": b"b"}, "", "twice"),
     ],
@@ -496,7 +507,7 @@ def test_wheels_for_another_computer_are_not_used(tmp_path, offline_lock, rerun_
     folder = _export(tmp_path)
     download, _ = _fake_wheels(["x-1-py3-none-any.whl"])
     packed = pkg.build(folder, offline=True, downloader=download)
-    monkeypatch.setattr(pkg, "platform_key", lambda python_minor: "win32-x86_64-py" + python_minor)
+    monkeypatch.setattr(pkg, "platform_key", lambda python_minor: "plan9-sparc-py" + python_minor)  # no runner's
     capsys.readouterr()
     assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
     assert "the packages are downloaded" in capsys.readouterr().out
@@ -514,7 +525,7 @@ def test_the_environment_installs_offline_from_the_wheels(tmp_path, monkeypatch)
     monkeypatch.setattr(rp, "_run", fake_run)
     folder = tmp_path / "study"
     (folder / "e2er-package" / "wheels" / "k").mkdir(parents=True)
-    (folder / "req.txt").write_text("x==1\n", encoding="utf-8")
+    (folder / "req.txt").write_text("x==1\n", encoding="utf-8", newline="\n")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     recipe = {"requirements": "req.txt", "wheelhouse": "e2er-package/wheels/k"}
@@ -530,9 +541,11 @@ def test_a_wheelhouse_named_in_reproduce_json_is_ignored(tmp_path, rerun_here, c
     folder = tmp_path / "study"
     (folder / "code").mkdir(parents=True)
     (folder / "results").mkdir()
-    (folder / "code" / "run.py").write_text('import json; json.dump({"a": 1}, open("r.json", "w"))\n', encoding="utf-8")
-    (folder / "code" / "requirements.txt").write_text("\n", encoding="utf-8")
-    (folder / "results" / "r.json").write_text('{"a": 1}', encoding="utf-8")
+    (folder / "code" / "run.py").write_text(
+        'import json; json.dump({"a": 1}, open("r.json", "w"))\n', encoding="utf-8", newline="\n"
+    )
+    (folder / "code" / "requirements.txt").write_text("\n", encoding="utf-8", newline="\n")
+    (folder / "results" / "r.json").write_text('{"a": 1}', encoding="utf-8", newline="\n")
     (folder / "reproduce.json").write_text(
         json.dumps(
             {
@@ -545,6 +558,7 @@ def test_a_wheelhouse_named_in_reproduce_json_is_ignored(tmp_path, rerun_here, c
             }
         ),
         encoding="utf-8",
+        newline="\n",
     )
     assert reproduce(str(folder), yes=True, sandbox=False) == 0
     assert "wheelhouse" not in rerun_here[-1]
@@ -597,7 +611,12 @@ def test_pack_and_inspect_print_a_plain_summary(tmp_path, offline_lock, capsys):
 )
 def test_help_texts(argv, words):
     out = subprocess.run(
-        [sys.executable, "-m", "src", *argv], capture_output=True, text=True, timeout=120, check=True
+        [sys.executable, "-m", "src", *argv],
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=True,
     ).stdout
     flat = " ".join(out.split())
     for w in words:
@@ -643,7 +662,7 @@ def test_the_finish_page_offers_the_package_for_download(live_db, session, offli
     pid = str(uuid.uuid4())
     ws = _workspace(live_db, restricted=False)
     manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
-    (ws / "manifest.json").write_text(json.dumps({**manifest, "paper_id": pid}), encoding="utf-8")
+    (ws / "manifest.json").write_text(json.dumps({**manifest, "paper_id": pid}), encoding="utf-8", newline="\n")
     bundle = export_paper(ws, live_db / "exports", date_str="20261014")
     asyncio.run(
         execute(
@@ -687,7 +706,7 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
         res = folder / "results" / "estimation_results.json"
         doc = json.loads(res.read_text(encoding="utf-8"))
         doc["main"]["mean"] += 1
-        res.write_text(json.dumps(doc), encoding="utf-8")
+        res.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
         amend(folder, "results/estimation_results.json", "edited", at="x")
     tmp = Path(tempfile.gettempdir())
     assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
@@ -720,7 +739,9 @@ def _paper(tmp_path: Path, head: str) -> Path:
     folder = tmp_path / "study"
     (folder / "paper").mkdir(parents=True)
     (folder / "paper" / "paper.tex").write_text(
-        "\\documentclass{article}\n" + head + "\n\\begin{document}\n\\maketitle\n\\end{document}\n", encoding="utf-8"
+        "\\documentclass{article}\n" + head + "\n\\begin{document}\n\\maketitle\n\\end{document}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     return folder
 

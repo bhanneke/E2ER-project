@@ -56,7 +56,7 @@ def test_e2er_run_starts_the_server_with_the_token_it_sends(monkeypatch, home):
     assert cli_run.api_headers()[ls.HEADER] == token
     import json
 
-    assert json.loads(ls.session_file(8394).read_text())["pid"] == 4242
+    assert json.loads(ls.session_file(8394).read_text(encoding="utf-8"))["pid"] == 4242
 
 
 def test_a_running_server_keeps_its_session_file(monkeypatch, home):

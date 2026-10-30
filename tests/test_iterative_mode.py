@@ -58,7 +58,9 @@ async def test_each_round_its_ceiling_check_and_the_one_pivot_are_recorded(tmp_p
         logged.append((event_type, payload or {}))
 
     monkeypatch.setattr(events, "log_event", log_event)
-    (tmp_path / "paper_draft.tex").write_text("\\section{Results}", encoding="utf-8")  # the rounds edit a draft
+    (tmp_path / "paper_draft.tex").write_text(
+        "\\section{Results}", encoding="utf-8", newline="\n"
+    )  # the rounds edit a draft
     runner = PipelineRunner("p-1", tmp_path, _Answer(""), "m", mode="iterative", backend_name="mock", max_cost_usd=10)
     runner._strategist.decide = AsyncMock(  # type: ignore[method-assign]
         return_value=StrategistDecision(action="dispatch_parallel", work_orders=[], rationale="why")
@@ -133,7 +135,9 @@ def _runner(tmp_path: Path, monkeypatch) -> tuple[Any, list[tuple[str, dict[str,
         logged.append((event_type, payload or {}))
 
     monkeypatch.setattr(events, "log_event", log_event)
-    (tmp_path / "paper_draft.tex").write_text("\\section{Results}", encoding="utf-8")  # the rounds edit a draft
+    (tmp_path / "paper_draft.tex").write_text(
+        "\\section{Results}", encoding="utf-8", newline="\n"
+    )  # the rounds edit a draft
     runner = PipelineRunner("p-1", tmp_path, _Answer(""), "m", mode="iterative", backend_name="mock", max_cost_usd=10)
     return runner, logged
 
@@ -219,14 +223,14 @@ async def test_a_polish_note_changes_the_draft_or_leaves_a_recorded_decision(
     from src.core.pipeline import verify_numbers
 
     runner, logged = _runner(tmp_path, monkeypatch)
-    (tmp_path / "paper_draft.tex").write_text("SD about 2.5 to 3.0.\n", encoding="utf-8")
-    (tmp_path / "polish_numerics.md").write_text("Write 2.4 to 2.9 for the SD range.\n", encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text("SD about 2.5 to 3.0.\n", encoding="utf-8", newline="\n")
+    (tmp_path / "polish_numerics.md").write_text("Write 2.4 to 2.9 for the SD range.\n", encoding="utf-8", newline="\n")
     seen: list[Any] = []
 
     async def patch(findings):
         seen.extend(findings)
         if applied:
-            (tmp_path / "paper_draft.tex").write_text("SD about 2.4 to 2.9.\n", encoding="utf-8")
+            (tmp_path / "paper_draft.tex").write_text("SD about 2.4 to 2.9.\n", encoding="utf-8", newline="\n")
         return _Merge(applied, failed)
 
     counts = iter([(0, 2), after])

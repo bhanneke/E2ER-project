@@ -235,7 +235,7 @@ class Cassette:
             "$comment": "Recorded live by the e2er connector kit (use_cassette); replayed in tests with no network.",
             "interactions": self.entries,
         }
-        self.path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+        self.path.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
 
 
 def _body_out(content: bytes, content_type: str) -> dict[str, str]:

@@ -50,8 +50,8 @@ def _finding() -> Finding:
 
 def _workspace(tmp_path: Path, edits: list[dict]) -> Path:
     f = _finding()
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
-    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
+    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8", newline="\n")
     record = {
         "findings": [
             {
@@ -67,7 +67,7 @@ def _workspace(tmp_path: Path, edits: list[dict]) -> Path:
         "draft_sha256": hashlib.sha256(DRAFT.encode()).hexdigest(),
         "require_change": True,  # the revision round after the review panel
     }
-    (tmp_path / REVISION_FINDINGS_FILE).write_text(json.dumps(record), encoding="utf-8")
+    (tmp_path / REVISION_FINDINGS_FILE).write_text(json.dumps(record), encoding="utf-8", newline="\n")
     return tmp_path
 
 
@@ -115,11 +115,15 @@ def _runner(tmp_path: Path, mock_llm) -> PipelineRunner:
     paper_id = str(uuid.uuid4())
     ws = tmp_path / paper_id
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": paper_id, "title": "T", "research_question": "q?"}))
-    (ws / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": paper_id, "title": "T", "research_question": "q?"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
     (ws / "review_literature.md").write_text(
         "# Review\n\nThe literature section misstates prior work.\n\n"
-        "OVERALL SCORE: 4.0/10\nRECOMMENDATION: Major Revision\n"
+        "OVERALL SCORE: 4.0/10\nRECOMMENDATION: Major Revision\n",
+        encoding="utf-8",
+        newline="\n",
     )
     return PipelineRunner(paper_id=paper_id, workspace=ws, backend=mock_llm, model="mock", backend_name="mock")
 
@@ -140,7 +144,9 @@ async def test_a_revision_that_applies_nothing_stops_for_the_researcher(tmp_path
     async def _rejected(work_order, *args, **kwargs):
         calls.append(work_order.specialist)
         (ws / "paper_draft.tex.edits.json").write_text(
-            json.dumps([{"target": "section:methods", "edit_type": "replace_text", "find": LIT, "replace": "x"}])
+            json.dumps([{"target": "section:methods", "edit_type": "replace_text", "find": LIT, "replace": "x"}]),
+            encoding="utf-8",
+            newline="\n",
         )
         return Contribution(
             paper_id=runner._paper_id,
@@ -166,7 +172,7 @@ async def test_a_revision_that_applies_nothing_stops_for_the_researcher(tmp_path
 async def test_after_the_researcher_approves_the_round_completes_without_running_the_revisor_again(tmp_path, mock_llm):
     runner = _runner(tmp_path, mock_llm)
     ws = runner._workspace
-    (ws / "paper_draft.tex.edits.json").write_text("[]")
+    (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
 
     class _State:
         metadata = {"contract_accepted_skip": [{"phase": "revision", "specialist": "patch_revisor"}]}
@@ -196,7 +202,9 @@ async def test_after_the_stop_reran_the_revisor_its_patch_is_applied_once(tmp_pa
     ws = runner._workspace
     fixed = "Most radii in the archive are calculated from the transit depth."
     (ws / "paper_draft.tex.edits.json").write_text(
-        json.dumps([{"target": "paper:full", "edit_type": "replace_text", "find": LIT, "replace": fixed}])
+        json.dumps([{"target": "paper:full", "edit_type": "replace_text", "find": LIT, "replace": fixed}]),
+        encoding="utf-8",
+        newline="\n",
     )
 
     class _State:
@@ -224,7 +232,7 @@ async def test_after_the_stop_reran_the_revisor_its_patch_is_applied_once(tmp_pa
 
 def test_the_number_checks_correction_may_still_answer_with_an_empty_patch(tmp_path):
     ws = _workspace(tmp_path, [])
-    record = json.loads((ws / REVISION_FINDINGS_FILE).read_text())
+    record = json.loads((ws / REVISION_FINDINGS_FILE).read_text(encoding="utf-8"))
     record.pop("require_change")
-    (ws / REVISION_FINDINGS_FILE).write_text(json.dumps(record))
+    (ws / REVISION_FINDINGS_FILE).write_text(json.dumps(record), encoding="utf-8", newline="\n")
     assert not any("changes nothing" in r for r in _violations(ws))

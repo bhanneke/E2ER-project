@@ -29,7 +29,7 @@ def bundle(tmp_path: Path) -> Path:
 
 
 def _manifest(bundle: Path) -> dict:
-    return json.loads((bundle / "e2er.json").read_text())
+    return json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
 
 
 def test_data_and_code_are_private_unless_stated(bundle: Path, tmp_path: Path):
@@ -66,7 +66,7 @@ def test_public_data_and_code_at_a_commit_leave_the_committed_files_as_they_are(
     first = _manifest(bundle)
 
     def fingerprints() -> dict[str, str]:
-        prov = json.loads((bundle / "provenance.json").read_text())
+        prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
         out = {p: hashlib.sha256((bundle / p).read_bytes()).hexdigest() for p in prov["files"]}
         out["provenance.json"] = hashlib.sha256((bundle / "provenance.json").read_bytes()).hexdigest()
         return out
@@ -98,7 +98,7 @@ def test_private_material_carries_no_address_and_no_contents(bundle: Path, tmp_p
     text = json.dumps(body)
     assert body["manifest"]["availability"]["data"] == {"access": "private"}
     assert "example.org/secret" not in text
-    summary = (bundle / "data" / "data_summary.md").read_text()
+    summary = (bundle / "data" / "data_summary.md").read_text(encoding="utf-8")
     assert summary[:200] not in text  # fingerprints only, never file contents
 
 

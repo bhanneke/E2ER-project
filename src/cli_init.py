@@ -249,7 +249,7 @@ def _scaffold_project_dirs(root: Path) -> tuple[Path, Path]:
         d.mkdir(parents=True, exist_ok=True)
         readme_path = d / "README.md"
         if not readme_path.exists():
-            readme_path.write_text(readme, encoding="utf-8")
+            readme_path.write_text(readme, encoding="utf-8", newline="\n")
     return data_dir, lit_dir
 
 
@@ -420,7 +420,7 @@ def write_env_file(env_path: Path, content: str) -> None:
     env_path = Path(env_path)
     tmp = env_path.with_name(env_path.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(content)
     os.chmod(tmp, 0o600)
     os.replace(tmp, env_path)

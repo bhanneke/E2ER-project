@@ -16,7 +16,7 @@ async def main():
     print(f"Running {len(migrations)} migrations...")
     for path in migrations:
         print(f"  {path.name}")
-        sql = path.read_text()
+        sql = path.read_text(encoding="utf-8")
         try:
             await execute(sql)
             print(f"  ✓ {path.name}")

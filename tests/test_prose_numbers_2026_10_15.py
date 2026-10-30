@@ -23,11 +23,11 @@ RESULTS = {
 
 
 def _study(tmp_path: Path, prose: str, *, design: dict | None = None) -> Path:
-    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS))
+    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS), encoding="utf-8", newline="\n")
     if design is not None:
-        (tmp_path / "corpus_design.json").write_text(json.dumps(design))
+        (tmp_path / "corpus_design.json").write_text(json.dumps(design), encoding="utf-8", newline="\n")
     draft = tmp_path / "paper_draft.tex"
-    draft.write_text("\\begin{document}\n" + prose + "\n\\end{document}\n")
+    draft.write_text("\\begin{document}\n" + prose + "\n\\end{document}\n", encoding="utf-8", newline="\n")
     return draft
 
 
@@ -65,12 +65,16 @@ def test_real_numbers_stay_checked(tmp_path: Path):
 
 
 def test_design_constants_read_the_design_files_and_the_template(tmp_path: Path):
-    (tmp_path / "corpus_design.json").write_text(json.dumps({"min_tokens": 30000, "cohorts": ["1770-1799"]}))
-    (tmp_path / "data_dictionary.json").write_text(
-        json.dumps({"tables": [{"name": "t", "rows": 108, "min_non_null": 100}]})
+    (tmp_path / "corpus_design.json").write_text(
+        json.dumps({"min_tokens": 30000, "cohorts": ["1770-1799"]}), encoding="utf-8", newline="\n"
     )
-    (tmp_path / "preregistration.md").write_text("Rates per 10,000 words; at most 2 novels per author.\n")
-    (tmp_path / "manifest.json").write_text(json.dumps({"pipeline": "text-analysis"}))
+    (tmp_path / "data_dictionary.json").write_text(
+        json.dumps({"tables": [{"name": "t", "rows": 108, "min_non_null": 100}]}), encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "preregistration.md").write_text(
+        "Rates per 10,000 words; at most 2 novels per author.\n", encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "manifest.json").write_text(json.dumps({"pipeline": "text-analysis"}), encoding="utf-8", newline="\n")
     found = design_constants(tmp_path)
     assert {30000.0, 1770.0, 1799.0, 100.0, 10000.0, 2.0} <= found
     assert 20.0 in found  # the text-analysis template's min_validation_items

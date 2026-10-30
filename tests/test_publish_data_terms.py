@@ -23,7 +23,9 @@ from src.modules.data import gmd_provider as gmd
 from tests.run_db import make_run_db, paper_id_of
 from tests.test_publish_access import BASE, REPO, SHOWCASE, FakeZenodo
 
-SCHEMA = json.loads((Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text())
+SCHEMA = json.loads(
+    (Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text(encoding="utf-8")
+)
 CSV = "data/gmd_panel.csv"
 
 
@@ -35,7 +37,7 @@ def _add(b: Path, rel: str, content: bytes) -> None:
     prov_path = b / "provenance.json"
     prov = json.loads(prov_path.read_text(encoding="utf-8"))
     prov["files"][rel] = {"sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content)}
-    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 @pytest.fixture
@@ -81,7 +83,7 @@ def bundle(plain_bundle: Path) -> Path:
 
 
 def _manifest(b: Path) -> dict:
-    return json.loads((b / "e2er.json").read_text())
+    return json.loads((b / "e2er.json").read_text(encoding="utf-8"))
 
 
 def _snapshot(b: Path) -> dict[str, bytes]:

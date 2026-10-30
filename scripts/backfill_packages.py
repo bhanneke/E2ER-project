@@ -122,7 +122,7 @@ class StopError(Exception):
 
 
 def _git(args: list[str], cwd: Path | None = None) -> str:
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=900)
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", timeout=900)
     if proc.returncode != 0:
         raise StopError(f"git {args[0]} failed: {(proc.stderr or proc.stdout).strip().splitlines()[-1:]}")
     return proc.stdout
@@ -167,7 +167,8 @@ def _verify(file: Path, against: str) -> dict[str, Any]:
         [sys.executable, "-m", "src", "verify", str(file), "--json", "--against", against],
         cwd=ROOT,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=1800,
     )
     text = proc.stdout
@@ -332,7 +333,7 @@ def main() -> int:
         print(f"   verify --against: {r['verify']['verdict']} (published: {r['verify']['published']})")
         print(f"   release {rel['tag']} of {rel['repository']} at {rel['target'][:7]} ({rel['now']})")
         print(f"   {r['action']}")
-    (work / "backfill-report.json").write_text(json.dumps(results, indent=2) + "\n")
+    (work / "backfill-report.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
     print(f"\nreport: {work / 'backfill-report.json'}")
     return 1 if any("error" in r for r in results) else 0
 

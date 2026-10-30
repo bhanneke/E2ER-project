@@ -206,7 +206,7 @@ def _download_catalogue(root: Path) -> None:
         old.unlink()
     for name, data in manifests.items():
         (skills_dir / name).write_bytes(data)
-    stamp.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8")
+    stamp.write_text(time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), encoding="utf-8", newline="\n")
 
 
 def _pack_from(raw: dict[str, Any], slug: str) -> SkillPack:
@@ -403,6 +403,7 @@ async def install_pack(
             ensure_ascii=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
     return {"pack": pack.slug, "installed": len(written), "failed": len(failed), "path": str(target)}

@@ -24,7 +24,7 @@ _RESULTS = "estimation_results.json"
 
 
 def _write_spec(ws: Path, primary: dict) -> None:
-    (ws / "identification_spec.json").write_text(json.dumps({"primary": primary}), encoding="utf-8")
+    (ws / "identification_spec.json").write_text(json.dumps({"primary": primary}), encoding="utf-8", newline="\n")
 
 
 def _write_results(ws: Path, main: dict | None, **extra_specs: dict) -> None:
@@ -32,7 +32,7 @@ def _write_results(ws: Path, main: dict | None, **extra_specs: dict) -> None:
     if main is not None:
         payload["main"] = main
     payload.update(extra_specs)
-    (ws / _RESULTS).write_text(json.dumps(payload), encoding="utf-8")
+    (ws / _RESULTS).write_text(json.dumps(payload), encoding="utf-8", newline="\n")
 
 
 def _coeffs(*names: str) -> dict:
@@ -54,7 +54,7 @@ def test_spec_declaring_nothing_checkable_passes(tmp_path: Path):
 
 
 def test_unparseable_spec_degrades_to_ok(tmp_path: Path):
-    (tmp_path / "identification_spec.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "identification_spec.json").write_text("{not json", encoding="utf-8", newline="\n")
     _write_results(tmp_path, {"coefficients": _coeffs("treat")})
     assert check_matches_declared_spec(tmp_path, _RESULTS).ok
 
@@ -164,14 +164,16 @@ def test_not_layered_on_descriptive_only_failure(tmp_path: Path):
     """When the regression floor already failed (descriptive-only output), the
     spec contract must NOT pile a second failure into the feedback."""
     _write_spec(tmp_path, {"fixed_effects": ["unit"]})
-    (tmp_path / _RESULTS).write_text(json.dumps({"raw_gap": {"note": "descriptives only"}}), encoding="utf-8")
+    (tmp_path / _RESULTS).write_text(
+        json.dumps({"raw_gap": {"note": "descriptives only"}}), encoding="utf-8", newline="\n"
+    )
     failures = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
     assert any("no estimated regression" in c.reason for c in failures)
     assert not any("identified-spec contract" in c.reason for c in failures)
 
 
 def test_identification_strategist_sidecar_required(tmp_path: Path):
-    (tmp_path / "identification_strategy.md").write_text("# Strategy\n" + "prose " * 40, encoding="utf-8")
+    (tmp_path / "identification_strategy.md").write_text("# Strategy\n" + "prose " * 40, encoding="utf-8", newline="\n")
     failures = [c for c in check_specialist_artifacts(tmp_path, "identification_strategist") if not c.ok]
     assert any(c.artifact == "identification_spec.json" for c in failures)
     _write_spec(tmp_path, {"estimator": "ols", "fixed_effects": [], "controls": [], "cluster_level": "none"})

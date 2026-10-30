@@ -252,7 +252,11 @@ def _extract_pdf_text(package: Path, out_root: Path) -> list[str]:
             logger.warning("package text: %s could not be read: %s", rel, e)
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(f"# Text of {rel} ({len(pages)} pages), extracted with pypdf\n\n" + "\n".join(pages))
+        target.write_text(
+            f"# Text of {rel} ({len(pages)} pages), extracted with pypdf\n\n" + "\n".join(pages),
+            newline="\n",
+            encoding="utf-8",
+        )
         written.append(target.relative_to(out_root.parent).as_posix())
     return written
 
@@ -394,6 +398,7 @@ def stage_paper(workspace: Path, explicit: str | Path | None = None) -> dict[str
     text_path.write_text(
         f"# Text of {PAPER_FILE} ({len(pages)} pages, researcher-supplied), extracted with {extractor}\n\n{body}",
         encoding="utf-8",
+        newline="\n",
     )
     record = {
         "supplied_by": "researcher",
@@ -409,7 +414,7 @@ def stage_paper(workspace: Path, explicit: str | Path | None = None) -> dict[str
     if previous:
         record["replaces_sha256"] = previous.get("sha256")
     manifest["paper"] = record
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
     return {**record, "new": True}
 
 
@@ -480,7 +485,7 @@ def _fetch(workspace: Path, *, max_mb: int, client: Any) -> CheckResult:
         "pdf_text": texts,
         "notes": notes,
     }
-    manifest_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8", newline="\n")
     from ...modules.data.load_record import try_record, zenodo_load
 
     # The package is the study's input data: its record, licence and citation go with the other loads.

@@ -224,7 +224,9 @@ async def fetch_books(ctx: Context, params: dict[str, Any]) -> Fetched:
         )
     try:
         cached.parent.mkdir(parents=True, exist_ok=True)
-        cached.write_text(json.dumps({"rows": rows, "query": query, "record": record, "note": note}), encoding="utf-8")
+        cached.write_text(
+            json.dumps({"rows": rows, "query": query, "record": record, "note": note}), encoding="utf-8", newline="\n"
+        )
     except OSError:
         pass
     return _books_fetched(rows, what, query, record, note)
@@ -401,7 +403,7 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
             ) from None
         try:  # the same books asked for again today (a call that stopped at its time limit) skip Gutendex
             looked_up.parent.mkdir(parents=True, exist_ok=True)
-            looked_up.write_text(json.dumps({"books": books, "urls": urls}), encoding="utf-8")
+            looked_up.write_text(json.dumps({"books": books, "urls": urls}), encoding="utf-8", newline="\n")
         except OSError:
             pass
     by_id = {str(b.get("id")): b for b in books}

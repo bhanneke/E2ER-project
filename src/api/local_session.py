@@ -248,7 +248,7 @@ def write_session_file(port: int, token: str, *, pid: int | None = None) -> Path
     p = session_file(port)
     p.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"token": token, "pid": pid if pid is not None else os.getpid(), "port": port}, fh)
     os.chmod(p, 0o600)
     return p

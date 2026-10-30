@@ -86,7 +86,7 @@ async def test_a_full_disk_pauses_the_run_with_a_plain_reason(tmp_path: Path, mo
     rows, events = db
     st = PipelineState(paper_id=PID, mode="single_pass")
     st.save(tmp_path)  # the last good state, written before the disk ran full
-    saved = (tmp_path / ".pipeline_state.json").read_text()
+    saved = (tmp_path / ".pipeline_state.json").read_text(encoding="utf-8")
     _load_as(monkeypatch, st)
     r = _runner(tmp_path, st)
 
@@ -108,7 +108,9 @@ async def test_a_full_disk_pauses_the_run_with_a_plain_reason(tmp_path: Path, mo
     assert rows[-1] == ("paused", DISK_FULL_STATUS)  # not left "designing"
     assert DISK_FULL_STATUS == "The disk is full; free space and press Resume."
     assert "paused_disk_full" in events and "failed" not in events
-    assert (tmp_path / ".pipeline_state.json").read_text() == saved  # the state to resume from is intact
+    assert (tmp_path / ".pipeline_state.json").read_text(
+        encoding="utf-8"
+    ) == saved  # the state to resume from is intact
 
 
 async def test_a_full_disk_in_a_handlers_save_pauses_too(tmp_path: Path, monkeypatch, db):

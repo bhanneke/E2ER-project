@@ -30,11 +30,11 @@ RESULTS = {
 
 
 def _spec(ws: Path, *tables: dict) -> None:
-    (ws / "table_spec.json").write_text(json.dumps({"tables": list(tables)}), encoding="utf-8")
+    (ws / "table_spec.json").write_text(json.dumps({"tables": list(tables)}), encoding="utf-8", newline="\n")
 
 
 def test_rows_are_entries_of_a_list_named_by_their_key_field(tmp_path: Path):
-    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS))
+    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS), encoding="utf-8", newline="\n")
     _spec(
         tmp_path,
         {
@@ -66,7 +66,7 @@ def test_rows_of_an_object_with_labels_text_cells_and_a_chosen_order(tmp_path: P
             "period_days": {"n": 60, "mean": 46.1622},
         }
     }
-    (tmp_path / "summary_statistics.json").write_text(json.dumps(stats))
+    (tmp_path / "summary_statistics.json").write_text(json.dumps(stats), encoding="utf-8", newline="\n")
     _spec(
         tmp_path,
         {
@@ -88,7 +88,7 @@ def test_rows_of_an_object_with_labels_text_cells_and_a_chosen_order(tmp_path: P
 
 
 def test_what_does_not_resolve_is_reported_with_what_to_do(tmp_path: Path):
-    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS))
+    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS), encoding="utf-8", newline="\n")
     _spec(
         tmp_path,
         {"filename": "a.tex", "layout": "records", "path": "forecasts.g.points", "columns": [{"field": "forecast"}]},
@@ -115,7 +115,7 @@ def test_the_regression_layout_is_unchanged_beside_records_tables(tmp_path: Path
             "diagnostics": {"n_observations": 100},
         }
     }
-    (tmp_path / "estimation_results.json").write_text(json.dumps(res))
+    (tmp_path / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     _spec(
         tmp_path,
         {
@@ -151,7 +151,7 @@ def test_scatter_and_histogram_figures_render(tmp_path: Path):
             {"filename": "fig_bad.pdf", "figure_type": "histogram", "bins": [{"lower": 1}]},
         ]
     }
-    (tmp_path / "figure_spec.json").write_text(json.dumps(spec))
+    (tmp_path / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     report = render_figures(tmp_path)
     assert report.rendered == ["fig_s.pdf", "fig_h.pdf"]
     assert (tmp_path / "fig_s.pdf").read_bytes()[:4] == b"%PDF" and (tmp_path / "fig_h.pdf").is_file()
@@ -161,9 +161,11 @@ def test_scatter_and_histogram_figures_render(tmp_path: Path):
 def test_e2er_verify_adds_a_results_contract_check_only_for_a_kind_other_than_regression(tmp_path: Path):
     from src.cli_verify import _check_results_contract
 
-    (tmp_path / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {}}}))
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {}}}), encoding="utf-8", newline="\n"
+    )
     assert _check_results_contract(tmp_path) is None
-    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS))
+    (tmp_path / "estimation_results.json").write_text(json.dumps(RESULTS), encoding="utf-8", newline="\n")
     c = _check_results_contract(tmp_path)
     assert c is not None and c.status == "FAIL" and c.detail.startswith("timeseries: ")
 
@@ -177,6 +179,6 @@ def test_a_scatter_axis_can_be_reversed(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(matplotlib.axes.Axes, "invert_xaxis", lambda self: calls.append("x"))
     base = {"figure_type": "scatter", "x": [0.5, 1.5], "y": [8.0, 14.0]}
     spec = {"figures": [{"filename": "fig_cmd.pdf", **base, "invert_y": True}, {"filename": "fig_p.pdf", **base}]}
-    (tmp_path / "figure_spec.json").write_text(json.dumps(spec))
+    (tmp_path / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     assert render_figures(tmp_path).rendered == ["fig_cmd.pdf", "fig_p.pdf"]
     assert calls == ["y"]

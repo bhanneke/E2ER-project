@@ -222,10 +222,10 @@ async def test_byod_local_data_empty_dir_skips(tmp_path):
 
 
 async def test_byod_local_data_counts_files(tmp_path):
-    (tmp_path / "a.csv").write_text("x\n")
-    (tmp_path / "b.csv").write_text("x\n")
+    (tmp_path / "a.csv").write_text("x\n", encoding="utf-8", newline="\n")
+    (tmp_path / "b.csv").write_text("x\n", encoding="utf-8", newline="\n")
     (tmp_path / "c.parquet").write_bytes(b"\x00")
-    (tmp_path / "ignore.md").write_text("x\n")
+    (tmp_path / "ignore.md").write_text("x\n", encoding="utf-8", newline="\n")
     c = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path)))
     assert c.status == PASS
     assert "2 csv" in c.detail and "1 parquet" in c.detail
@@ -234,7 +234,7 @@ async def test_byod_local_data_counts_files(tmp_path):
 async def test_byod_local_data_recursive(tmp_path):
     sub = tmp_path / "raw"
     sub.mkdir()
-    (sub / "deep.csv").write_text("x\n")
+    (sub / "deep.csv").write_text("x\n", encoding="utf-8", newline="\n")
     top = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path)))
     assert top.status == SKIP  # top-level scan misses the nested file
     rec = await byod_local_data_check(_byod_settings(local_data_dir=str(tmp_path), local_data_dir_recursive=True))
@@ -248,7 +248,7 @@ async def test_byod_literature_nothing_skips():
 
 async def test_byod_literature_bibtex_counts_entries(tmp_path):
     bib = tmp_path / "refs.bib"
-    bib.write_text("@article{a, title={A}}\n@book{b, title={B}}\n")
+    bib.write_text("@article{a, title={A}}\n@book{b, title={B}}\n", encoding="utf-8", newline="\n")
     c = await byod_literature_check(_byod_settings(literature_bibtex_file=str(bib)))
     assert c.status == PASS and "2 entries" in c.detail
 
@@ -270,10 +270,10 @@ async def test_byod_literature_ignores_an_empty_fallback_dir(tmp_path):
     configured only a .bib would otherwise see their data folder reported as a
     miss appended to a passing check."""
     bib = tmp_path / "refs.bib"
-    bib.write_text("@article{a, title={A}}\n")
+    bib.write_text("@article{a, title={A}}\n", encoding="utf-8", newline="\n")
     data = tmp_path / "data"
     data.mkdir()
-    (data / "prices.csv").write_text("x\n")
+    (data / "prices.csv").write_text("x\n", encoding="utf-8", newline="\n")
 
     c = await byod_literature_check(_byod_settings(literature_bibtex_file=str(bib), literature_dir=str(data)))
 
@@ -297,7 +297,9 @@ def test_cli_doctor_subcommand_registered():
     import sys
 
     # Subcommand must be listed in the top-level help.
-    r = subprocess.run([sys.executable, "-m", "src", "--help"], capture_output=True, text=True, timeout=15)
+    r = subprocess.run(
+        [sys.executable, "-m", "src", "--help"], capture_output=True, encoding="utf-8", errors="replace", timeout=15
+    )
     assert r.returncode == 0
     assert "doctor" in r.stdout
 
@@ -373,7 +375,7 @@ def test_gemini_sign_in_file_no_longer_counts(tmp_path, monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.setattr("src.doctor._env_file_has", lambda setting: False)
     (tmp_path / ".gemini").mkdir()
-    (tmp_path / ".gemini" / "oauth_creds.json").write_text("{}")
+    (tmp_path / ".gemini" / "oauth_creds.json").write_text("{}", encoding="utf-8", newline="\n")
     signed, note = cli_signed_in("gemini", home=tmp_path)
     assert signed is False
     assert "GEMINI_API_KEY" in note and "18 June 2026" in note and "paid" in note

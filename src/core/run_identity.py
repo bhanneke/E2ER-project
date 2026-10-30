@@ -50,7 +50,8 @@ def _git(*args: str) -> str | None:
             ["git", *args],
             cwd=_SOURCE_ROOT,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
         )

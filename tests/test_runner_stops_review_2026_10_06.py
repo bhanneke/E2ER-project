@@ -44,15 +44,19 @@ def test_reviewers_rewrite_their_files_whole():
 
 
 def test_a_reviewer_run_again_finds_no_review_of_the_round_before(tmp_path: Path):
-    (tmp_path / "review_mechanism.md").write_text("OVERALL SCORE: 3.0/10\nRECOMMENDATION: Reject\n")
+    (tmp_path / "review_mechanism.md").write_text(
+        "OVERALL SCORE: 3.0/10\nRECOMMENDATION: Reject\n", encoding="utf-8", newline="\n"
+    )
     order = WorkOrder(paper_id=PID, specialist="mechanism_reviewer", focus="review", output_file="review_mechanism.md")
     moved = set_aside_previous_outputs(tmp_path, order)
     assert moved == [("review_mechanism.md", ".history/review_mechanism.md.1")]
     assert not (tmp_path / "review_mechanism.md").exists()
     # A second round keeps the first one's file too, under the next number.
-    (tmp_path / "review_mechanism.md").write_text("OVERALL SCORE: 6.0/10\n")
+    (tmp_path / "review_mechanism.md").write_text("OVERALL SCORE: 6.0/10\n", encoding="utf-8", newline="\n")
     assert set_aside_previous_outputs(tmp_path, order) == [("review_mechanism.md", ".history/review_mechanism.md.2")]
-    assert (tmp_path / ".history" / "review_mechanism.md.1").read_text().startswith("OVERALL SCORE: 3.0")
+    assert (
+        (tmp_path / ".history" / "review_mechanism.md.1").read_text(encoding="utf-8").startswith("OVERALL SCORE: 3.0")
+    )
 
 
 def test_only_each_reviewers_latest_reply_can_stand_in_for_its_file(tmp_path, mock_llm):
@@ -96,7 +100,7 @@ async def test_a_stop_in_the_deep_revisions_review_is_kept_in_the_state(tmp_path
         pytest.raises(GateHaltError),
     ):
         await runner._run_revision_phase(PaperStatus.REVIEW)
-    saved = json.loads((runner._workspace / ".pipeline_state.json").read_text())
+    saved = json.loads((runner._workspace / ".pipeline_state.json").read_text(encoding="utf-8"))
     assert saved["metadata"]["deep_revision"] == {"round": 1, "step": "review"}
     assert st.metadata["deep_revision"]["step"] == "review"
 

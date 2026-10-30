@@ -507,7 +507,9 @@ async def _invoke_cli(
         kill_process_group(proc)
         await proc.wait()
         elapsed = time.monotonic() - start
-        deadline_fired = elapsed >= timeout * 0.95
+        # 50 ms of slack: Windows' clock and asyncio's timers tick every ~16 ms, so a deadline that fired can
+        # read a few milliseconds short of the limit.
+        deadline_fired = elapsed >= timeout * 0.95 - 0.05
         if deadline_fired:
             error = f"Claude Code timed out after {elapsed:.0f}s (limit {timeout}s)"
         else:

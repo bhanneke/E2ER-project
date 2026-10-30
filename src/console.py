@@ -56,3 +56,15 @@ def shell_arg(value: object) -> str:
     import shlex
 
     return shlex.quote(text)
+
+
+def shell_program(value: object) -> str:
+    """``value`` (a program's path) at the start of a command e2er prints for the reader to paste.
+
+    A path that needs quotes is quoted as ``shell_arg`` quotes it; on Windows PowerShell, the shell e2er's
+    instructions use there, a quoted program also needs the call operator: ``& "C:\\My Apps\\codex" login``.
+    """
+    quoted = shell_arg(value)
+    if sys.platform == "win32" and quoted != str(value):
+        return f"& {quoted}"
+    return quoted

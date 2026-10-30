@@ -149,7 +149,7 @@ def _design(ws: Path, **over: Any) -> Path:
     }
     design.update(over)
     p = ws / EVENT_DESIGN_FILE
-    p.write_text(json.dumps(design), encoding="utf-8")
+    p.write_text(json.dumps(design), encoding="utf-8", newline="\n")
     return p
 
 
@@ -167,7 +167,7 @@ def test_a_missing_design_fails_with_a_reason(tmp_path: Path):
 
 
 def test_a_design_that_is_not_json_fails(tmp_path: Path):
-    (tmp_path / EVENT_DESIGN_FILE).write_text("{not json", encoding="utf-8")
+    (tmp_path / EVENT_DESIGN_FILE).write_text("{not json", encoding="utf-8", newline="\n")
     r = check_event_window(tmp_path, calendar=CAL)
     assert not r.passed and "not valid JSON" in r.reasons[0]
 
@@ -537,7 +537,7 @@ def test_template_skills_are_recorded_in_the_description_and_dossier(tmp_path: P
     showcase = ROOT / "tests" / "fixtures" / "showcase_export"
     bundle = tmp_path / "bundle"
     shutil.copytree(showcase, bundle)
-    paper_id = json.loads((showcase / "provenance.json").read_text())["run"]["paper_id"]
+    paper_id = json.loads((showcase / "provenance.json").read_text(encoding="utf-8"))["run"]["paper_id"]
     db = tmp_path / "run.db"
     con = sqlite3.connect(db)
     con.executescript(
@@ -578,9 +578,9 @@ def test_template_skills_are_recorded_in_the_description_and_dossier(tmp_path: P
 def test_the_preregistration_includes_the_event_design(tmp_path: Path):
     from src.core.pipeline import preregistration as prereg
 
-    (tmp_path / "paper_plan.md").write_text("H1: bank stocks fall on hikes.\n")
+    (tmp_path / "paper_plan.md").write_text("H1: bank stocks fall on hikes.\n", encoding="utf-8", newline="\n")
     _design(tmp_path)
-    text = prereg.assemble(tmp_path).read_text()
+    text = prereg.assemble(tmp_path).read_text(encoding="utf-8")
     assert "Events and windows (machine-readable)" in text
     assert EVENT_DESIGN_FILE in prereg.freeze(tmp_path)["plan_files"]
 
@@ -670,10 +670,10 @@ def test_d_an_undeclared_event_table_only_warns(tmp_path: Path):
 
 
 def test_the_design_schema_accepts_the_documented_example(tmp_path: Path):
-    schema = json.loads((ROOT / "docs" / "schemas" / "event_design.schema.json").read_text())
+    schema = json.loads((ROOT / "docs" / "schemas" / "event_design.schema.json").read_text(encoding="utf-8"))
     cls = jsonschema.validators.validator_for(schema)
     cls.check_schema(schema)
-    design = json.loads(_design(tmp_path, events_source=SOURCE).read_text())
+    design = json.loads(_design(tmp_path, events_source=SOURCE).read_text(encoding="utf-8"))
     cls(schema).validate(design)
     with pytest.raises(jsonschema.ValidationError):
         cls(schema).validate({**design, "events_source": {"table": "x; drop", "date_column": "d"}})

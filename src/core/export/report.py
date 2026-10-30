@@ -324,7 +324,7 @@ def write_report(bundle: Path, manifest: dict[str, Any], prov: dict[str, Any] | 
     """
     try:
         target = bundle / "report.html"
-        target.write_text(render_report(bundle, manifest, prov), encoding="utf-8")
+        target.write_text(render_report(bundle, manifest, prov), encoding="utf-8", newline="\n")
         logger.info("Wrote %s", target.name)
         return target
     except Exception as e:  # noqa: BLE001

@@ -42,10 +42,10 @@ def _workspace(tmp_path: Path, *, complete: bool = True) -> tuple[Path, list[str
     if complete:
         written["paper_draft.pdf"] = "%PDF-1.4"
     for rel, body in written.items():
-        (ws / rel).write_text(body, encoding="utf-8")
-    (ws / "replication" / "estimation.py").write_text("# repl", encoding="utf-8")
+        (ws / rel).write_text(body, encoding="utf-8", newline="\n")
+    (ws / "replication" / "estimation.py").write_text("# repl", encoding="utf-8", newline="\n")
 
-    arts = sorted(str(f.relative_to(ws)) for f in ws.rglob("*") if f.is_file())
+    arts = sorted(f.relative_to(ws).as_posix() for f in ws.rglob("*") if f.is_file())
     return ws, arts
 
 
@@ -100,7 +100,7 @@ def test_a_missing_declared_artifact_is_shown_and_fails_its_phase(tmp_path: Path
 def test_an_empty_artifact_fails_too(tmp_path: Path):
     """A zero-byte file satisfies "exists" and nothing else."""
     ws, arts = _workspace(tmp_path)
-    (ws / "estimation_results.json").write_text("", encoding="utf-8")
+    (ws / "estimation_results.json").write_text("", encoding="utf-8", newline="\n")
 
     groups = {g["name"]: g for g in _artifact_groups(ws, arts, "single_pass", "empirical")}
     est = groups["Estimation"]
@@ -111,7 +111,7 @@ def test_an_empty_artifact_fails_too(tmp_path: Path):
 def test_gate_reports_carry_their_own_verdict(tmp_path: Path):
     ws, arts = _workspace(tmp_path)
     (ws / "number_verification.json").write_text(
-        json.dumps({"matched": 12, "mismatches": [{"severity": "critical"}]}), encoding="utf-8"
+        json.dumps({"matched": 12, "mismatches": [{"severity": "critical"}]}), encoding="utf-8", newline="\n"
     )
     arts.append("number_verification.json")
 

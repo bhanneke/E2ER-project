@@ -60,7 +60,7 @@ def _post(http: Any, paper_id: str, body: dict[str, Any]) -> int:
 def _edit_in_editor(content: str, name: str) -> str:
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
     suffix = Path(name).suffix or ".txt"
-    with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False, encoding="utf-8") as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False, encoding="utf-8", newline="\n") as fh:
         fh.write(content)
         path = fh.name
     try:

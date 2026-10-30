@@ -67,6 +67,8 @@ def clean_path_input(raw: str | None) -> str:
         s = unquote(s[len("file://") :])
         if s.startswith("localhost/"):
             s = s[len("localhost") :]
+        if os.name == "nt" and re.match(r"^/[A-Za-z]:[/\\]", s):
+            s = s[1:]  # file:///C:/Users/... names C:/Users/... on Windows
     # Backslash escapes from drag-and-drop in a POSIX terminal. On Windows the
     # backslash is the separator and must stay.
     if os.name != "nt" and "\\" in s:

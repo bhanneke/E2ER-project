@@ -40,5 +40,5 @@ def write_assembled_draft(workspace: Path) -> Path:
         return workspace / "paper_draft.tex"
 
     draft_path = workspace / "paper_draft.tex"
-    draft_path.write_text(content, encoding="utf-8")
+    draft_path.write_text(content, encoding="utf-8", newline="\n")
     return draft_path

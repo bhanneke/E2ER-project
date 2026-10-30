@@ -48,11 +48,11 @@ def _excel_study(tmp_path: Path, *, run: bool) -> Path:
     ws = tmp_path / "ws"
     (ws / "data").mkdir(parents=True)
     pd.DataFrame({"x": [1.0, 2.0, 4.5]}).to_excel(ws / "data" / "sheet.xlsx", sheet_name="Statements", index=False)
-    (ws / "run_estimation.py").write_text(EXCEL_STUDY, encoding="utf-8")
+    (ws / "run_estimation.py").write_text(EXCEL_STUDY, encoding="utf-8", newline="\n")
     if run:
         assert wrappers.run_main(["run_estimation.py"]) == 0
     else:
-        (ws / "estimation_results.json").write_text(json.dumps({"mean_x": 2.5, "n": 3}), encoding="utf-8")
+        (ws / "estimation_results.json").write_text(json.dumps({"mean_x": 2.5, "n": 3}), encoding="utf-8", newline="\n")
     return ws
 
 
@@ -118,7 +118,7 @@ def test_recorded_versions_win_and_a_changed_script_does_not_use_them(tmp_path: 
     ws = tmp_path / "ws"
     ws.mkdir()
     script = ws / "run_estimation.py"
-    script.write_text("import json\n", encoding="utf-8")
+    script.write_text("import json\n", encoding="utf-8", newline="\n")
     import hashlib
 
     sha = hashlib.sha256(script.read_bytes()).hexdigest()
@@ -127,7 +127,9 @@ def test_recorded_versions_win_and_a_changed_script_does_not_use_them(tmp_path: 
         {"script": "run_estimation.py", "sha256": sha, "exit_code": 0, "packages": {"numpy": "1.2.3"}},
         {"script": "run_estimation.py", "sha256": "other", "exit_code": 0, "packages": {"numpy": "9.9.9"}},
     ]
-    (ws / ".e2er-script-runs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    (ws / ".e2er-script-runs.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8", newline="\n"
+    )
     assert rr.recorded_packages(ws, [script]) == {"numpy": "1.2.3"}
     req = rr.requirements_for([script], set(), ws)
     assert req.lines == ["numpy==1.2.3"] and req.recorded == 1
@@ -136,16 +138,23 @@ def test_recorded_versions_win_and_a_changed_script_does_not_use_them(tmp_path: 
 def test_the_bootstrap_runs_a_script_as_python_would(tmp_path: Path):
     import subprocess
 
-    (tmp_path / "helper.py").write_text("VALUE = 7\n", encoding="utf-8")
+    (tmp_path / "helper.py").write_text("VALUE = 7\n", encoding="utf-8", newline="\n")
     (tmp_path / "main.py").write_text(
         "import sys, helper\n"
         "print(__name__, sys.argv[0].endswith('main.py'), __file__.endswith('main.py'), helper.VALUE)\n"
         "raise SystemExit(3)\n",
         encoding="utf-8",
+        newline="\n",
     )
     argv, extra, packages_file = script_command(sys.executable, tmp_path / "main.py")
     proc = subprocess.run(
-        argv, cwd=tmp_path / "..", env={"PATH": "/usr/bin:/bin", **extra}, capture_output=True, text=True, check=False
+        argv,
+        cwd=tmp_path / "..",
+        env={"PATH": "/usr/bin:/bin", **extra},
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     assert proc.returncode == 3, proc.stderr
     assert proc.stdout.strip() == "__main__ True True 7", "a sibling module imports, as with `python main.py`"
@@ -191,7 +200,7 @@ def test_a_backend_not_installed_is_listed_unpinned_with_a_note(tmp_path: Path, 
 
     monkeypatch.setattr(md, "version", version)
     script = tmp_path / "run_estimation.py"
-    script.write_text("import pandas as pd\nprint(pd.DataFrame().to_markdown())\n", encoding="utf-8")
+    script.write_text("import pandas as pd\nprint(pd.DataFrame().to_markdown())\n", encoding="utf-8", newline="\n")
     req = rr.requirements_for([script], set(), tmp_path)
     [line] = [ln for ln in req.lines if ln.startswith("tabulate")]
     assert line.startswith("tabulate  # pandas needs it to write Markdown tables")
@@ -234,13 +243,14 @@ def test_reproduce_says_which_package_the_recipe_left_out(tmp_path: Path, this_p
     folder = tmp_path / "study"
     (folder / "code").mkdir(parents=True)
     (folder / "results").mkdir()
-    (folder / "code" / "requirements.txt").write_text("pandas\n", encoding="utf-8")
+    (folder / "code" / "requirements.txt").write_text("pandas\n", encoding="utf-8", newline="\n")
     (folder / "code" / "run_estimation.py").write_text(
         "from pandas.compat._optional import import_optional_dependency\n"
         "import_optional_dependency('e2er_no_such_backend')\n",
         encoding="utf-8",
+        newline="\n",
     )
-    (folder / "results" / "estimation_results.json").write_text('{"a": 1}', encoding="utf-8")
+    (folder / "results" / "estimation_results.json").write_text('{"a": 1}', encoding="utf-8", newline="\n")
     recipe = {
         "schema": rp.SCHEMA,
         "requirements": "code/requirements.txt",
@@ -248,7 +258,7 @@ def test_reproduce_says_which_package_the_recipe_left_out(tmp_path: Path, this_p
         "steps": [{"run": ["python", "run_estimation.py"]}],
         "compare": [{"published": "results/estimation_results.json", "produced": "estimation_results.json"}],
     }
-    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8")
+    (folder / "reproduce.json").write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
 
     assert reproduce(str(folder), yes=True, sandbox=False) == 2
     report = capsys.readouterr().out
@@ -269,7 +279,9 @@ def test_the_recipe_names_the_python_the_run_recorded_not_the_exporting_one(tmp_
         {"script": "run_estimation.py", "sha256": sha, "exit_code": 0, "python": "3.12.12", "packages": {}},
         {"script": "run_estimation.py", "sha256": sha, "exit_code": 1, "python": "3.13.1", "packages": {}},
     ]
-    (ws / ".e2er-script-runs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    (ws / ".e2er-script-runs.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8", newline="\n"
+    )
     out = _export(ws, tmp_path / "export")
     recipe = rr.write_recipe(ws, out, date_str="20261014").recipe
     assert recipe["python"] == "3.12"

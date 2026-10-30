@@ -52,6 +52,8 @@ def test_coerce_status_none_falls_back():
 
 
 def test_tier0_context_handles_null_fields(tmp_path):
-    (tmp_path / "manifest.json").write_text(json.dumps({"title": "T", "datasets": None, "research_question": None}))
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"title": "T", "datasets": None, "research_question": None}), encoding="utf-8", newline="\n"
+    )
     out = build_tier0_context(tmp_path, "p1")  # must not raise on explicit nulls
     assert "Paper: T" in out

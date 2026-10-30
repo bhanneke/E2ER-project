@@ -83,13 +83,17 @@ def events(monkeypatch) -> list[tuple[str, str | None, dict]]:
 def study(tmp_path: Path, monkeypatch) -> tuple[str, Path]:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "pipelines").mkdir()
-    (tmp_path / "pipelines" / "numgate.toml").write_text(TEMPLATE)
+    (tmp_path / "pipelines" / "numgate.toml").write_text(TEMPLATE, encoding="utf-8", newline="\n")
     pid = str(uuid.uuid4())
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": pid, "research_question": "Q?"}))
-    (ws / "paper_draft.tex").write_text(_draft("0.80"))  # the results say 0.50
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coef": 0.50, "se": 0.10}}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": pid, "research_question": "Q?"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(_draft("0.80"), encoding="utf-8", newline="\n")  # the results say 0.50
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"main": {"coef": 0.50, "se": 0.10}}), encoding="utf-8", newline="\n"
+    )
     return pid, ws
 
 
@@ -230,7 +234,7 @@ async def test_approving_continues_with_the_mismatches_recorded_and_the_reviewer
     assert "replication_packager" in backend.specialist_calls
     state = _state(ws, pid)
     assert state.pending_review_stage is None and state.is_complete("review")
-    note = json.loads((ws / "number_check.json").read_text())
+    note = json.loads((ws / "number_check.json").read_text(encoding="utf-8"))
     assert note["decision"] == "accepted_by_researcher"
     assert [k for k, _s, _p in events if k.startswith("number_check_")] == ["number_check_accepted_by_researcher"]
 
@@ -240,7 +244,7 @@ async def test_a_new_mismatch_after_the_approval_stops_the_run_again(study, even
     run = _Run()
     await run(pid, ws, _Backend())
     _act(ws, pid, {"action": "approve"})
-    (ws / "paper_draft.tex").write_text(_draft("0.95"))  # a different wrong value
+    (ws / "paper_draft.tex").write_text(_draft("0.95"), encoding="utf-8", newline="\n")  # a different wrong value
     out = await run(pid, ws, _Backend())
     assert out.get("reason") == "number_check"
     assert "the table says 0.95" in out["reasons"][0]
@@ -283,7 +287,7 @@ async def test_sending_the_drafter_back_runs_it_and_then_the_check(study, events
     assert after[0] == "paper_drafter"
     assert len([s for s in after if s.endswith("_reviewer")]) == 6
     assert out["status"] == "completed", out
-    assert "Use the coefficient from the results." in (ws / "researcher_instructions.md").read_text()
+    assert "Use the coefficient from the results." in (ws / "researcher_instructions.md").read_text(encoding="utf-8")
 
 
 # ── governance contracts/off: record and continue, and say so ─────────────
@@ -300,7 +304,7 @@ async def test_under_contracts_or_off_the_run_records_the_mismatches_and_continu
     assert out["status"] == "completed", out
     assert "patch_revisor" not in backend.specialist_calls  # no repair in shadow
     assert len([s for s in backend.specialist_calls if s.endswith("_reviewer")]) == 6
-    note = json.loads((ws / "number_check.json").read_text())
+    note = json.loads((ws / "number_check.json").read_text(encoding="utf-8"))
     assert note["decision"] == "recorded_and_continued" and note["governance"] == regime
     assert note["mismatches"][0]["cell"].startswith("tab:main")
     [text] = run_notes(ws)
@@ -313,7 +317,7 @@ async def test_under_contracts_or_off_the_run_records_the_mismatches_and_continu
 
 async def test_a_review_step_without_scores_fails_with_a_reason_and_nothing_runs_after_it(study, events):
     pid, ws = study
-    (ws / "paper_draft.tex").write_text(_draft("0.50"))
+    (ws / "paper_draft.tex").write_text(_draft("0.50"), encoding="utf-8", newline="\n")
     backend = _Backend(scoreless_reviews=True)
     run = _Run()
     out = await run(pid, ws, backend)
@@ -400,11 +404,11 @@ def test_an_empty_patch_file_is_an_answer_and_other_empty_json_is_not(tmp_path: 
     """writing/scoped-revision says `[]` is valid ("nothing to patch"); the contract agrees now."""
     from src.core.specialists.contract_check import check_artifact_nonempty
 
-    (tmp_path / "paper_draft.tex.edits.json").write_text("[]")
-    (tmp_path / "estimation_results.json").write_text("[]")
+    (tmp_path / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
+    (tmp_path / "estimation_results.json").write_text("[]", encoding="utf-8", newline="\n")
     assert check_artifact_nonempty(tmp_path, "paper_draft.tex.edits.json").ok
     assert not check_artifact_nonempty(tmp_path, "estimation_results.json").ok
-    (tmp_path / "paper_draft.tex.edits.json").write_text("{}")
+    (tmp_path / "paper_draft.tex.edits.json").write_text("{}", encoding="utf-8", newline="\n")
     assert not check_artifact_nonempty(tmp_path, "paper_draft.tex.edits.json").ok
 
 
@@ -506,7 +510,9 @@ def test_verify_passes_only_the_cells_the_researcher_continued_with(tmp_path: Pa
         "key": f"{approved.table_context}|41.20|s.json.kbe.mean",
     }
     path = tmp_path / "reviews" / "number_check.json"
-    path.write_text(json.dumps({"decision": "accepted_by_researcher", "mismatches": [record]}))
+    path.write_text(
+        json.dumps({"decision": "accepted_by_researcher", "mismatches": [record]}), encoding="utf-8", newline="\n"
+    )
     assert _researcher_approved_cells(tmp_path, [approved, other]) == ([approved], [other])
     # The same cell and value traced to another source key is not what the researcher approved
     # (the run matches cell, value and source key; verify now does the same).
@@ -514,8 +520,12 @@ def test_verify_passes_only_the_cells_the_researcher_continued_with(tmp_path: Pa
     assert _researcher_approved_cells(tmp_path, [elsewhere]) == ([], [elsewhere])
     # A record written before the run kept a source key: the cell and its value.
     old = {"cell": approved.table_context, "in_table": "41.20", "in_results": "36.69"}
-    path.write_text(json.dumps({"decision": "accepted_by_researcher", "mismatches": [old]}))
+    path.write_text(
+        json.dumps({"decision": "accepted_by_researcher", "mismatches": [old]}), encoding="utf-8", newline="\n"
+    )
     assert _researcher_approved_cells(tmp_path, [approved, other]) == ([approved], [other])
     # A regime that did not stop records the mismatches; that is no decision.
-    path.write_text(json.dumps({"decision": "recorded_and_continued", "mismatches": [record]}))
+    path.write_text(
+        json.dumps({"decision": "recorded_and_continued", "mismatches": [record]}), encoding="utf-8", newline="\n"
+    )
     assert _researcher_approved_cells(tmp_path, [approved]) == ([], [approved])

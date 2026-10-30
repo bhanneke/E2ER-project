@@ -46,7 +46,7 @@ def test_a_failed_install_skips_locally_and_fails_on_ci(monkeypatch):
 @pytest.mark.parametrize("workflow", ["tests.yml", "release.yml"])
 def test_ci_installs_uv_and_requires_it(workflow: str):
     """Both test jobs install uv (pinned to a commit) and set the flag on the pytest step."""
-    text = (ROOT / ".github" / "workflows" / workflow).read_text()
+    text = (ROOT / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
     assert re.search(r"uses: astral-sh/setup-uv@[0-9a-f]{40}\s+# v\d", text), workflow
     run_tests = text.split("- name: Run tests", 1)[1].split("- name:", 1)[0]
     assert 'E2ER_REQUIRE_UV: "1"' in run_tests, workflow
@@ -58,7 +58,7 @@ def test_every_replay_test_uses_the_helper():
     """No replay test skips the reproduce step on its own (that is what hid it on CI)."""
     seen: list[str] = []
     for p in sorted(ROOT.glob("tests/test_*_replay.py")):
-        text = p.read_text()
+        text = p.read_text(encoding="utf-8")
         if not re.search(r"\buv\b", text):
             continue  # its reproduce step installs nothing
         assert "uv.reproduce_env()" in text and "uv.check_installed(" in text, p.name

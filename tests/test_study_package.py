@@ -37,7 +37,7 @@ def _releases(github: Path) -> Path:
 
 def _registered(github: Path) -> list[dict]:
     p = github / "registered.jsonl"
-    return [json.loads(line) for line in p.read_text().splitlines()] if p.is_file() else []
+    return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines()] if p.is_file() else []
 
 
 # ── publish --github: the package as the file of a release ───────────────────
@@ -54,13 +54,13 @@ def test_the_package_becomes_the_file_of_a_release_at_the_pushed_commit(
     rel = _releases(github) / "demo-v1"
     asset = rel / "assets" / "demo-v1.e2er"
     assert asset.is_file(), out
-    meta = json.loads((rel / "release.json").read_text())
+    meta = json.loads((rel / "release.json").read_text(encoding="utf-8"))
     assert meta["latest"] is False, "a study's release never becomes the repository's latest"
     bare = github / "ada" / "demos.git"
     commit = _git("--git-dir", str(bare), "rev-parse", "main")
     assert _git("--git-dir", str(bare), "rev-parse", "refs/tags/demo-v1") == commit
     (body,) = _registered(github)
-    m = json.loads((who_study / "e2er.json").read_text())
+    m = json.loads((who_study / "e2er.json").read_text(encoding="utf-8"))
     want = {
         "url": "https://github.com/ada/demos/releases/download/demo-v1/demo-v1.e2er",
         "sha256": hashlib.sha256(asset.read_bytes()).hexdigest(),
@@ -75,7 +75,7 @@ def test_the_package_becomes_the_file_of_a_release_at_the_pushed_commit(
     inner = json.loads(_git("--git-dir", str(bare), "show", "main:who/e2er.json"))
     assert "package" not in inner and inner["dossier"]["id"] == m["dossier"]["id"]
     assert "Uploaded the study package demo-v1.e2er" in out
-    assert json.loads((who_study / ".e2er" / "package.json").read_text())["tag"] == "demo-v1"
+    assert json.loads((who_study / ".e2er" / "package.json").read_text(encoding="utf-8"))["tag"] == "demo-v1"
 
 
 def test_publishing_the_same_files_again_reuses_the_release_and_a_new_version_gets_its_own(
@@ -115,7 +115,9 @@ def test_a_tag_at_another_commit_is_never_moved_and_nothing_is_registered(
     out = capsys.readouterr().out
     assert "already has the tag demo-v1 at another commit" in out and "e2er never moves a tag" in out
     assert _registered(github) == [], "nothing is registered without the package"
-    assert not (who_study / "e2er.json").exists() or "package" not in json.loads((who_study / "e2er.json").read_text())
+    assert not (who_study / "e2er.json").exists() or "package" not in json.loads(
+        (who_study / "e2er.json").read_text(encoding="utf-8")
+    )
 
 
 def test_an_asset_with_other_bytes_is_never_overwritten(
@@ -205,7 +207,7 @@ def test_verify_against_the_study_record_compares_the_package_fingerprint(
 ):
     asset, record = _published(who_study, github, tmp_path)
     saved = tmp_path / "study.json"
-    saved.write_text(json.dumps(record))
+    saved.write_text(json.dumps(record), encoding="utf-8", newline="\n")
     capsys.readouterr()
     verify(str(asset), json_output=True, against_file=str(saved))
     checks = _checks(capsys)
@@ -214,7 +216,7 @@ def test_verify_against_the_study_record_compares_the_package_fingerprint(
     assert "byte for byte" in checks["package published"]["detail"]
 
     record["versions"][0]["package"] = {**record["versions"][0]["package"], "fingerprint": "sha256:" + "1" * 64}
-    saved.write_text(json.dumps(record))
+    saved.write_text(json.dumps(record), encoding="utf-8", newline="\n")
     assert verify(str(asset), json_output=True, against_file=str(saved)) == 1
     checks = _checks(capsys)
     assert (
@@ -222,7 +224,7 @@ def test_verify_against_the_study_record_compares_the_package_fingerprint(
     )
 
     record["versions"][0]["package"] = None
-    saved.write_text(json.dumps(record))
+    saved.write_text(json.dumps(record), encoding="utf-8", newline="\n")
     verify(str(asset), json_output=True, against_file=str(saved))
     assert _checks(capsys)["package published"]["status"] == "SKIP"
 
@@ -267,7 +269,7 @@ def test_a_folder_verified_against_gets_no_package_check(
 ):
     asset, record = _published(who_study, github, tmp_path)
     saved = tmp_path / "study.json"
-    saved.write_text(json.dumps(record))
+    saved.write_text(json.dumps(record), encoding="utf-8", newline="\n")
     folder = pkg.open_package(asset, tmp_path / "opened").root
     capsys.readouterr()
     verify(str(folder), json_output=True, against_file=str(saved))
@@ -454,7 +456,7 @@ def test_with_a_public_paper_the_package_goes_into_the_code_deposit(zenodo_bundl
     code = next(iter(_zenodo_records(b).values()))["deposits"]["code"]
     files = z.deps[code["id"]]["files"]
     assert set(files) == {"demo-code.zip", "demo-v1.e2er"}
-    m = json.loads((b / "e2er.json").read_text())
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     assert m["package"] == {
         "url": f"https://zenodo.org/records/{code['id']}/files/demo-v1.e2er",
         "sha256": hashlib.sha256(files["demo-v1.e2er"]).hexdigest(),
@@ -482,7 +484,7 @@ def test_with_a_private_paper_no_package_goes_to_zenodo(zenodo_bundle, tmp_path:
     assert rc == 0, out
     code = next(iter(_zenodo_records(b).values()))["deposits"]["code"]
     assert set(z.deps[code["id"]]["files"]) == {"demo-code.zip"}
-    assert "package" not in json.loads((b / "e2er.json").read_text())
+    assert "package" not in json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     assert "the paper is private and the package holds it" in out
 
 
@@ -495,11 +497,11 @@ def test_a_pushed_folder_repacks_into_the_package_it_was_opened_from(who_study: 
     assert publish(str(who_study), **ARGS, out=str(tmp_path / "e"), yes=True) == 0
     asset = _releases(github) / "demo-v1" / "assets" / "demo-v1.e2er"
     clone = _clone(github / "ada" / "demos.git", tmp_path / "clone")
-    (clone / "who" / "NOTES.txt").write_text("not the study's\n")
+    (clone / "who" / "NOTES.txt").write_text("not the study's\n", encoding="utf-8", newline="\n")
     packed = pkg.repack(clone / "who", tmp_path / "again.e2er")
     assert packed.path.read_bytes() == asset.read_bytes(), "byte for byte the package the release carries"
     assert packed.notes == ["NOTES.txt is in the folder but not in the package's list; it was not taken"]
-    (clone / "who" / "paper" / "paper.tex").write_text("changed\n")
+    (clone / "who" / "paper" / "paper.tex").write_text("changed\n", encoding="utf-8", newline="\n")
     with pytest.raises(pkg.PackageError, match="paper/paper.tex: not the file the list names"):
         pkg.repack(clone / "who", tmp_path / "changed.e2er")
     assert not (tmp_path / "changed.e2er").exists()

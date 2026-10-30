@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 from src.core.export import reproduce_recipe as rr
+from tests.platform_help import fake_program
 
 #: e2er-data as get_data.py calls it: writes FAKE_ROWS rows (an env var) into the table it is asked for.
 FAKE_E2ER_DATA = """\
@@ -39,18 +40,20 @@ def _get_data(run: Path, reloads: list[dict]) -> None:
     (run / "get_data.py").write_text(
         rr.GET_DATA.format(date="20261023", terms="", reloads=json.dumps(reloads), other_tables="[]"),
         encoding="utf-8",
+        newline="\n",
     )
 
 
 def _run(run: Path, fake: Path, rows: int) -> subprocess.CompletedProcess:
     env = {"PATH": "/usr/bin:/bin", "E2ER_DATA": str(fake), "FAKE_ROWS": str(rows)}
-    return subprocess.run([sys.executable, "get_data.py"], cwd=run, env=env, capture_output=True, text=True)
+    return subprocess.run(
+        [sys.executable, "get_data.py"], cwd=run, env=env, capture_output=True, encoding="utf-8", errors="replace"
+    )
 
 
 def _fake(tmp_path: Path) -> Path:
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FAKE_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FAKE_E2ER_DATA)
     return fake
 
 
@@ -77,7 +80,7 @@ def test_a_table_a_load_stopped_early_is_loaded_again(tmp_path: Path):
     # A whole table is kept.
     third = _run(run, fake, 12)
     assert "gdp: the study's own copy is here" in third.stdout
-    assert (run / "calls.txt").read_text().splitlines() == ["GDP", "GDP"]
+    assert (run / "calls.txt").read_text(encoding="utf-8").splitlines() == ["GDP", "GDP"]
 
 
 def test_only_the_last_load_into_a_table_is_reloaded():
@@ -114,7 +117,7 @@ def test_only_the_workspace_path_itself_is_rewritten(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
     script = tmp_path / "s.py"
-    script.write_text(f'A = "{ws}/data/x.csv"\nB = "{ws}_other/y.csv"\nC = "{ws}"\n', encoding="utf-8")
+    script.write_text(f'A = "{ws}/data/x.csv"\nB = "{ws}_other/y.csv"\nC = "{ws}"\n', encoding="utf-8", newline="\n")
     assert rr._rewrite_workspace_paths(script, ws)
-    text = script.read_text()
+    text = script.read_text(encoding="utf-8")
     assert 'A = "data/x.csv"' in text and f'B = "{ws}_other/y.csv"' in text and 'C = "."' in text

@@ -128,9 +128,13 @@ def test_series_loads_a_table_and_records_release_url_hash_licence_and_citation(
     _mock_helpers(respx.mock)
     panel = respx.get(f"{S3}/distribute/GMD_2026_09.csv").mock(return_value=httpx.Response(200, text=PANEL))
     (env / "data_dictionary.json").write_text(
-        json.dumps({"tables": [{"name": "gmd_macro", "source": "gmd", "role": "macro controls"}]})
+        json.dumps({"tables": [{"name": "gmd_macro", "source": "gmd", "role": "macro controls"}]}),
+        encoding="utf-8",
+        newline="\n",
     )
-    (env / "literature.bib").write_text("@article{smith2020,\n  title = {A},\n  year = {2020}\n}\n")
+    (env / "literature.bib").write_text(
+        "@article{smith2020,\n  title = {A},\n  year = {2020}\n}\n", encoding="utf-8", newline="\n"
+    )
 
     code, out = _run(
         [
@@ -163,7 +167,7 @@ def test_series_loads_a_table_and_records_release_url_hash_licence_and_citation(
         ("USA", 2001, 13853000.0, 2.83, 0),
     ]
 
-    [load] = json.loads((env / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((env / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "gmd" and load["version"] == "2026_09"
     assert load["version_chosen"] == "latest release in helpers/versions.csv"
     assert load["files"][0]["url"] == f"{S3}/distribute/GMD_2026_09.csv"
@@ -171,12 +175,12 @@ def test_series_loads_a_table_and_records_release_url_hash_licence_and_citation(
     assert load["table"] == "gmd_macro" and load["variables"] == ["rGDP", "infl"]
     assert load["versions_file"]["url"] == f"{S3}/helpers/versions.csv"
 
-    [entry] = json.loads((env / "data_dictionary.json").read_text())["tables"]
+    [entry] = json.loads((env / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
     assert entry["role"] == "macro controls"  # what the data architect wrote is kept
     assert entry["version"] == "2026_09" and entry["source_files"] == [{"url": load["files"][0]["url"], "sha256": sha}]
     assert "free for academic use" in entry["licence"] and entry["cite_key"] == CITE_KEY
 
-    bib = (env / "literature.bib").read_text()
+    bib = (env / "literature.bib").read_text(encoding="utf-8")
     assert "@article{smith2020," in bib and "@techreport{GMD2025," in bib
     assert "doi         = {10.3386/w33714}" in bib
     assert out["citation_added"] is True
@@ -185,8 +189,10 @@ def test_series_loads_a_table_and_records_release_url_hash_licence_and_citation(
     code, out = _run(["series", "--variables", "rGDP", "--countries", "USA", "--table", "gmd_macro"], capsys)
     assert code == 0 and panel.call_count == 1
     assert out["provenance"]["files"][0]["from_cache"] is True and out["provenance"]["files"][0]["sha256"] == sha
-    assert out["citation_added"] is False and bib == (env / "literature.bib").read_text()
-    assert len(json.loads((env / "data_sources.json").read_text())["loads"]) == 1  # same table: replaced
+    assert out["citation_added"] is False and bib == (env / "literature.bib").read_text(encoding="utf-8")
+    assert (
+        len(json.loads((env / "data_sources.json").read_text(encoding="utf-8"))["loads"]) == 1
+    )  # same table: replaced
 
 
 @respx.mock
@@ -213,7 +219,7 @@ def test_a_requested_release_is_used_and_recorded(env: Path, capsys: pytest.Capt
     )
     assert code == 0
     assert out["items"][0]["rGDP"] == 2600000.0
-    [load] = json.loads((env / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((env / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["version"] == "2026_06" and load["version_chosen"] == "requested"
     assert load["files"][0]["sha256"] == hashlib.sha256(PANEL_06.encode()).hexdigest()
 
@@ -287,7 +293,9 @@ def test_a_corrupted_cache_is_downloaded_again(tmp_path: Path) -> None:
     route = respx.get(f"{S3}/distribute/GMD_2026_09.csv").mock(return_value=httpx.Response(200, text=PANEL))
     p = GMDProvider(cache_dir=tmp_path)
     asyncio.run(p.series(["rGDP"]))
-    (tmp_path / "2026_09" / "GMD_2026_09.csv").write_text(PANEL.replace("2601382.5", "9"))
+    (tmp_path / "2026_09" / "GMD_2026_09.csv").write_text(
+        PANEL.replace("2601382.5", "9"), encoding="utf-8", newline="\n"
+    )
     out = asyncio.run(p.series(["rGDP"], countries=["DEU"], start=2000, end=2000))
     assert route.call_count == 2 and out["items"][0]["rGDP"] == 2601382.5
 
@@ -316,7 +324,9 @@ def test_dossier_lists_the_release_and_file_hash(tmp_path: Path) -> None:
                     }
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     assert _data_sources(tmp_path) == [
         {

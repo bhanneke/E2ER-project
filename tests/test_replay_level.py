@@ -85,7 +85,9 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
                     "attempts": [{"replace": {"event_design.json": [['"2020-03-16"', '"2020-03-15"']]}}, {"fail": "x"}]
                 }
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
     ws = tmp_path / "ws"
@@ -101,7 +103,7 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
 async def test_a_wait_override_makes_the_attempt_take_that_long(tmp_path: Path, monkeypatch):
     ReplayBackend._attempts.clear()
     over = tmp_path / "over.json"
-    over.write_text(json.dumps({"idea_developer": {"attempts": [{"wait": 0.3}]}}))
+    over.write_text(json.dumps({"idea_developer": {"attempts": [{"wait": 0.3}]}}), encoding="utf-8", newline="\n")
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
     b = ReplayBackend("fomc")
     t0 = time.monotonic()
@@ -153,7 +155,9 @@ async def test_overrides_under_backends_vary_only_that_backends_runs(tmp_path: P
                     }
                 },
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
     codex, claude = tmp_path / "codex", tmp_path / "claude"
@@ -212,7 +216,9 @@ def _fetched_replication(ws: Path) -> None:
                 "package_files": [{"path": p, **v} for p, v in tree.items()],
                 "files": [],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     shutil.copy(FIXTURES / "replication/files/replication_planner/replication_plan.json", ws / "replication_plan.json")
 
@@ -286,7 +292,9 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
                     *settings,
                 ]
             )
-            + "\n"
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
         )
         server = subprocess.Popen(
             [sys.executable, "-m", "tests.replay.cli", "serve", "--no-browser", "--port", str(port)],
@@ -350,7 +358,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
     """`e2er serve` under the replay level: the event-study template from the question to a completed run."""
     study = tmp_path / "study"
     (study / "data").mkdir(parents=True)
-    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
     # As in the recorded run: a FRED key, and the researcher's own FOMC dates in the data
     # folder (the data architect may only plan tables from sources the study has).
     with _replay_server(tmp_path, "fomc", ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}"]) as (api, _):
@@ -376,7 +384,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
             (FIXTURES / "fomc/files/econometrics_specialist/estimation_results.json").read_text(encoding="utf-8")
         )
         assert (ws / "preregistration.lock.json").is_file() and (ws / "review_aggregation.json").is_file()
-        blocked = (tmp_path / "net.txt").read_text() if (tmp_path / "net.txt").exists() else ""
+        blocked = (tmp_path / "net.txt").read_text(encoding="utf-8") if (tmp_path / "net.txt").exists() else ""
         assert "anthropic" not in blocked and "zenodo" not in blocked
 
 
@@ -522,7 +530,7 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
 
     study = tmp_path / "study"
     (study / "data").mkdir(parents=True)
-    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
     files = FIXTURES / "fomc-iterative" / "files"
     with _replay_server(
         tmp_path, "fomc-iterative", ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}"]
@@ -675,14 +683,23 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
     doc = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["dossier"]["doc"]
     assert [r["ceiling_check"]["decision"] for r in doc["run"]["rounds"]] == ["another round", "a change of approach"]
     assert doc["run"]["mode"] == "iterative"
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout
 

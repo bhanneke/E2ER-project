@@ -40,7 +40,7 @@ def _study(tmp_path: Path, rel: str, body: bytes) -> Path:
     (f / rel).parent.mkdir(parents=True, exist_ok=True)
     (f / rel).write_bytes(body)
     listing = {rel: {"sha256": hashlib.sha256(body).hexdigest(), "bytes": len(body)}}
-    (f / "provenance.json").write_text(json.dumps({"files": listing}))
+    (f / "provenance.json").write_text(json.dumps({"files": listing}), encoding="utf-8", newline="\n")
     return f
 
 
@@ -61,7 +61,7 @@ def _brute(after: bytes, a: dict, guesses: list[bytes]) -> bytes | None:
 def test_a_redaction_record_confirms_no_guess(tmp_path):
     f = _study(tmp_path, "design/plan.md", b"Contact the PI at +49 69 798 34512 for questions.\n")
     rd.redact(f, "798 34512")
-    a = json.loads((f / "provenance.json").read_text())["amendments"][-1]
+    a = json.loads((f / "provenance.json").read_text(encoding="utf-8"))["amendments"][-1]
     assert a["sha256_before"].startswith(rd.KEYED)
     after = (f / "design/plan.md").read_bytes()
     assert _brute(after, a, [f"798 {i:05d}".encode() for i in range(34000, 35000)]) is None
@@ -76,7 +76,7 @@ def test_a_second_redaction_of_the_file_still_links_up(tmp_path):
     f = _study(tmp_path, "design/plan.md", b"Call 798 34512 or write to imogen@uni-x.de.\n")
     rd.redact(f, "798 34512")
     rd.redact(f, "imogen@uni-x.de")
-    prov = json.loads((f / "provenance.json").read_text())
+    prov = json.loads((f / "provenance.json").read_text(encoding="utf-8"))
     first, second = prov["amendments"]
     assert first["sha256_after"] == second["sha256_before"] and second["sha256_before"].startswith(rd.KEYED)
     assert prov["files"]["design/plan.md"]["sha256"] == second["sha256_after"]
@@ -89,9 +89,9 @@ def test_where_the_earlier_fingerprint_is_public_it_stays_plain(tmp_path):
     """A folder published before: its fingerprints are on the platform, and verify rolls the redaction back."""
     body = b"Contact 798 34512.\n"
     f = _study(tmp_path, "design/plan.md", body)
-    (f / "e2er.json").write_text("{}")
+    (f / "e2er.json").write_text("{}", encoding="utf-8", newline="\n")
     rd.redact(f, "798 34512")
-    a = json.loads((f / "provenance.json").read_text())["amendments"][-1]
+    a = json.loads((f / "provenance.json").read_text(encoding="utf-8"))["amendments"][-1]
     assert a["sha256_before"] == hashlib.sha256(body).hexdigest()
 
 
@@ -111,7 +111,7 @@ def test_files_at_export_treats_a_keyed_fingerprint_as_unknown(tmp_path):
 
     f = _study(tmp_path, "design/plan.md", b"Contact 798 34512.\n")
     rd.redact(f, "798 34512")
-    prov = json.loads((f / "provenance.json").read_text())
+    prov = json.loads((f / "provenance.json").read_text(encoding="utf-8"))
     exported = files_at_export(prov)
     assert not str(exported["design/plan.md"]["sha256"]).startswith(rd.KEYED)
 
@@ -122,14 +122,16 @@ def test_files_at_export_treats_a_keyed_fingerprint_as_unknown(tmp_path):
 def test_a_blinded_copy_keeps_nothing_that_confirms_the_author(tmp_path):
     body = b"# analysis.py written for the study by Imogen Quarry\nimport pandas\n"
     f = _study(tmp_path, "code/analysis.py", body)
-    (f / "e2er.json").write_text("{}")  # published before: the redaction keeps the plain fingerprint
+    (f / "e2er.json").write_text(
+        "{}", encoding="utf-8", newline="\n"
+    )  # published before: the redaction keeps the plain fingerprint
     rd.redact(f, NAME)
     copy = f.parent / "copy"
     shutil.copytree(f, copy)
     (copy / "e2er.json").unlink()
     ids = [an.Identifier("name", NAME, "test")]
     result = an.anonymise(copy, ids)
-    prov = json.loads((copy / "provenance.json").read_text())
+    prov = json.loads((copy / "provenance.json").read_text(encoding="utf-8"))
     a = [x for x in prov["amendments"] if x["kind"] == "redacted"][0]
     assert a["sha256_before"] is None
     assert not {"offsets", "removed_bytes", "bytes_before"} & set(a["redaction"])
@@ -149,7 +151,7 @@ def test_an_anonymised_file_records_no_offsets_and_still_verifies(tmp_path):
     f = _study(tmp_path, "paper/paper.md", b"By Imogen Quarry. Thanks to Imogen Quarry.\n")
     ids = [an.Identifier("name", NAME, "test")]
     an.anonymise(f, ids)
-    a = json.loads((f / "provenance.json").read_text())["amendments"][-1]
+    a = json.loads((f / "provenance.json").read_text(encoding="utf-8"))["amendments"][-1]
     reps = a["anonymisation"]["replacements"]
     assert reps == [{"text": an.MARK, "count": 2}]
     assert an.record_problem(a, (f / "paper/paper.md").read_bytes()) is None
@@ -158,14 +160,16 @@ def test_an_anonymised_file_records_no_offsets_and_still_verifies(tmp_path):
 
 def test_anonymising_refuses_a_symbolic_link(tmp_path):
     orig = tmp_path / "outside_original.csv"
-    orig.write_text("id,owner\n1,Imogen Quarry\n")
+    orig.write_text("id,owner\n1,Imogen Quarry\n", encoding="utf-8", newline="\n")
     f = tmp_path / "study"
     (f / "data").mkdir(parents=True)
     os.symlink(orig, f / "data" / "raw.csv")
-    (f / "provenance.json").write_text(json.dumps({"files": {"data/raw.csv": {"sha256": "x"}}}))
+    (f / "provenance.json").write_text(
+        json.dumps({"files": {"data/raw.csv": {"sha256": "x"}}}), encoding="utf-8", newline="\n"
+    )
     with pytest.raises(an.AnonymiseError, match="symbolic links"):
         an.anonymise(f, [an.Identifier("name", NAME, "test")])
-    assert orig.read_text() == "id,owner\n1,Imogen Quarry\n"
+    assert orig.read_text(encoding="utf-8") == "id,owner\n1,Imogen Quarry\n"
 
 
 # ── the leak check ───────────────────────────────────────────────────────────
@@ -202,8 +206,8 @@ def test_the_surname_alone_and_an_initial_are_shown_for_confirmation(text):
 
 def test_a_file_name_is_searched(tmp_path):
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "quarry_imogen_raw.csv").write_text("a,b\n1,2\n")
-    (tmp_path / "data" / "imogen_quarry.csv").write_text("a,b\n1,2\n")
+    (tmp_path / "data" / "quarry_imogen_raw.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
+    (tmp_path / "data" / "imogen_quarry.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
     r = an.leak_check(tmp_path, IDS, pdf=lambda p: "", meta=lambda p: None)
     assert any("imogen_quarry.csv (its name)" in str(x) for x in r.leaks)
 

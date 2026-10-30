@@ -106,7 +106,8 @@ def count_tests(root: Path, python: str = sys.executable) -> int:
         [python, "-m", "pytest", "tests/", "--collect-only", "-q", "-m", "not e2e", "-p", "no:cacheprovider"],
         cwd=root,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if proc.returncode not in (0, 5):  # 5: no tests collected
         raise RuntimeError(
@@ -179,7 +180,7 @@ def write(doc: dict[str, Any], out: Path) -> None:
     problems = validate(doc)
     if problems:
         raise ValueError("release facts do not have the fixed format: " + "; ".join(problems))
-    out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
 
 
 # ── the Zenodo version DOI ────────────────────────────────────────────────────

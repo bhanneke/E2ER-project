@@ -45,14 +45,18 @@ def _make_bundle(
                     "identifying_assumption": "parallel trends",
                 }
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     coefs = coeffs if coeffs is not None else {treatment: {"estimate": estimate, "se": 0.1, "p_value": 0.03}}
     (d / "results" / "estimation_results.json").write_text(
-        json.dumps({"main": {"n_observations": 1000, "coefficients": coefs}})
+        json.dumps({"main": {"n_observations": 1000, "coefficients": coefs}}), encoding="utf-8", newline="\n"
     )
     (d / "provenance.json").write_text(
-        json.dumps({"run": {"backend": backend, "model": "m1", "governance": governance}})
+        json.dumps({"run": {"backend": backend, "model": "m1", "governance": governance}}),
+        encoding="utf-8",
+        newline="\n",
     )
     return d
 
@@ -187,10 +191,10 @@ def test_compare_via_matrix_json(tmp_path: Path):
         ],
     }
     mpath = tmp_path / "matrix.json"
-    mpath.write_text(json.dumps(matrix))
+    mpath.write_text(json.dumps(matrix), encoding="utf-8", newline="\n")
     rc = compare([str(mpath)])
     assert rc == 0
-    comp = json.loads((tmp_path / "comparison.json").read_text())
+    comp = json.loads((tmp_path / "comparison.json").read_text(encoding="utf-8"))
     assert comp["research_question"] == "Does X affect Y?"
     assert comp["n_runs"] == 2  # the failed run (no bundle) is excluded
     assert (tmp_path / "comparison_report.md").is_file()

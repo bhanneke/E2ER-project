@@ -61,7 +61,7 @@ def _run(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[int, dict
 
 
 def _load(ws: Path) -> dict:
-    return json.loads((ws / "data_sources.json").read_text())["loads"][-1]
+    return json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"][-1]
 
 
 def _rows(ws: Path, table: str) -> int:
@@ -82,9 +82,11 @@ def _loaded_ok(ws: Path, out: dict, table: str, connector: str, cite_key: str) -
     load = _load(ws)
     assert load["connector"] == connector and load["table"] == table
     assert load["terms"] == get(connector).terms_url and load["citation"]
-    [entry] = [t for t in json.loads((ws / "data_dictionary.json").read_text())["tables"] if t["name"] == table]
+    [entry] = [
+        t for t in json.loads((ws / "data_dictionary.json").read_text(encoding="utf-8"))["tables"] if t["name"] == table
+    ]
     assert entry["source"] == connector and entry["cite_key"] == cite_key
-    assert f"{{{cite_key}," in (ws / "literature.bib").read_text()
+    assert f"{{{cite_key}," in (ws / "literature.bib").read_text(encoding="utf-8")
     return load
 
 

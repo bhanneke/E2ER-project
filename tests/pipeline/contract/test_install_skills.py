@@ -56,7 +56,7 @@ def test_install_skills_skips_existing_by_default(tmp_path, monkeypatch):
     install_skills(backend="claude")
     target = tmp_path / ".claude" / "skills"
     sample = next(target.rglob("*.md"))
-    sample.write_text("MODIFIED", encoding="utf-8")
+    sample.write_text("MODIFIED", encoding="utf-8", newline="\n")
 
     # Second install must NOT overwrite
     install_skills(backend="claude")
@@ -71,7 +71,7 @@ def test_install_skills_force_overwrites(tmp_path, monkeypatch):
     install_skills(backend="claude")
     target = tmp_path / ".claude" / "skills"
     sample = next(target.rglob("*.md"))
-    sample.write_text("MODIFIED", encoding="utf-8")
+    sample.write_text("MODIFIED", encoding="utf-8", newline="\n")
 
     install_skills(backend="claude", force=True)
     assert sample.read_text(encoding="utf-8") != "MODIFIED", (

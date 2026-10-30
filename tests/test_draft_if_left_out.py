@@ -39,7 +39,7 @@ async def test_no_draft_after_the_initial_phase_sends_the_drafter(monkeypatch, t
 
 
 async def test_a_draft_there_sends_nobody(monkeypatch, tmp_path: Path, events):  # noqa: F811
-    (tmp_path / "paper_draft.tex").write_text("\\section{Results}")
+    (tmp_path / "paper_draft.tex").write_text("\\section{Results}", encoding="utf-8", newline="\n")
     r, sent = _initial(monkeypatch, tmp_path)
     await r._run_initial_phase()
     assert sent == [] and events == []
@@ -117,6 +117,6 @@ async def test_rounds_that_end_without_a_draft_send_the_drafter(monkeypatch, tmp
     assert [(k, p["reason"]) for k, _s, p in events] == [("drafter_sent_out", "no draft after the iterative phase")]
     # A round that wrote a draft: nobody is sent.
     sent.clear()
-    (tmp_path / "paper_draft.tex").write_text("\\section{Results}")
+    (tmp_path / "paper_draft.tex").write_text("\\section{Results}", encoding="utf-8", newline="\n")
     await r._run_iterative_phase()
     assert sent == []

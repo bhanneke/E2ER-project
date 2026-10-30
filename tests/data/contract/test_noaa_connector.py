@@ -117,14 +117,14 @@ def test_daily_pages_splits_by_year_and_records_without_the_token(
     with sqlite3.connect(ws / "data.db") as db:
         assert db.execute("SELECT COUNT(*) FROM nyc").fetchone()[0] == PAGE + 2
 
-    text = (ws / "data_sources.json").read_text()
+    text = (ws / "data_sources.json").read_text(encoding="utf-8")
     assert token not in text
     [load] = json.loads(text)["loads"]
     assert load["connector"] == "noaa" and len(load["files"]) == 3 and load["requests"] == 3
     assert all(len(f["sha256"]) == 64 for f in load["files"])
     assert "USW00094728" in load["citation"] and "TMAX, TMIN" in load["citation"] and "accessed" in load["citation"]
     assert "10.7289/V5D21VHZ" in load["citation"] and "10.1175/JTECH-D-11-00103.1" in load["citation"]
-    bib = (ws / "literature.bib").read_text()
+    bib = (ws / "literature.bib").read_text(encoding="utf-8")
     assert bib.count(f"{{{CITE_KEY},") == 1 and "{Menne2012_GHCND_overview," in bib
 
 

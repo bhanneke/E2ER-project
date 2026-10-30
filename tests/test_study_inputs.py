@@ -88,8 +88,8 @@ def test_the_data_list_holds_only_the_files_e2er_reads(tmp_path: Path):
     data = tmp_path / "data"
     (data / "e2er_papers" / "old").mkdir(parents=True)
     for name in ("b.csv", "a.parquet", "notes.txt", "raw.json", ".hidden.csv"):
-        (data / name).write_text("x\n1\n")
-    (data / "e2er_papers" / "old" / "export.csv").write_text("x\n")
+        (data / name).write_text("x\n1\n", encoding="utf-8", newline="\n")
+    (data / "e2er_papers" / "old" / "export.csv").write_text("x\n", encoding="utf-8", newline="\n")
     opts = si.data_options(_settings(tmp_path, local_data_dir=str(data)))
     assert [o.name for o in opts] == ["a.parquet", "b.csv"]
     assert opts[1].kind == "CSV" and opts[1].size == 4 and Path(opts[1].path).is_absolute()
@@ -99,7 +99,7 @@ def test_the_paper_list_holds_pdfs_bib_entries_and_the_library(tmp_path: Path, m
     lit = tmp_path / "lit"
     lit.mkdir()
     _pdf(lit / "one.pdf", "Monetary Policy Surprises and Bank Stocks")
-    (lit / "refs.bib").write_text(BIB)
+    (lit / "refs.bib").write_text(BIB, encoding="utf-8", newline="\n")
     monkeypatch.setattr(
         si,
         "_library_options",
@@ -135,7 +135,7 @@ def test_new_study_ticks_the_folder_and_offers_the_library_unticked(tmp_path: Pa
 
 
 def test_a_file_e2er_cannot_read_is_refused_in_one_sentence(tmp_path: Path):
-    (tmp_path / "notes.txt").write_text("x")
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8", newline="\n")
     with pytest.raises(si.InputError, match=r"^notes.txt is not a data file e2er can read. Use .csv, .tsv"):
         si.check_data_files([str(tmp_path / "notes.txt")])
     with pytest.raises(si.InputError, match="does not exist"):
@@ -149,7 +149,7 @@ def test_a_file_e2er_cannot_read_is_refused_in_one_sentence(tmp_path: Path):
 def test_paths_become_paper_ids(tmp_path: Path):
     pdf = _pdf(tmp_path / "p.pdf", "Some Paper Title Here")
     bib = tmp_path / "r.bib"
-    bib.write_text(BIB)
+    bib.write_text(BIB, encoding="utf-8", newline="\n")
     assert si.check_paper_ids([str(pdf), str(bib), "library:abc"]) == [
         f"pdf:{pdf.resolve()}",
         f"bibfile:{bib.resolve()}",
@@ -181,7 +181,7 @@ def test_only_the_chosen_data_files_reach_the_study_and_its_planning_check(live_
     data = live_db / "data"
     data.mkdir()
     for name in ("prices.csv", "dates.csv", "unrelated.csv"):
-        (data / name).write_text("date,x\n2020-01-02,1\n")
+        (data / name).write_text("date,x\n2020-01-02,1\n", encoding="utf-8", newline="\n")
     monkeypatch.setenv("LOCAL_DATA_DIR", str(data))
     from src.config import get_settings
 
@@ -190,13 +190,15 @@ def test_only_the_chosen_data_files_reach_the_study_and_its_planning_check(live_
         ws = Path(_start(c, data_files=[str(data / "prices.csv"), str(data / "dates.csv")])["workspace"])
     staged = sorted(p.name for p in (ws / "data").iterdir())
     assert staged == ["dates.csv", "prices.csv"]
-    record = json.loads((ws / si.INPUTS_FILE).read_text())
+    record = json.loads((ws / si.INPUTS_FILE).read_text(encoding="utf-8"))
     assert record["data"]["chosen"] is True
     assert {f["name"]: f["origin"] for f in record["data"]["files"]} == {"prices.csv": "folder", "dates.csv": "folder"}
-    assert json.loads((ws / "manifest.json").read_text())["datasets"] == ["prices.csv", "dates.csv"]
+    assert json.loads((ws / "manifest.json").read_text(encoding="utf-8"))["datasets"] == ["prices.csv", "dates.csv"]
     assert available_sources(ws, get_settings()).files == ("dates.csv", "prices.csv")
     (ws / "data_dictionary.json").write_text(
-        json.dumps({"tables": [{"name": "unrelated", "source": "file", "file": "unrelated.csv"}]})
+        json.dumps({"tables": [{"name": "unrelated", "source": "file", "file": "unrelated.csv"}]}),
+        encoding="utf-8",
+        newline="\n",
     )
     [check] = check_declared_sources(ws, get_settings())
     assert not check.ok and "no file 'unrelated.csv' among the study's data files" in check.reason
@@ -205,8 +207,8 @@ def test_only_the_chosen_data_files_reach_the_study_and_its_planning_check(live_
 def test_without_a_choice_the_study_takes_the_whole_data_folder_as_before(live_db, monkeypatch):  # noqa: F811
     data = live_db / "data"
     data.mkdir()
-    (data / "a.csv").write_text("x\n1\n")
-    (data / "b.csv").write_text("x\n1\n")
+    (data / "a.csv").write_text("x\n1\n", encoding="utf-8", newline="\n")
+    (data / "b.csv").write_text("x\n1\n", encoding="utf-8", newline="\n")
     monkeypatch.setenv("LOCAL_DATA_DIR", str(data))
     from src.config import get_settings
 
@@ -214,14 +216,14 @@ def test_without_a_choice_the_study_takes_the_whole_data_folder_as_before(live_d
     with _client() as c:
         ws = Path(_start(c)["workspace"])
     assert sorted(p.name for p in (ws / "data").iterdir()) == ["a.csv", "b.csv"]
-    record = json.loads((ws / si.INPUTS_FILE).read_text())
+    record = json.loads((ws / si.INPUTS_FILE).read_text(encoding="utf-8"))
     assert record["data"]["chosen"] is False and len(record["data"]["files"]) == 2
     assert record["papers"] == {"chosen": False, "web_search": True, "requested": []}
 
 
 def test_a_refused_choice_starts_nothing(live_db):  # noqa: F811
     bad = live_db / "notes.txt"
-    bad.write_text("x")
+    bad.write_text("x", encoding="utf-8", newline="\n")
     with _client() as c:
         r = c.post(
             "/api/papers",
@@ -242,8 +244,8 @@ def test_a_refused_choice_starts_nothing(live_db):  # noqa: F811
 def test_the_new_study_form_sends_the_ticks_and_the_added_files(live_db, monkeypatch):  # noqa: F811
     data = live_db / "data"
     data.mkdir()
-    (data / "prices.csv").write_text("date,p\n2020-01-02,1\n")
-    (data / "other.csv").write_text("date,p\n2020-01-02,1\n")
+    (data / "prices.csv").write_text("date,p\n2020-01-02,1\n", encoding="utf-8", newline="\n")
+    (data / "other.csv").write_text("date,p\n2020-01-02,1\n", encoding="utf-8", newline="\n")
     monkeypatch.setenv("LOCAL_DATA_DIR", str(data))
     from src.config import get_settings
 
@@ -277,7 +279,7 @@ def test_the_new_study_form_sends_the_ticks_and_the_added_files(live_db, monkeyp
         ws = Path(c.get(f"/api/papers/{pid}").json()["workspace"])
     assert sorted(p.name for p in (ws / "data").iterdir()) == ["added.csv", "prices.csv"]
     assert not (ws / "data" / "added.csv").is_symlink(), "an added file is copied: its waiting folder is removed"
-    record = json.loads((ws / si.INPUTS_FILE).read_text())
+    record = json.loads((ws / si.INPUTS_FILE).read_text(encoding="utf-8"))
     assert {f["name"]: f["origin"] for f in record["data"]["files"]} == {"prices.csv": "folder", "added.csv": "upload"}
     assert record["papers"]["chosen"] is True and record["papers"]["web_search"] is False
     assert sorted(Path(x.split(":", 1)[1]).name for x in record["papers"]["requested"]) == ["mine.bib", "paper.pdf"]
@@ -318,7 +320,7 @@ def test_exactly_the_chosen_papers_are_written_with_the_keys_the_prompts_show(tm
     lit.mkdir()
     pdf = _pdf(lit / "surprises.pdf", "Monetary Policy Surprises and Bank Stocks", doi="10.1234/mps.2021")
     _pdf(lit / "skip.pdf", "A PDF The Researcher Did Not Tick")
-    (lit / "refs.bib").write_text(BIB)
+    (lit / "refs.bib").write_text(BIB, encoding="utf-8", newline="\n")
     ws = tmp_path / "ws"
     ws.mkdir()
     acquire = AsyncMock(return_value=0)
@@ -419,8 +421,12 @@ def _workspace_with_inputs(ws: Path) -> None:
         title="What Explains", authors=["Ben Bernanke"], year=2005, source="bibtex", cite_key="Bernanke:2005"
     )
     web = PaperMetadata(title="Found Online", authors=["Bo Web"], year=2021, source="openalex")
-    (ws / "literature.bib").write_text(mine.to_bibtex() + "\n\n" + web.to_bibtex() + "\n")
-    (ws / "paper_draft.tex").write_text("As \\citet{Bernanke:2005} and \\citep{web2021found} show.")
+    (ws / "literature.bib").write_text(
+        mine.to_bibtex() + "\n\n" + web.to_bibtex() + "\n", encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(
+        "As \\citet{Bernanke:2005} and \\citep{web2021found} show.", encoding="utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE prices (d TEXT)")
     con.executemany("INSERT INTO prices VALUES (?)", [("a",), ("b",)])
@@ -439,7 +445,9 @@ def _workspace_with_inputs(ws: Path) -> None:
                     }
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -467,14 +475,20 @@ def test_the_dossier_lists_each_cited_reference_with_its_source(tmp_path: Path):
     (bundle / "paper").mkdir(parents=True)
     ws = tmp_path / "ws"
     _workspace_with_inputs(ws)
-    (bundle / "paper" / "refs.bib").write_text((ws / "literature.bib").read_text())
-    (bundle / "paper" / "paper.tex").write_text((ws / "paper_draft.tex").read_text())
+    (bundle / "paper" / "refs.bib").write_text(
+        (ws / "literature.bib").read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+    )
+    (bundle / "paper" / "paper.tex").write_text(
+        (ws / "paper_draft.tex").read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+    )
     assert _references(bundle) == [
         {"key": "Bernanke:2005", "title": "What Explains", "source": "researcher", "year": "2005"},
         {"key": "web2021found", "title": "Found Online", "source": "web", "year": "2021"},
     ]
     # A study exported before 0.15.0 (no tags): no references, so its dossier and address stay the same.
-    (bundle / "paper" / "refs.bib").write_text("@article{old2020, title={Old}, year={2020}}\n")
+    (bundle / "paper" / "refs.bib").write_text(
+        "@article{old2020, title={Old}, year={2020}}\n", encoding="utf-8", newline="\n"
+    )
     assert _references(bundle) == []
 
 
@@ -483,8 +497,8 @@ def test_an_uploaded_file_is_recorded_as_added_for_this_study(tmp_path: Path):
 
     ws = tmp_path / "ws"
     (ws / "data").mkdir(parents=True)
-    (ws / "data" / "added.csv").write_text("a,b\n1,2\n")
-    (ws / "data" / "folder.csv").write_text("a,b\n1,2\n")
+    (ws / "data" / "added.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
+    (ws / "data" / "folder.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
     si.write_record(
         ws,
         {
@@ -495,7 +509,9 @@ def test_an_uploaded_file_is_recorded_as_added_for_this_study(tmp_path: Path):
         },
     )
     _import_corpus_sync(ws, 1000)
-    loads = {x["series"]: x["dataset"] for x in json.loads((ws / "data_sources.json").read_text())["loads"]}
+    loads = {
+        x["series"]: x["dataset"] for x in json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
+    }
     assert loads == {
         "added.csv": "Added by the researcher for this study",
         "folder.csv": "The researcher's data folder",
@@ -508,18 +524,18 @@ def test_an_uploaded_file_is_recorded_as_added_for_this_study(tmp_path: Path):
 def test_e2er_run_resolves_files_and_folders(tmp_path: Path, monkeypatch):
     from src.cli_run import resolve_inputs
 
-    (tmp_path / "prices.csv").write_text("x\n")
+    (tmp_path / "prices.csv").write_text("x\n", encoding="utf-8", newline="\n")
     lit = tmp_path / "lit"
     lit.mkdir()
     _pdf(lit / "a.pdf", "A Paper Title For The Test")
-    (lit / "refs.bib").write_text(BIB)
+    (lit / "refs.bib").write_text(BIB, encoding="utf-8", newline="\n")
     monkeypatch.chdir(tmp_path)
     data, papers = resolve_inputs(["prices.csv"], [str(lit)])
     assert data == [str((tmp_path / "prices.csv").resolve())]
     assert papers == [f"pdf:{(lit / 'a.pdf').resolve()}", f"bibfile:{(lit / 'refs.bib').resolve()}"]
     assert resolve_inputs(None, None) == (None, None)
     with pytest.raises(ValueError, match="notes.txt is not a data file"):
-        (tmp_path / "notes.txt").write_text("x")
+        (tmp_path / "notes.txt").write_text("x", encoding="utf-8", newline="\n")
         resolve_inputs(["notes.txt"], None)
 
 
@@ -527,7 +543,9 @@ def test_e2er_run_has_the_options():
     import subprocess
     import sys
 
-    out = subprocess.run([sys.executable, "-m", "src", "run", "--help"], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        [sys.executable, "-m", "src", "run", "--help"], capture_output=True, encoding="utf-8", errors="replace"
+    ).stdout
     assert "--data" in out and "--papers" in out and "--only-my-papers" in out
 
 
@@ -586,7 +604,7 @@ def test_a_whole_paper_that_cites_without_a_bibliography_line_gets_one():
 
 def test_e2ers_own_markers_never_reach_the_bibliography(tmp_path: Path):
     bib = tmp_path / "r.bib"
-    bib.write_text(BIB)
+    bib.write_text(BIB, encoding="utf-8", newline="\n")
     resolved = si.resolve_papers([f"bib:{bib}#Bernanke:2005"], tmp_path)
     text = resolved.items[0].to_bibtex()
     assert "e2er_origin" not in text and "e2er_id" not in text and str(tmp_path) not in text
@@ -600,7 +618,7 @@ def test_the_record_of_the_choice_stays_out_of_the_exported_folder(tmp_path: Pat
 
     ws = tmp_path / "ws"
     _workspace_with_inputs(ws)
-    (ws / "manifest.json").write_text(json.dumps({"title": "T", "paper_id": "p"}))
+    (ws / "manifest.json").write_text(json.dumps({"title": "T", "paper_id": "p"}), encoding="utf-8", newline="\n")
     assert si.INPUTS_FILE.startswith(".")
     out = export_paper(ws, tmp_path / "exports", date_str="20261010")
     assert not [p for p in out.rglob("*") if "study_inputs" in p.name]
@@ -680,7 +698,7 @@ async def test_a_study_with_chosen_papers_takes_no_unchosen_library_paper(tmp_pa
         patch("src.modules.literature.storage.store_paper", new=AsyncMock()),
     ):
         await acquire_literature(ws, "p", ["q"], SimpleNamespace(), limit=5, web_search=True, chosen=chosen)
-    bib = (ws / "literature.bib").read_text()
+    bib = (ws / "literature.bib").read_text(encoding="utf-8")
     assert "NFT revolution" not in bib and "Mortgage Rates and Policy" in bib and "e2er_source = {web}" in bib
 
 
@@ -767,13 +785,13 @@ def test_new_study_groups_the_library_and_shows_clean_titles(tmp_path: Path, mon
     monkeypatch.setattr("src.core.titles.title_by_doi", lambda doi: "")
     lit = tmp_path / "lit"
     lit.mkdir()
-    (lit / "refs.bib").write_text(BIB)
+    (lit / "refs.bib").write_text(BIB, encoding="utf-8", newline="\n")
     rows = [
         SimpleNamespace(key="k1", title="C:\\Working Papers\\10449.wpd", doi="", authors=[], year=2004),
         SimpleNamespace(key="k2", title="Platform Markets∗ May 2020", doi="", authors=["Ann Bee"], year=2020),
     ]
     monkeypatch.setattr("src.modules.literature.corpus.corpus_path", lambda explicit=None: tmp_path / "c.db")
-    (tmp_path / "c.db").write_text("")
+    (tmp_path / "c.db").write_text("", encoding="utf-8", newline="\n")
     import contextlib
 
     monkeypatch.setattr("src.modules.literature.corpus.connect", lambda p: contextlib.nullcontext(None))
@@ -850,11 +868,11 @@ async def test_off_topic_web_hits_stay_out_of_the_bibliography_and_are_counted(t
         patch("src.modules.literature.corpus_context.ingest_staged_pdfs", new=AsyncMock(return_value=0)),
     ):
         await acquire_literature(tmp_path, "p", [QUESTION], SimpleNamespace(), limit=5)
-    bib = (tmp_path / "literature.bib").read_text()
+    bib = (tmp_path / "literature.bib").read_text(encoding="utf-8")
     assert "Mortgage Default" in bib and "Federal Funds in 1985" not in bib
-    record = json.loads((tmp_path / "literature" / "web_search.json").read_text())
+    record = json.loads((tmp_path / "literature" / "web_search.json").read_text(encoding="utf-8"))
     assert record["kept"] == 1 and record["left_out"] == ["Geographic Distribution of Federal Funds in 1985"]
-    (tmp_path / "paper_draft.tex").write_text("No citations yet.")
+    (tmp_path / "paper_draft.tex").write_text("No citations yet.", encoding="utf-8", newline="\n")
     v = inputs_view(tmp_path)
     assert v["web_left_out"] == 1 and v["web_cited"] == [] and len(v["web_other"]) == 1
 
@@ -865,7 +883,7 @@ def test_the_panel_lists_the_cited_web_papers_first_and_folds_the_rest(tmp_path:
     ws = tmp_path / "ws"
     _workspace_with_inputs(ws)
     extra = PaperMetadata(title="Uncited Web Paper", authors=["Zed Q"], year=2020, source="openalex")
-    with (ws / "literature.bib").open("a") as f:
+    with (ws / "literature.bib").open("a", encoding="utf-8", newline="\n") as f:
         f.write("\n" + extra.to_bibtex() + "\n")
     v = inputs_view(ws)
     assert [w["key"] for w in v["web_cited"]] == ["web2021found"] and [w["key"] for w in v["web_other"]] == [

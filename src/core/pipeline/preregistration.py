@@ -210,7 +210,7 @@ def assemble(workspace: Path, files: tuple[str, ...] = ()) -> Path:
         "",
         "```json\n" + block + "\n```",
     ]
-    out.write_text("\n".join(parts) + "\n", encoding="utf-8")
+    out.write_text("\n".join(parts) + "\n", encoding="utf-8", newline="\n")
     return out
 
 
@@ -267,7 +267,7 @@ def freeze(workspace: Path) -> dict[str, Any]:
     }
     if isinstance(block.get("sample_size"), dict):
         lock["sample_size"] = block["sample_size"]
-    lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return lock
 
 
@@ -539,7 +539,7 @@ def approve_deviations(workspace: Path) -> list[dict[str, Any]]:
     ]
     if added:
         lock.setdefault("approved_deviations", []).extend(added)
-        lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return added
 
 
@@ -547,7 +547,7 @@ def record_deposit(workspace: Path, deposit: dict[str, Any]) -> dict[str, Any]:
     lock_path = workspace / LOCK_FILE
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
     lock["deposit"] = deposit
-    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8", newline="\n")
     return lock
 
 
@@ -696,7 +696,7 @@ def _result_files(ws: Path) -> set[str]:
             continue
         name_hit = bool(_RESULT_NAME.search(p.stem.lower()))
         if name_hit or any(_RESULT_COLUMN.match(c) for c in _columns(p)):
-            found.add(str(rel))
+            found.add(rel.as_posix())
     return found
 
 
@@ -729,12 +729,12 @@ def estimation_outputs(workspace: Path) -> list[str]:
             continue
         if any(frag in src for frag in _ESTIMATION_CODE):
             found.add(py.name)
-    found.update(str(p.relative_to(ws)) for p in (ws / "tables").glob("*.tex"))
+    found.update(p.relative_to(ws).as_posix() for p in (ws / "tables").glob("*.tex"))
     found.update(_result_files(ws))
     for folder in (ws, ws / "figures"):
         for p in folder.glob("*"):
             if p.suffix.lower() in _FIGURE_SUFFIXES and _tokens(p.stem) & _RESULT_TOKENS:
-                found.add(str(p.relative_to(ws)))
+                found.add(p.relative_to(ws).as_posix())
     db = ws / "data.db"
     if db.is_file():
         import sqlite3
@@ -774,7 +774,7 @@ def set_aside(workspace: Path, found: list[str]) -> dict[str, Any]:
         target.parent.mkdir(parents=True, exist_ok=True)
         digest = _sha256(src)
         shutil.move(str(src), str(target))
-        items.append({"file": rel, "sha256": digest, "moved_to": str(target.relative_to(ws))})
+        items.append({"file": rel, "sha256": digest, "moved_to": target.relative_to(ws).as_posix()})
     if tables:
         db = ws / "data.db"
         con = sqlite3.connect(db)
@@ -794,5 +794,5 @@ def set_aside(workspace: Path, found: list[str]) -> dict[str, Any]:
         "reason": "estimation output found before the pre-registration was frozen",
         "items": items,
     }
-    (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
     return manifest

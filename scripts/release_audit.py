@@ -41,7 +41,7 @@ def _yellow(s: str) -> str:
 
 
 def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str, str]:
-    proc = subprocess.run(cmd, cwd=cwd or REPO_ROOT, capture_output=True, text=True)
+    proc = subprocess.run(cmd, cwd=cwd or REPO_ROOT, capture_output=True, encoding="utf-8", errors="replace")
     return proc.returncode, proc.stdout, proc.stderr
 
 

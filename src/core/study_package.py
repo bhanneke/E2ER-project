@@ -118,7 +118,7 @@ def file_name(rec: dict[str, Any]) -> str:
 def save_local(bundle: Path, rec: dict[str, Any], **extra: Any) -> Path:
     p = bundle / RECORD
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({**rec, **extra}, indent=2) + "\n", encoding="utf-8")
+    p.write_text(json.dumps({**rec, **extra}, indent=2) + "\n", encoding="utf-8", newline="\n")
     return p
 
 

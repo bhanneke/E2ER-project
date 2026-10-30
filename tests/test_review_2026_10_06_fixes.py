@@ -81,7 +81,7 @@ def test_parallel_loads_are_all_recorded(tmp_path: Path):
         t.start()
     for t in threads:
         t.join()
-    doc = json.loads((tmp_path / DATA_SOURCES_FILE).read_text())
+    doc = json.loads((tmp_path / DATA_SOURCES_FILE).read_text(encoding="utf-8"))
     assert sorted(x["series"] for x in doc["loads"]) == sorted(f"S{i}" for i in range(24))
     assert not list(tmp_path.glob(".*.tmp"))
     # The side files start with a dot: export leaves them out of the study folder.
@@ -95,12 +95,14 @@ def test_parallel_loads_are_all_recorded(tmp_path: Path):
 def test_a_file_that_cannot_be_read_is_kept_and_the_backup_used(tmp_path: Path):
     record_load(tmp_path, {"connector": "fred", "series": "A", "saved_to": "data/a.csv"})
     record_load(tmp_path, {"connector": "fred", "series": "B", "saved_to": "data/b.csv"})  # backup holds A
-    (tmp_path / DATA_SOURCES_FILE).write_text('{"loads": [{"connector": "fr')  # half a file
+    (tmp_path / DATA_SOURCES_FILE).write_text(
+        '{"loads": [{"connector": "fr', encoding="utf-8", newline="\n"
+    )  # half a file
     record_load(tmp_path, {"connector": "yfinance", "series": "C", "saved_to": "data/c.csv"})
-    doc = json.loads((tmp_path / DATA_SOURCES_FILE).read_text())
+    doc = json.loads((tmp_path / DATA_SOURCES_FILE).read_text(encoding="utf-8"))
     assert [x["series"] for x in doc["loads"]] == ["A", "C"]
     kept = list(tmp_path.glob(f".{DATA_SOURCES_FILE}.unreadable-*"))
-    assert len(kept) == 1 and kept[0].read_text().startswith('{"loads"')
+    assert len(kept) == 1 and kept[0].read_text(encoding="utf-8").startswith('{"loads"')
 
 
 # ── e2er reproduce ───────────────────────────────────────────────────────────
@@ -110,10 +112,12 @@ def _study(tmp_path: Path, script: str, *, data: str = "1\n2\n4\n", files: bool 
     folder = tmp_path / "study"
     for d in ("code", "results", "data"):
         (folder / d).mkdir(parents=True, exist_ok=True)
-    (folder / "code" / "run.py").write_text(script, encoding="utf-8")
-    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8")
-    (folder / "data" / "x.csv").write_text(data, encoding="utf-8")
-    (folder / "results" / "results.json").write_text(json.dumps({"main": {"estimate": 2.333333}}), encoding="utf-8")
+    (folder / "code" / "run.py").write_text(script, encoding="utf-8", newline="\n")
+    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8", newline="\n")
+    (folder / "data" / "x.csv").write_text(data, encoding="utf-8", newline="\n")
+    (folder / "results" / "results.json").write_text(
+        json.dumps({"main": {"estimate": 2.333333}}), encoding="utf-8", newline="\n"
+    )
     recipe = {
         "schema": rp.SCHEMA,
         "requirements": "code/requirements.txt",
@@ -124,7 +128,7 @@ def _study(tmp_path: Path, script: str, *, data: str = "1\n2\n4\n", files: bool 
     }
     if files:
         recipe["files"] = {"run.py": "code/run.py", "data": "data", "results": "results"}
-    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8")
+    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
     return folder
 
 
@@ -207,7 +211,9 @@ def _gone(pid: int, within: float) -> bool:
             os.kill(pid, 0)
         except ProcessLookupError:
             return True
-        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout
+        state = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, encoding="utf-8", errors="replace"
+        ).stdout
         if state.strip().startswith("Z"):
             return True  # killed, waiting to be reaped
         if time.monotonic() > deadline:
@@ -239,13 +245,13 @@ def test_a_cancel_kills_the_cli_and_its_children(tmp_path: Path):
 
         task = asyncio.create_task(call())
         for _ in range(100):
-            if pidfile.exists() and pidfile.read_text():
+            if pidfile.exists() and pidfile.read_text(encoding="utf-8"):
                 break
             await asyncio.sleep(0.05)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        return int(pidfile.read_text())
+        return int(pidfile.read_text(encoding="utf-8"))
 
     child = asyncio.run(scenario())
     assert _gone(child, within=10.0)  # the CLI's child is gone too
@@ -446,9 +452,9 @@ def test_source_names_are_normalised_before_the_alias_lookup(given: str, want: s
 
 def test_a_data_file_in_a_subfolder_is_available(tmp_path: Path):
     (tmp_path / "data" / "raw").mkdir(parents=True)
-    (tmp_path / "data" / "raw" / "fomc_dates.csv").write_text("date\n2020-03-15\n")
+    (tmp_path / "data" / "raw" / "fomc_dates.csv").write_text("date\n2020-03-15\n", encoding="utf-8", newline="\n")
     (tmp_path / "data" / ".hidden").mkdir()
-    (tmp_path / "data" / ".hidden" / "x.csv").write_text("a\n")
+    (tmp_path / "data" / ".hidden" / "x.csv").write_text("a\n", encoding="utf-8", newline="\n")
     settings = MagicMock(local_data_dir="", fred_api_key=None, allium_api_key=None)
     sources = available_sources(tmp_path, settings)
     assert sources.files == ("raw/fomc_dates.csv",)

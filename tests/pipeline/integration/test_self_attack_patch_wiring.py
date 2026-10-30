@@ -67,9 +67,11 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
                 "methodology": "empirical",
                 "current_stage": "self_attack",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "paper_draft.tex").write_text(_DRAFT)
+    (ws / "paper_draft.tex").write_text(_DRAFT, encoding="utf-8", newline="\n")
     return ws
 
 
@@ -142,7 +144,9 @@ async def test_critical_findings_dispatch_one_patch_revisor_not_parallel_revisor
                             "replace": "The parallel-trends assumption is examined in Figure 2",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -168,7 +172,7 @@ async def test_critical_findings_dispatch_one_patch_revisor_not_parallel_revisor
         f"invariant is one patch_revisor with batched findings."
     )
     # Patch landed
-    patched = (ws / "paper_draft.tex").read_text()
+    patched = (ws / "paper_draft.tex").read_text(encoding="utf-8")
     assert "is examined in Figure 2" in patched
 
 
@@ -191,7 +195,7 @@ async def test_findings_batched_into_single_focus(tmp_path, mock_llm):
     async def _capture(work_order, *args, **kwargs):
         if work_order.specialist == "patch_revisor":
             captured_focus[0] = work_order.focus
-            (ws / "paper_draft.tex.edits.json").write_text("[]")
+            (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
         return Contribution(
             paper_id=runner._paper_id,
             specialist=work_order.specialist,
@@ -245,7 +249,7 @@ async def test_capped_at_top_three_critical(tmp_path, mock_llm):
     async def _capture(work_order, *args, **kwargs):
         if work_order.specialist == "patch_revisor":
             captured_focus[0] = work_order.focus
-            (ws / "paper_draft.tex.edits.json").write_text("[]")
+            (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
         return Contribution(
             paper_id=runner._paper_id,
             specialist=work_order.specialist,
@@ -372,7 +376,9 @@ async def test_failed_patch_does_not_reject_phase(tmp_path, mock_llm):
                             "replace": "y",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,

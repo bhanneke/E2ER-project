@@ -38,7 +38,7 @@ def _add_yahoo(b: Path) -> None:
     load = {**yfinance_load("BTC-USD", "2026-10-05T08:00:00Z"), "saved_to": CSV, "rows": 2}
     _add(b, CSV, b"Date,Close\n2026-10-01,1.0\n2026-10-02,2.0\n")
     path = b / "data" / "data_sources.json"
-    sources = json.loads(path.read_text()) if path.is_file() else {"loads": []}
+    sources = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"loads": []}
     sources["loads"].append(load)
     _add(b, "data/data_sources.json", (json.dumps(sources, indent=2) + "\n").encode())
 
@@ -212,7 +212,9 @@ def test_reader_notes_take_each_source_s_own_terms():
 def test_a_yahoo_table_in_the_data_dictionary_counts(tmp_path: Path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "data.db").write_bytes(b"x")
-    (tmp_path / "data" / "data_dictionary.json").write_text(json.dumps({"tables": [{"source": "yfinance"}]}))
+    (tmp_path / "data" / "data_dictionary.json").write_text(
+        json.dumps({"tables": [{"source": "yfinance"}]}), encoding="utf-8", newline="\n"
+    )
     (use,) = data_terms.uses(tmp_path)
     assert use.terms.connector == "yfinance" and use.files == ["data/data.db"] and use.label == "Yahoo Finance"
 
@@ -240,7 +242,7 @@ def test_a_file_holding_gmd_and_yahoo_data_names_both(tmp_path: Path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "data.db").write_bytes(b"x")
     tables = {"tables": [{"source": "gmd", "version": "2025_09"}, {"source": "yfinance"}]}
-    (tmp_path / "data" / "data_dictionary.json").write_text(json.dumps(tables))
+    (tmp_path / "data" / "data_dictionary.json").write_text(json.dumps(tables), encoding="utf-8", newline="\n")
     manifest = {"data": [{"path": "data/data.db", "sha256": "0" * 64, "bytes": 1}]}
     data_terms.annotate(manifest, data_terms.uses(tmp_path))
     (entry,) = manifest["data"]

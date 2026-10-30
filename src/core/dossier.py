@@ -189,7 +189,9 @@ def git_blob_sha(path: Path) -> str:
 
 def _git(*args: str) -> str | None:
     try:
-        out = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=10)
+        out = subprocess.run(
+            ["git", "-C", str(ROOT), *args], capture_output=True, encoding="utf-8", errors="replace", timeout=10
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout if out.returncode == 0 else None

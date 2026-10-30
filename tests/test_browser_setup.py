@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -46,13 +47,15 @@ def home(tmp_path: Path, monkeypatch) -> Path:
     h = tmp_path / "home"
     lib = h / "Documents" / "Zotero Export"
     (lib / "files" / "12").mkdir(parents=True)
-    (lib / "My Library.bib").write_text("@article{a, title={A}}\n@book{b, title={B}}\n@comment{x}\n")
+    (lib / "My Library.bib").write_text(
+        "@article{a, title={A}}\n@book{b, title={B}}\n@comment{x}\n", encoding="utf-8", newline="\n"
+    )
     (lib / "files" / "12" / "Smith 2020.pdf").write_bytes(b"%PDF-1.4")
     (h / "Documents" / ".hidden").mkdir()
-    (h / "Documents" / ".secret.bib").write_text("@article{s,}")
+    (h / "Documents" / ".secret.bib").write_text("@article{s,}", encoding="utf-8", newline="\n")
     (h / "Data").mkdir()
-    (h / "Data" / "prices.csv").write_text("a,b\n1,2\n")
-    (h / "Data" / "notes.docx").write_text("x")
+    (h / "Data" / "prices.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")
+    (h / "Data" / "notes.docx").write_text("x", encoding="utf-8", newline="\n")
     monkeypatch.setenv("HOME", str(h))
     monkeypatch.delenv("E2ER_BROWSE_ROOTS", raising=False)
     return h
@@ -73,6 +76,11 @@ def _client(*, cookie: bool = True, client_ip: str = "127.0.0.1", base: str = BA
 # ── the path helper ─────────────────────────────────────────────────────────
 
 
+#: A backslash escape (``My\\ Library``) comes from a POSIX terminal; on Windows the backslash is the
+#: separator, and clean_path_input keeps it (src/paths.py).
+POSIX_ESCAPES = pytest.mark.skipif(sys.platform == "win32", reason="on Windows a backslash is the path separator")
+
+
 @pytest.mark.parametrize(
     "raw, expected",
     [
@@ -89,8 +97,8 @@ def _client(*, cookie: bool = True, client_ip: str = "127.0.0.1", base: str = BA
         ("'/Users/b/My Library.bib'", "/Users/b/My Library.bib"),
         ('"/Users/b/My Library.bib"', "/Users/b/My Library.bib"),
         ("❯ '/Users/b/My Library.bib' ", "/Users/b/My Library.bib"),
-        ("/Users/b/My\\ Library.bib", "/Users/b/My Library.bib"),  # drag-and-drop into Terminal
-        ("/Users/b/Zotero\\ Export\\ \\(2026\\)/", "/Users/b/Zotero Export (2026)/"),
+        pytest.param("/Users/b/My\\ Library.bib", "/Users/b/My Library.bib", marks=POSIX_ESCAPES),  # drag-and-drop
+        pytest.param("/Users/b/Zotero\\ Export\\ \\(2026\\)/", "/Users/b/Zotero Export (2026)/", marks=POSIX_ESCAPES),
         ("file:///Users/b/My%20Library.bib", "/Users/b/My Library.bib"),
         ("$HOME/refs.bib", "$HOME/refs.bib"),  # a variable, not a prompt
         ("#notes/refs.bib", "#notes/refs.bib"),  # a name, not a prompt
@@ -104,8 +112,8 @@ def test_clean_path_input(raw, expected):
 
 def test_clean_path_input_expands_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
-    assert clean_path_input("❯ ~/refs.bib") == str(tmp_path / "refs.bib")
-    assert clean_path_input("'~/My Library.bib'") == str(tmp_path / "My Library.bib")
+    assert Path(clean_path_input("❯ ~/refs.bib")) == tmp_path / "refs.bib"
+    assert Path(clean_path_input("'~/My Library.bib'")) == tmp_path / "My Library.bib"
 
 
 def test_bjoerns_folder_answer_is_offered_the_bib_inside(home):
@@ -155,8 +163,8 @@ def test_literature_kinds(home, tmp_path):
 
     many = tmp_path / "many"
     many.mkdir()
-    (many / "a.bib").write_text("@a{x,}")
-    (many / "b.bib").write_text("@a{y,}")
+    (many / "a.bib").write_text("@a{x,}", encoding="utf-8", newline="\n")
+    (many / "b.bib").write_text("@a{y,}", encoding="utf-8", newline="\n")
     assert inspect_literature(many).kind == "many_bibs"
     assert not inspect_literature(many).usable
 
@@ -275,7 +283,7 @@ def test_extra_roots_only_when_named(home, session, tmp_path, monkeypatch):
 def test_symlinks_out_of_home_are_not_followed(home, session, tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "stolen.bib").write_text("@a{x,}")
+    (outside / "stolen.bib").write_text("@a{x,}", encoding="utf-8", newline="\n")
     (home / "Documents" / "escape").symlink_to(outside)
     (home / "Documents" / "escape.bib").symlink_to(outside / "stolen.bib")
     (home / "Documents" / "inside").symlink_to(home / "Data")
@@ -390,7 +398,7 @@ def test_setup_saves_the_gemini_key(project, session):
         headers={"origin": BASE},
     )
     assert r.status_code == 200, r.text
-    text = (project / ".env").read_text()
+    text = (project / ".env").read_text(encoding="utf-8")
     assert "LLM_BACKEND=gemini" in text and "GEMINI_API_KEY=gem-key-1234567890wxyz" in text
 
 
@@ -413,7 +421,7 @@ def test_setup_writes_env_mode_600_and_masks_keys(project, session):
     assert r.status_code == 200, r.text
     env = project / ".env"
     assert owner_only(env)
-    text = env.read_text()
+    text = env.read_text(encoding="utf-8")
     assert "LLM_BACKEND=claude_code" in text and "CLAUDE_CODE_MODEL=haiku" in text
     assert f"LITERATURE_BIBTEX_FILE='{lib / 'My Library.bib'}'" in text
     assert "FRED_API_KEY=fredkey-1234567890abcd" in text
@@ -433,10 +441,14 @@ def test_setup_writes_env_mode_600_and_masks_keys(project, session):
 
 
 def test_setup_keeps_stored_keys_and_unmanaged_settings(project, session):
-    (project / ".env").write_text("LLM_BACKEND=anthropic\nANTHROPIC_API_KEY=sk-ant-old-9999\nGOVERNANCE=contracts\n")
+    (project / ".env").write_text(
+        "LLM_BACKEND=anthropic\nANTHROPIC_API_KEY=sk-ant-old-9999\nGOVERNANCE=contracts\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     r = _client().post("/api/setup/save", json={"backend": "anthropic", "model": "claude-haiku-4-5"})
     assert r.status_code == 200
-    text = (project / ".env").read_text()
+    text = (project / ".env").read_text(encoding="utf-8")
     assert "ANTHROPIC_API_KEY=sk-ant-old-9999" in text
     assert "GOVERNANCE=contracts" in text
     assert "ANTHROPIC_MODEL=claude-haiku-4-5" in text
@@ -497,9 +509,11 @@ def test_cli_sign_in_is_read_from_files(tmp_path, monkeypatch):
 
     for k in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_HOME"):
         monkeypatch.delenv(k, raising=False)
-    (tmp_path / ".claude.json").write_text(json.dumps({"projects": {}}))
+    (tmp_path / ".claude.json").write_text(json.dumps({"projects": {}}), encoding="utf-8", newline="\n")
     assert cli_signed_in("claude_code", tmp_path)[0] is False
-    (tmp_path / ".claude.json").write_text(json.dumps({"oauthAccount": {"emailAddress": "x"}}))
+    (tmp_path / ".claude.json").write_text(
+        json.dumps({"oauthAccount": {"emailAddress": "x"}}), encoding="utf-8", newline="\n"
+    )
     assert cli_signed_in("claude_code", tmp_path)[0] is True
     assert cli_signed_in("codex", tmp_path)[0] is False
 
@@ -513,7 +527,7 @@ def test_template_cards_come_from_the_pipeline_files():
     html = TestClient(app).get("/papers/new").text
     root = Path(__file__).resolve().parents[1] / "pipelines"
     for name in ("empirical", "empirical-preregistered", "event-study-finance", "replication"):
-        spec = tomllib.loads((root / f"{name}.toml").read_text())
+        spec = tomllib.loads((root / f"{name}.toml").read_text(encoding="utf-8"))
         assert f'value="{name}"' in html
         assert spec["description"].replace("'", "&#39;") in html
     assert "Stops for you at:</b> Design review, Pre-registration, Draft review" in html
@@ -526,7 +540,7 @@ def test_the_templates_ship_in_the_package():
     """0.11.0's wheel had no pipelines/, so a fresh install could not start any study."""
     import tomllib
 
-    data = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    data = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
     st = data["tool"]["setuptools"]
     assert "pipelines" in st["packages"]["find"]["include"]
     assert st["package-data"]["pipelines"] == ["*.toml"]
@@ -600,7 +614,7 @@ def test_a_study_starts_from_the_form_and_stops_at_its_first_review(live_db):
 
         folder = find_workspace(pid, live_db / "workspaces")
         assert folder.name.endswith("-does-x-affect-y"), folder  # a readable name, the id inside
-        manifest = json.loads((folder / "manifest.json").read_text())
+        manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["paper_id"] == pid
         assert manifest["purpose"] == "demonstration"
 
@@ -645,12 +659,20 @@ def test_the_finish_page_verifies_the_export(live_db, session, monkeypatch):
     pid = str(uuid.uuid4())
     ws = live_db / "workspaces" / pid
     ws.mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"title": "Verify Me", "paper_id": pid, "governance": "full"}))
-    (ws / "paper_draft.tex").write_text(TABLE_TEX)
-    (ws / "literature.bib").write_text("@article{smith2021, title={X}, doi={10.1/x}, year={2021}}\n")
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {"treat": {"estimate": 12.5}}}}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Verify Me", "paper_id": pid, "governance": "full"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(TABLE_TEX, encoding="utf-8", newline="\n")
+    (ws / "literature.bib").write_text(
+        "@article{smith2021, title={X}, doi={10.1/x}, year={2021}}\n", encoding="utf-8", newline="\n"
+    )
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 12.5}}}}), encoding="utf-8", newline="\n"
+    )
     (ws / "identification_spec.json").write_text(
-        json.dumps({"primary": {"estimator": "ols", "outcome": "y", "treatment": "treat"}})
+        json.dumps({"primary": {"estimator": "ols", "outcome": "y", "treatment": "treat"}}),
+        encoding="utf-8",
+        newline="\n",
     )
     from tests.results_script import write_results_script
 
@@ -861,7 +883,9 @@ def test_started_in_another_folder_setup_names_it_and_can_keep_it(project, sessi
 
     studies = project.parent / "studies"
     studies.mkdir()
-    (studies / ".env").write_text("LLM_BACKEND=claude_code\nFRED_API_KEY=fred-kept-1234567890\n")
+    (studies / ".env").write_text(
+        "LLM_BACKEND=claude_code\nFRED_API_KEY=fred-kept-1234567890\n", encoding="utf-8", newline="\n"
+    )
     h.remember_studies_folder(studies)
     assert h.project_dir() == studies.resolve()
 
@@ -872,7 +896,7 @@ def test_started_in_another_folder_setup_names_it_and_can_keep_it(project, sessi
         "/api/setup/save", json={"backend": "claude_code", "use_launch_folder": True}, headers={"origin": BASE}
     )
     assert r.status_code == 200, r.text
-    assert "FRED_API_KEY=fred-kept-1234567890" in (project / ".env").read_text()
+    assert "FRED_API_KEY=fred-kept-1234567890" in (project / ".env").read_text(encoding="utf-8")
     assert h.project_dir() == project, "e2er started here now uses this folder"
     assert h.remembered_studies_folder() == studies.resolve(), "the studies folder stays for other folders"
 
@@ -880,7 +904,7 @@ def test_started_in_another_folder_setup_names_it_and_can_keep_it(project, sessi
 def test_started_in_the_studies_folder_offers_nothing_more(project, session):
     from src import home as h
 
-    (project / ".env").write_text("LLM_BACKEND=claude_code\n")
+    (project / ".env").write_text("LLM_BACKEND=claude_code\n", encoding="utf-8", newline="\n")
     h.remember_studies_folder(project)
     assert 'name="use_launch_folder"' not in _client().get("/setup").text
 
@@ -889,7 +913,7 @@ def test_the_folder_browser_cuts_windows_paths_too():
     """`/\\/[^/]*$/` left C:\\Users\\kim\\e2er-studies whole: the browser opened nowhere."""
     import re
 
-    page = (Path(__file__).parents[1] / "src" / "api" / "templates" / "setup.html").read_text()
+    page = (Path(__file__).parents[1] / "src" / "api" / "templates" / "setup.html").read_text(encoding="utf-8")
     assert "replace(/\\/[^/]*$/, '')" not in page
     assert "replace(/[\\\\/][^\\\\/]*$/, '')" in page
     cut = re.compile(r"[\\/][^\\/]*$")  # the same pattern
@@ -943,7 +967,7 @@ def test_a_new_empty_literature_folder_is_saved_with_a_note(project, session):
 
 def test_a_saved_data_folder_that_is_gone_does_not_block_saving(project, session):
     gone = project.parent / "gone-data"
-    (project / ".env").write_text(f"LLM_BACKEND=claude_code\nLOCAL_DATA_DIR={gone}\n")
+    (project / ".env").write_text(f"LLM_BACKEND=claude_code\nLOCAL_DATA_DIR={gone}\n", encoding="utf-8", newline="\n")
     r = _client().post(
         "/api/setup/save",
         json={"backend": "claude_code", "data_dir": str(gone), "github_login": "kim"},
@@ -951,7 +975,7 @@ def test_a_saved_data_folder_that_is_gone_does_not_block_saving(project, session
     )
     assert r.status_code == 200, r.text
     assert any(n.startswith("Data folder: Nothing found") for n in r.json()["notes"])
-    assert "GITHUB_USERNAME=kim" in (project / ".env").read_text()
+    assert "GITHUB_USERNAME=kim" in (project / ".env").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("login", ["kim_dash", "kim.dash"])
@@ -982,11 +1006,11 @@ def test_the_live_panel_keeps_open_details_open_across_polls():
     import re
 
     root = Path(__file__).parents[1] / "src" / "api"
-    live = (root / "templates" / "_live.html").read_text()
+    live = (root / "templates" / "_live.html").read_text(encoding="utf-8")
     for id_ in ("live-events", "live-failure-details", "live-error-details"):
         assert f'id="{id_}"' in live
     no_id = [m for m in re.findall(r"<details[^>]*>", live) if "id=" not in m]
     assert not no_id, f"a <details> in the polled panel without a stable id: {no_id}"
-    js = (root / "static" / "e2er.js").read_text()
+    js = (root / "static" / "e2er.js").read_text(encoding="utf-8")
     assert "htmx:beforeSwap" in js and "htmx:afterSwap" in js
     assert "details[id][open]" in js and "d.open = true" in js

@@ -352,8 +352,8 @@ def compare(paths: list[str], out: str | None = None, json_output: bool = False)
 
     out_dir = Path(out).expanduser() if out else default_out
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "comparison.json").write_text(json.dumps(comparison, indent=2), encoding="utf-8")
-    (out_dir / "comparison_report.md").write_text(report, encoding="utf-8")
+    (out_dir / "comparison.json").write_text(json.dumps(comparison, indent=2), encoding="utf-8", newline="\n")
+    (out_dir / "comparison_report.md").write_text(report, encoding="utf-8", newline="\n")
 
     if json_output:
         print(json.dumps(comparison, indent=2))

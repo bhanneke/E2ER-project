@@ -45,7 +45,7 @@ def test_the_dashboards_approval_counts_and_only_for_the_same_sql():
 
 def test_a_forged_seal_file_without_the_key_does_not_count():
     seal.seals_dir().mkdir(parents=True, exist_ok=True)
-    (seal.seals_dir() / f"{QID}.json").write_text('{"status": "approved", "mac": "00"}')
+    (seal.seals_dir() / f"{QID}.json").write_text('{"status": "approved", "mac": "00"}', encoding="utf-8", newline="\n")
     with _db("approved"):
         assert asyncio.run(get_approval_status_with_note(QID))[0] == "pending"
 

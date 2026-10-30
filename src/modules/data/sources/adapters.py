@@ -240,7 +240,7 @@ async def download_file(
     meta = {"url": http.requests[-1], "sha256": sha256_bytes(content), "bytes": len(content), "retrieved_at": now_utc()}
     if version:
         meta["version"] = version
-    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8", newline="\n")
     return target, {**meta, "from_cache": False}
 
 

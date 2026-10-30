@@ -145,11 +145,20 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout
     assert "[PASS] results contract" in out.stdout, out.stdout
@@ -161,7 +170,8 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=600,
     )
     assert out.returncode == 0, out.stdout + out.stderr

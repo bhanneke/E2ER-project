@@ -242,4 +242,4 @@ def _write_matrix(
         **(meta or {}),
         "runs": runs,
     }
-    (out_dir / "matrix.json").write_text(json.dumps(matrix, indent=2), encoding="utf-8")
+    (out_dir / "matrix.json").write_text(json.dumps(matrix, indent=2), encoding="utf-8", newline="\n")

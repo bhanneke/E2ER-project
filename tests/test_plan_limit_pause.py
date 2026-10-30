@@ -294,7 +294,9 @@ def _runner(tmp_path: Path):
                 "methodology": "empirical",
                 "current_stage": "idea",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     return PipelineRunner(
         paper_id=paper_id, workspace=ws, backend=MagicMock(), model="m", mode="single_pass", backend_name="codex"
@@ -333,7 +335,7 @@ async def test_the_run_pauses_with_the_sentence_and_no_step_failed(tmp_path, eve
     payload = next(p for k, _sp, p in events if k == "paused_plan_limit")
     assert payload["backend"] == "codex" and payload["resets"] == "at 14:30"
     assert payload["specialist"] == "idea_developer" and payload["status"].endswith(PAUSE_TAIL)
-    state = json.loads((runner._workspace / ".pipeline_state.json").read_text())
+    state = json.loads((runner._workspace / ".pipeline_state.json").read_text(encoding="utf-8"))
     assert "initial" not in state["completed_stages"]
     assert runner._failure_counts.get("idea_developer", 0) == 0
 

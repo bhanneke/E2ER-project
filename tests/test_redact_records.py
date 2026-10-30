@@ -20,9 +20,9 @@ from tests.test_redact import study as redact_study  # noqa: F401 - fixture
 def test_redact_points_an_identifier_in_provenance_json_to_a_new_export(redact_study: Path):  # noqa: F811
     from tests.test_redact import EMAIL as ADA
 
-    prov = json.loads((redact_study / "provenance.json").read_text())
+    prov = json.loads((redact_study / "provenance.json").read_text(encoding="utf-8"))
     prov["run"]["model"] = f"set up by {ADA}"
-    (redact_study / "provenance.json").write_text(json.dumps(prov))
+    (redact_study / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     with pytest.raises(rd.RedactError) as e:
         rd.redact(redact_study, ADA)
     msg = str(e.value)
@@ -33,16 +33,16 @@ def test_redact_points_an_identifier_in_provenance_json_to_a_new_export(redact_s
 def test_redact_points_an_identifier_in_e2er_json_to_a_new_export(redact_study: Path):  # noqa: F811
     from tests.test_redact import EMAIL as ADA
 
-    (redact_study / "e2er.json").write_text(json.dumps({"contact": ADA}))
+    (redact_study / "e2er.json").write_text(json.dumps({"contact": ADA}), encoding="utf-8", newline="\n")
     with pytest.raises(rd.RedactError) as e:
         rd.redact(redact_study, ADA)
     assert "e2er.json is e2er's own record" in str(e.value)
 
 
 def test_the_blind_leak_check_says_a_record_needs_a_new_export(study, platform, capsys):  # noqa: F811
-    prov = json.loads((study / "provenance.json").read_text())
+    prov = json.loads((study / "provenance.json").read_text(encoding="utf-8"))
     prov["run"]["model"] = f"configured by {EMAIL}"
-    (study / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (study / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     assert blind(study) == 1
     out = capsys.readouterr().out
     assert "e2er's own records of the folder would still identify you" in out

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,32 @@ def _loopback_test_clients() -> None:
 
 
 _loopback_test_clients()
+
+
+def _home_is_home_on_windows() -> None:
+    """On Windows, ``~`` follows HOME in the suite, as on Linux and macOS.
+
+    The tests isolate the user's folder by pointing HOME at a temporary folder. Windows resolves ``~``
+    (``Path.home()``, ``os.path.expanduser``) from USERPROFILE and ignores HOME, so those tests read and
+    wrote the runner's real profile (C:\\Users\\runneradmin\\.e2er). e2er itself keeps using USERPROFILE.
+    """
+    if sys.platform != "win32":
+        return
+    import ntpath
+
+    real = ntpath.expanduser
+
+    def expanduser(path):  # noqa: ANN001, ANN202 - os.path.expanduser's own signature
+        text = os.fspath(path)
+        home = os.environ.get("HOME")
+        if home and isinstance(text, str) and (text == "~" or text.startswith(("~/", "~\\"))):
+            return ntpath.join(home, text[2:]) if len(text) > 2 else home
+        return real(path)
+
+    ntpath.expanduser = expanduser  # type: ignore[assignment]
+
+
+_home_is_home_on_windows()
 # Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
 # default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
 os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
@@ -451,7 +478,7 @@ def sample_manifest(tmp_workspace: Path, paper_id: str) -> dict[str, Any]:
         "mode": "single_pass",
         "current_stage": "idea",
     }
-    (tmp_workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (tmp_workspace / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
     return manifest
 
 

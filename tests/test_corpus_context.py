@@ -109,7 +109,7 @@ def test_the_evidence_file_carries_the_quotes(db_path, tmp_path):
     written = corpus_context.write_evidence(tmp_path / "ws", evidence)
 
     assert written is not None
-    text = written.read_text()
+    text = written.read_text(encoding="utf-8")
 
     assert FINDING in text, "a claim without its quote is exactly what this replaces"
     assert "No change in equity loading." in text
@@ -337,7 +337,7 @@ async def test_acquisition_seeds_the_bibliography_from_the_corpus(db_path, tmp_p
     written = await acquire_literature(workspace, "paper-1", ["equity loading bitcoin"], get_settings())
 
     assert written == 1, "the corpus paper alone should produce a bibliography"
-    bib = (workspace / "literature.bib").read_text()
+    bib = (workspace / "literature.bib").read_text(encoding="utf-8")
     assert "Spot ETFs" in bib
     assert (workspace / "literature" / "corpus_evidence.md").is_file()
 
@@ -352,7 +352,9 @@ async def test_an_existing_bibliography_is_kept_and_the_library_papers_join_it_a
 
     workspace = tmp_path / "ws"
     workspace.mkdir()
-    (workspace / "literature.bib").write_text("@article{mine2020,\n  title = {Mine},\n}\n")
+    (workspace / "literature.bib").write_text(
+        "@article{mine2020,\n  title = {Mine},\n}\n", encoding="utf-8", newline="\n"
+    )
 
     monkeypatch.setattr("src.modules.literature.corpus_context.corpus_path", lambda explicit=None: db_path)
     monkeypatch.setattr("src.modules.literature.registry.search_sources", lambda s: [])
@@ -365,7 +367,7 @@ async def test_an_existing_bibliography_is_kept_and_the_library_papers_join_it_a
     written = await acquire_literature(workspace, "paper-1", ["equity loading"], get_settings())
 
     assert written == 1
-    bib = (workspace / "literature.bib").read_text()
+    bib = (workspace / "literature.bib").read_text(encoding="utf-8")
     assert bib.startswith("@article{mine2020,") and "Spot ETFs" in bib
     assert "e2er_source = {researcher}" in bib
     assert (workspace / "literature" / "corpus_evidence.md").is_file()
@@ -398,7 +400,7 @@ async def test_a_library_paper_unrelated_to_the_question_is_no_filler(db_path, t
     await acquire_literature(workspace, "paper-1", [UNRELATED], get_settings())
 
     bib = workspace / "literature.bib"
-    assert not bib.is_file() or "Spot ETFs" not in bib.read_text()
+    assert not bib.is_file() or "Spot ETFs" not in bib.read_text(encoding="utf-8")
     assert not (workspace / "literature" / "corpus_evidence.md").exists()
 
 
@@ -412,13 +414,15 @@ async def test_the_studys_own_paper_keeps_its_claims_whatever_the_question(db_pa
     workspace.mkdir()
     (workspace / "literature.bib").write_text(
         "@article{author2024spot,\n  title = {Spot ETFs and bitcoin},\n  doi = {10.1/a},\n"
-        "  e2er_source = {researcher},\n}\n"
+        "  e2er_source = {researcher},\n}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     _acquire_offline(monkeypatch, db_path)
 
     await acquire_literature(workspace, "paper-1", [UNRELATED], get_settings())
 
-    assert FINDING in (workspace / "literature" / "corpus_evidence.md").read_text()
+    assert FINDING in (workspace / "literature" / "corpus_evidence.md").read_text(encoding="utf-8")
 
 
 def test_relevance_reads_the_title_and_the_matched_claims():

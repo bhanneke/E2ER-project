@@ -52,10 +52,12 @@ def _gmd_load() -> dict:
 def _gmd_workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "workspaces" / "2026-10-23-gmd"
     (ws / "data").mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-gmd", "title": "Inflation in Europe"}))
-    (ws / "data" / "gmd.csv").write_text(GMD_ROWS)
-    (ws / "data_sources.json").write_text(json.dumps({"loads": [_gmd_load()]}))
-    (ws / "regions.py").write_text(GMD_SCRIPT)
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-gmd", "title": "Inflation in Europe"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "data" / "gmd.csv").write_text(GMD_ROWS, encoding="utf-8", newline="\n")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": [_gmd_load()]}), encoding="utf-8", newline="\n")
+    (ws / "regions.py").write_text(GMD_SCRIPT, encoding="utf-8", newline="\n")
     later = time.time() + 2
     for name, data in (("regions.gpkg", b"GPKG\x00" + GMD_ROWS.encode()), ("gmd_copy.csv", GMD_ROWS.encode())):
         (ws / name).write_bytes(data)
@@ -71,7 +73,9 @@ def test_the_reviewers_gmd_case_is_left_out_of_the_package(tmp_path: Path):
     kept = {d.path for d in dd.kept_out(folder)}
     assert {"misc/regions.gpkg", "results/gmd_copy.csv"} <= kept
     # Export recorded them too (provenance.json run.derived_data), and pack leaves them out.
-    recorded = {e["path"] for e in json.loads((folder / "provenance.json").read_text())["run"]["derived_data"]}
+    recorded = {
+        e["path"] for e in json.loads((folder / "provenance.json").read_text(encoding="utf-8"))["run"]["derived_data"]
+    }
     assert {"misc/regions.gpkg", "results/gmd_copy.csv"} <= recorded
     packed = pkg.build(folder)
     left = {i["path"] for i in packed.manifest["left_out"]}
@@ -149,9 +153,11 @@ def test_a_script_reading_restricted_data_with_an_unresolved_write_taints_every_
     (tmp_path / "data").mkdir()
     (tmp_path / "code").mkdir()
     (tmp_path / "results").mkdir()
-    (tmp_path / "data" / "data_sources.json").write_text(json.dumps({"loads": [_gmd_load()]}))
+    (tmp_path / "data" / "data_sources.json").write_text(
+        json.dumps({"loads": [_gmd_load()]}), encoding="utf-8", newline="\n"
+    )
     old = tmp_path / "results" / "older.csv"
-    old.write_text("a\n1\n")
+    old.write_text("a\n1\n", encoding="utf-8", newline="\n")
     past = time.time() - 3600
     os.utime(old, (past, past))
     script = tmp_path / "code" / "split.py"
@@ -159,24 +165,30 @@ def test_a_script_reading_restricted_data_with_an_unresolved_write_taints_every_
         "import pandas as pd\n"
         'df = pd.read_csv("data/gmd.csv")\n'
         "for c, part in df.groupby('ISO3'):\n"
-        '    part.to_parquet(f"data/gmd_{c}.parquet")\n'
+        '    part.to_parquet(f"data/gmd_{c}.parquet")\n',
+        encoding="utf-8",
+        newline="\n",
     )
     os.utime(script, (past + 60, past + 60))
     for name in ("data/gmd_DEU.parquet", "results/summary.csv"):
-        (tmp_path / name).write_text("x\n")
+        (tmp_path / name).write_text("x\n", encoding="utf-8", newline="\n")
     found = {d.path: d for d in dd.derived(tmp_path)}
     assert {"data/gmd_DEU.parquet", "results/summary.csv"} <= set(found)
     assert "results/older.csv" not in found, "a file older than the script is not its output"
     assert "data/data_sources.json" not in found
     assert found["data/gmd_DEU.parquet"].writers == ["code/split.py"]
     # A script that reads no restricted data taints nothing.
-    script.write_text("import pandas as pd\nfor c in 'ab':\n    pd.DataFrame().to_parquet(f'data/{c}.parquet')\n")
+    script.write_text(
+        "import pandas as pd\nfor c in 'ab':\n    pd.DataFrame().to_parquet(f'data/{c}.parquet')\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     os.utime(script, (past + 60, past + 60))
     assert dd.derived(tmp_path) == []
 
 
 def test_the_script_log_records_every_data_file_and_the_path_of_one_too_large_to_hash(tmp_path: Path, monkeypatch):
-    (tmp_path / "s.py").write_text("print(1)\n")
+    (tmp_path / "s.py").write_text("print(1)\n", encoding="utf-8", newline="\n")
     before = sl.output_snapshot(tmp_path)
     (tmp_path / "results").mkdir()
     (tmp_path / "results" / "regions.gpkg").write_bytes(b"GPKG")
@@ -188,7 +200,9 @@ def test_the_script_log_records_every_data_file_and_the_path_of_one_too_large_to
     assert run["outputs_unhashed"] == ["panel.parquet"]
     # derived() counts both as written by the script.
     (tmp_path / "data").mkdir()
-    (tmp_path / "data_sources.json").write_text(json.dumps({"loads": [_gmd_load()]}))
-    (tmp_path / "s.py").write_text('import pandas as pd\nX = pd.read_csv("data/gmd.csv")\n')
+    (tmp_path / "data_sources.json").write_text(json.dumps({"loads": [_gmd_load()]}), encoding="utf-8", newline="\n")
+    (tmp_path / "s.py").write_text(
+        'import pandas as pd\nX = pd.read_csv("data/gmd.csv")\n', encoding="utf-8", newline="\n"
+    )
     found = {d.path for d in dd.derived(tmp_path)}
     assert {"results/regions.gpkg", "panel.parquet"} <= found

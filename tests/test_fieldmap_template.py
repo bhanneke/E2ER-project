@@ -64,7 +64,7 @@ def fake(monkeypatch) -> FakeOpenAlex:
 def ws(tmp_path: Path) -> Path:
     w = tmp_path / "ws"
     w.mkdir()
-    (w / "field_boundary.json").write_text(json.dumps(BOUNDARY))
+    (w / "field_boundary.json").write_text(json.dumps(BOUNDARY), encoding="utf-8", newline="\n")
     return w
 
 
@@ -79,7 +79,9 @@ def _lanes(ws: Path) -> None:
                     {"id": "late", "question": "Where did it go?", "papers": ids[half:]},
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -96,24 +98,26 @@ def _computed(ws: Path) -> None:
 def test_retrieval_writes_every_boundary_records_the_loads_and_reuses_them(ws: Path, fake: FakeOpenAlex):
     v = fc.field_retrieve(ws)
     assert v.passed and v.stats["boundaries"] == 3 and v.stats["main_papers"] == 7
-    counts = json.loads((ws / "field_boundary_counts.json").read_text())
+    counts = json.loads((ws / "field_boundary_counts.json").read_text(encoding="utf-8"))
     assert [(b["name"], b["papers"]) for b in counts["boundaries"]] == [("main", 7), ("journal", 5), ("to-2005", 5)]
-    assert "| main | 7 |" in (ws / "field_boundary_counts.md").read_text()
-    loads = json.loads((ws / "data_sources.json").read_text())["loads"]
+    assert "| main | 7 |" in (ws / "field_boundary_counts.md").read_text(encoding="utf-8")
+    loads = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert len(loads) == 3 and {ld["connector"] for ld in loads} == {"openalex"}
     assert all("CC0" in ld["licence"] and "Priem" in ld["citation"] and ld["citation_by"] == "source" for ld in loads)
     sent = len(fake.calls)
     assert fc.field_retrieve(ws).passed and len(fake.calls) == sent  # unchanged boundaries: no request
     # An edited boundary is retrieved again; the others are not.
-    b = json.loads((ws / "field_boundary.json").read_text())
+    b = json.loads((ws / "field_boundary.json").read_text(encoding="utf-8"))
     b["alternatives"][1]["to_year"] = 2004
-    (ws / "field_boundary.json").write_text(json.dumps(b))
+    (ws / "field_boundary.json").write_text(json.dumps(b), encoding="utf-8", newline="\n")
     fake.sets = {"publication_year:<2005": WORKS[:4], **fake.sets}
     assert fc.field_retrieve(ws).passed and len(fake.calls) == sent + 3  # count + two pages of 3
 
 
 def test_a_boundary_file_with_mistakes_fails_retrieval_with_reasons(ws: Path, fake: FakeOpenAlex):
-    (ws / "field_boundary.json").write_text(json.dumps({"main": {"query": "a, b"}, "alternatives": []}))
+    (ws / "field_boundary.json").write_text(
+        json.dumps({"main": {"query": "a, b"}, "alternatives": []}), encoding="utf-8", newline="\n"
+    )
     v = fc.field_retrieve(ws)
     assert not v.passed and "commas" in v.reasons[0] and "2 to 6" in v.reasons[0]
     assert fake.calls == []
@@ -126,18 +130,18 @@ def test_the_network_check_stops_on_a_thin_network(ws: Path, fake: FakeOpenAlex)
     v = fc.field_network(ws, min_papers=1, max_isolated_share=0.1)
     # W7 has no internal link: 1 of 7 = 14% > 10%.
     assert not v.passed and "14% of the papers have no internal citation link" in v.reasons[0]
-    rep = json.loads((ws / "completeness_report.json").read_text())
+    rep = json.loads((ws / "completeness_report.json").read_text(encoding="utf-8"))
     assert rep["passed"] is False and rep["papers_without_internal_links"] == 1
     assert fc.field_network(ws, min_papers=1).passed
-    assert "Papers without internal links: 1" in (ws / "completeness_report.md").read_text()
+    assert "Papers without internal links: 1" in (ws / "completeness_report.md").read_text(encoding="utf-8")
 
 
 def test_main_path_robustness_map_and_results(ws: Path, fake: FakeOpenAlex):
     _computed(ws)
-    mp = json.loads((ws / "main_path.json").read_text())
+    mp = json.loads((ws / "main_path.json").read_text(encoding="utf-8"))
     # W1>W2>W3>W5>W6 or via W4: computed and checked in test_fieldmap; here the files hold it.
     assert mp["global_main_path"]["papers"][0] == "W1" and mp["global_main_path"]["papers"][-1] == "W6"
-    rob = json.loads((ws / "robustness.json").read_text())
+    rob = json.loads((ws / "robustness.json").read_text(encoding="utf-8"))
     assert rob["boundary_count"] == 3 and rob["key_routes_k"] == 2
     assert not fc.field_map(ws).passed  # no lanes yet
     _lanes(ws)
@@ -159,13 +163,13 @@ def test_main_path_robustness_map_and_results(ws: Path, fake: FakeOpenAlex):
         "field_map_results.json",
     ):
         assert (ws / f).is_file() and (ws / f).stat().st_size > 0, f
-    res = json.loads((ws / "field_map_results.json").read_text())
+    res = json.loads((ws / "field_map_results.json").read_text(encoding="utf-8"))
     assert res["boundary"]["papers"] == 7 and res["network"]["papers_without_internal_links"] == 1
     assert res["main_path"]["length"] == len(mp["global_main_path"]["papers"])
     assert res["robustness"]["boundary_count"] == 3 and res["lanes"]["count"] == 2
-    bib = (ws / "literature.bib").read_text()
+    bib = (ws / "literature.bib").read_text(encoding="utf-8")
     assert all(f"{{{k}," in bib for k in fm_credit.METHOD_REFERENCES)
-    assert fc.field_map(ws).passed and (ws / "literature.bib").read_text() == bib  # added once
+    assert fc.field_map(ws).passed and (ws / "literature.bib").read_text(encoding="utf-8") == bib  # added once
 
 
 @pytest.mark.parametrize(
@@ -185,16 +189,16 @@ def test_main_path_robustness_map_and_results(ws: Path, fake: FakeOpenAlex):
 )
 def test_lanes_that_break_the_contract_are_named(ws: Path, fake: FakeOpenAlex, lanes, match):
     _computed(ws)
-    (ws / "field_lanes.json").write_text(json.dumps(lanes))
+    (ws / "field_lanes.json").write_text(json.dumps(lanes), encoding="utf-8", newline="\n")
     assert any(match in p for p in wf.lanes_problems(ws)), wf.lanes_problems(ws)
 
 
 def test_the_specialist_contracts_read_the_judgement_files(ws: Path, fake: FakeOpenAlex):
     from src.core.specialists.contract_check import check_specialist_artifacts
 
-    (ws / "field_boundary.md").write_text("# Boundary\n" + "Why each term is in. " * 20)
+    (ws / "field_boundary.md").write_text("# Boundary\n" + "Why each term is in. " * 20, encoding="utf-8", newline="\n")
     assert all(c.ok for c in check_specialist_artifacts(ws, "field_boundary_designer"))
-    (ws / "field_boundary.json").write_text(json.dumps({"main": {"query": "x"}}))
+    (ws / "field_boundary.json").write_text(json.dumps({"main": {"query": "x"}}), encoding="utf-8", newline="\n")
     bad = [c for c in check_specialist_artifacts(ws, "field_boundary_designer") if not c.ok]
     assert bad and "alternatives" in bad[0].reason
 
@@ -204,21 +208,27 @@ def test_the_number_check_traces_the_summary_table(ws: Path, fake: FakeOpenAlex)
     _lanes(ws)
     fc.field_map(ws)
     (ws / "paper_draft.tex").write_text(
-        "\\title{A field}\n\\begin{abstract}x\\end{abstract}\n\\section{Map}\n\\input{tables/field_map_summary.tex}\n"
+        "\\title{A field}\n\\begin{abstract}x\\end{abstract}\n\\section{Map}\n\\input{tables/field_map_summary.tex}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     v = fc.draft_numbers(ws)
     # Eight rows; a zero count is not read as a table value.
     assert v.passed and v.stats["table_values"] >= 7 and v.stats["matched"] == v.stats["table_values"]
-    (ws / "paper_draft.tex").write_text("\\section{Map} No table.\n")
+    (ws / "paper_draft.tex").write_text("\\section{Map} No table.\n", encoding="utf-8", newline="\n")
     v = fc.draft_numbers(ws)
     assert not v.passed and "tables/field_map_summary.tex" in v.reasons[0]
 
 
 def test_the_number_check_stops_a_value_the_results_do_not_hold(tmp_path: Path):
-    (tmp_path / "field_map_results.json").write_text(json.dumps({"network": {"internal_links": 1637}}))
+    (tmp_path / "field_map_results.json").write_text(
+        json.dumps({"network": {"internal_links": 1637}}), encoding="utf-8", newline="\n"
+    )
     (tmp_path / "paper_draft.tex").write_text(
         "\\begin{tabular}{lr}\n\\hline\n & Count \\\\\n\\hline\n"
-        "Internal citation links & 1200 \\\\\n\\hline\n\\end{tabular}\n"
+        "Internal citation links & 1200 \\\\\n\\hline\n\\end{tabular}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     v = fc.draft_numbers(tmp_path)
     assert not v.passed and "1200 vs 1637" in v.reasons[0]
@@ -263,7 +273,7 @@ def test_the_template_loads_in_the_order_of_a_field_map():
     assert [s.name for s in spec.steps if s.kind == "researcher"] == ["review_boundary", "review_lanes", "review_draft"]
     assert spec.step("retrieve_boundary").resumable is False
     assert spec.step("main_path").settings == {"key_routes": 10}
-    assert "e2er authors" in TEMPLATE.read_text()
+    assert "e2er authors" in TEMPLATE.read_text(encoding="utf-8")
 
 
 def test_the_template_validates_against_the_published_schema():
@@ -395,8 +405,8 @@ async def test_the_run_stops_at_the_boundary_review_with_the_counts(ws: Path, fa
 
     async def _exec(orders, *a, **k):
         sent.extend(orders)
-        (ws / "field_boundary.json").write_text(json.dumps(BOUNDARY))
-        (ws / "field_boundary.md").write_text("# Boundary\n" + "x" * 200)
+        (ws / "field_boundary.json").write_text(json.dumps(BOUNDARY), encoding="utf-8", newline="\n")
+        (ws / "field_boundary.md").write_text("# Boundary\n" + "x" * 200, encoding="utf-8", newline="\n")
         return [Contribution(paper_id=PID, specialist=o.specialist, output="", success=True) for o in orders]
 
     async def _noop(*a, **k):
@@ -450,9 +460,9 @@ def test_the_specialists_are_registered_with_the_skill_and_the_command():
 
 
 def test_the_command_is_installed_and_wrapped():
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["project"]["scripts"]["e2er-fieldmap"] == "src.modules.fieldmap.cli:main"
-    assert "src.modules.fieldmap.cli" in (ROOT / "scripts" / "e2er-fieldmap").read_text()
+    assert "src.modules.fieldmap.cli" in (ROOT / "scripts" / "e2er-fieldmap").read_text(encoding="utf-8")
 
 
 def test_the_command_runs_the_same_steps(ws: Path, fake: FakeOpenAlex, capsys):
@@ -544,7 +554,7 @@ def test_the_study_bundle_carries_the_field_map(ws: Path, fake: FakeOpenAlex, tm
     _computed(ws)
     _lanes(ws)
     assert fc.field_map(ws).passed
-    (ws / "manifest.json").write_text(json.dumps({"title": "A field map"}))
+    (ws / "manifest.json").write_text(json.dumps({"title": "A field map"}), encoding="utf-8", newline="\n")
     out = export_paper(ws, tmp_path / "out", date_str="2026-10-08", slug="study")
     for rel in (
         "results/field_map_results.json",

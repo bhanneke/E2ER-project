@@ -140,7 +140,7 @@ def test_the_rerun_records_the_specialist_and_tells_it(tmp_path: Path):
     st.last_status = "completed"
     payload = apply_rerun(tmp_path, st, find_spec("descriptive-study"), "paper_drafter", "Mark the members.")
     assert payload["step"] == "initial" and payload["specialist"] == "paper_drafter"
-    text = (tmp_path / "researcher_instructions.md").read_text()
+    text = (tmp_path / "researcher_instructions.md").read_text(encoding="utf-8")
     assert "(for paper_drafter in step initial, rerun of the study," in text
 
 

@@ -88,7 +88,7 @@ def test_reader_maps_one_article_excludes_rest(tmp_path: Path):
     assert p.doi == "10.1234/abc"
     assert p.journal == "Journal of Finance"
     assert p.source == "zotero_local"
-    assert p.raw["source_pdf"].endswith("storage/ATTACHKEY/smith2024.pdf")
+    assert Path(p.raw["source_pdf"]).parts[-3:] == ("storage", "ATTACHKEY", "smith2024.pdf")  # a path of this system
 
 
 def test_read_only_never_mutates(tmp_path: Path):

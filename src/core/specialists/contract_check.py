@@ -509,7 +509,7 @@ def write_contract_feedback(workspace: Path, specialist: str, summary: str) -> N
     try:
         feedback_dir = workspace / _FEEDBACK_DIR
         feedback_dir.mkdir(parents=True, exist_ok=True)
-        (feedback_dir / f"{specialist}.txt").write_text(summary, encoding="utf-8")
+        (feedback_dir / f"{specialist}.txt").write_text(summary, encoding="utf-8", newline="\n")
     except OSError as e:
         logger.warning("could not persist contract feedback for %s: %s", specialist, e)
 

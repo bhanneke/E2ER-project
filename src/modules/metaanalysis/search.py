@@ -228,7 +228,7 @@ def run_crossref(cl: Client, ws: Path, search: dict[str, Any], *, rows: int) -> 
         cl.budget.spend()
         data = json.loads(fetch_text(url, {}))
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(data), encoding="utf-8")
+        cache.write_text(json.dumps(data), encoding="utf-8", newline="\n")
     msg = data.get("message") or {}
     items = [parse_crossref(i) for i in msg.get("items") or [] if i.get("DOI")]
     return {

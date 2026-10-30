@@ -16,37 +16,37 @@ from src.core.specialists.post_execution import (
 
 def test_sidecar_populated_with_real_json(tmp_path: Path):
     path = tmp_path / "x.json"
-    path.write_text(json.dumps({"main": {"coef": 0.04}}), encoding="utf-8")
+    path.write_text(json.dumps({"main": {"coef": 0.04}}), encoding="utf-8", newline="\n")
     assert _is_populated(path) is True
 
 
 def test_sidecar_not_populated_empty_dict(tmp_path: Path):
     path = tmp_path / "x.json"
-    path.write_text("{}", encoding="utf-8")
+    path.write_text("{}", encoding="utf-8", newline="\n")
     assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_empty_list(tmp_path: Path):
     path = tmp_path / "x.json"
-    path.write_text("[]", encoding="utf-8")
+    path.write_text("[]", encoding="utf-8", newline="\n")
     assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_null(tmp_path: Path):
     path = tmp_path / "x.json"
-    path.write_text("null", encoding="utf-8")
+    path.write_text("null", encoding="utf-8", newline="\n")
     assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_whitespace(tmp_path: Path):
     path = tmp_path / "x.json"
-    path.write_text("   \n\t ", encoding="utf-8")
+    path.write_text("   \n\t ", encoding="utf-8", newline="\n")
     assert _is_populated(path) is False
 
 
 def test_sidecar_not_populated_invalid_json(tmp_path: Path):
     path = tmp_path / "x.json"
-    path.write_text("{not json}", encoding="utf-8")
+    path.write_text("{not json}", encoding="utf-8", newline="\n")
     assert _is_populated(path) is False
 
 
@@ -105,8 +105,9 @@ def test_discovers_script_by_content_when_not_canonically_named(tmp_path: Path):
         "  json.dumps({'dp': {'oos_r2': 0.009}}))\n"
         "print('analyzed')\n",
         encoding="utf-8",
+        newline="\n",
     )
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran is True
     assert attempt.returncode == 0
@@ -128,13 +129,14 @@ def test_normalizes_alternate_output_onto_canonical_sidecar(tmp_path: Path):
         "  json.dumps({'dp': {'is_r2': 0.011, 'oos_r2': 0.009, 'cw': 1.20}}))\n"
         "print('done')\n",
         encoding="utf-8",
+        newline="\n",
     )
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran is True
     assert attempt.populated_sidecar is True
     assert attempt.normalized_from == "analysis_output.json"
-    data = json.loads((tmp_path / "estimation_results.json").read_text())
+    data = json.loads((tmp_path / "estimation_results.json").read_text(encoding="utf-8"))
     assert data["dp"]["oos_r2"] == 0.009
     # Audit log records the normalization.
     log = (tmp_path / "run_estimation.log").read_text(encoding="utf-8")
@@ -157,14 +159,15 @@ def test_runs_with_relative_workspace_path(tmp_path: Path, monkeypatch):
         "import json, pathlib\n"
         "pathlib.Path('estimation_results.json').write_text(json.dumps({'dp': {'oos_r2': 0.009}}))\n",
         encoding="utf-8",
+        newline="\n",
     )
-    (ws / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (ws / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     monkeypatch.chdir(tmp_path)
     attempt = maybe_execute_specialist_script(Path("Tests/workspaces/abc"), "econometrics_specialist")
     assert attempt.ran is True
     assert attempt.returncode == 0, f"script failed: {attempt.reason}"
     assert attempt.populated_sidecar is True
-    data = json.loads((ws / "estimation_results.json").read_text())
+    data = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     assert data["dp"]["oos_r2"] == 0.009
 
 
@@ -176,9 +179,10 @@ def test_populated_sidecar_skips_execution(tmp_path: Path):
         # If this ran, it would crash — but it shouldn't run.
         "raise RuntimeError('should not have been executed')",
         encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"main": {"coef": 0.04, "se": 0.01}}), encoding="utf-8"
+        json.dumps({"main": {"coef": 0.04, "se": 0.01}}), encoding="utf-8", newline="\n"
     )
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran is False
@@ -200,8 +204,9 @@ def test_runner_executes_script_when_sidecar_empty(tmp_path: Path):
         ")\n"
         "print('estimation done')\n",
         encoding="utf-8",
+        newline="\n",
     )
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran is True
     assert attempt.returncode == 0
@@ -211,7 +216,7 @@ def test_runner_executes_script_when_sidecar_empty(tmp_path: Path):
     assert "returncode: 0" in log
     assert "estimation done" in log  # stdout captured
     # And the sidecar has the real numbers, not `{}`.
-    data = json.loads((tmp_path / "estimation_results.json").read_text())
+    data = json.loads((tmp_path / "estimation_results.json").read_text(encoding="utf-8"))
     assert data["main"]["coef"] == 0.04
 
 
@@ -221,6 +226,7 @@ def test_runner_handles_script_that_errors(tmp_path: Path):
     (tmp_path / "run_estimation.py").write_text(
         "raise RuntimeError('boom')\n",
         encoding="utf-8",
+        newline="\n",
     )
     # Sidecar absent — the script's failure path.
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
@@ -238,8 +244,9 @@ def test_runner_handles_script_that_exits_zero_without_writing(tmp_path: Path):
     (tmp_path / "run_estimation.py").write_text(
         "print('all done (but I wrote nothing)')\n",
         encoding="utf-8",
+        newline="\n",
     )
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     attempt = maybe_execute_specialist_script(tmp_path, "econometrics_specialist")
     assert attempt.ran is True
     assert attempt.returncode == 0
@@ -336,7 +343,7 @@ async def test_run_specialist_runs_script_before_contract_check(tmp_workspace: P
     # The runner-side post-exec ran the script; sidecar got populated;
     # M4.3 contract check then passed.
     assert contribution.success is True, f"unexpected failure: {contribution.error}"
-    data = json.loads((tmp_workspace / "estimation_results.json").read_text())
+    data = json.loads((tmp_workspace / "estimation_results.json").read_text(encoding="utf-8"))
     assert data["main"]["coefficients"]["treat"]["estimate"] == 0.04
     # Audit log is present.
     assert (tmp_workspace / "run_estimation.log").is_file()
@@ -413,7 +420,7 @@ async def test_run_specialist_still_fails_when_script_errors(tmp_workspace: Path
     assert contribution.success is False
     assert "contract violation" in contribution.error
     # Post-exec log written so the next reviewer can debug.
-    log = (tmp_workspace / "run_estimation.log").read_text()
+    log = (tmp_workspace / "run_estimation.log").read_text(encoding="utf-8")
     assert "RuntimeError" in log or "script broken" in log
 
 
@@ -425,7 +432,7 @@ def test_read_execution_error_returns_feedback_on_crash(tmp_path: Path):
     a feedback message carrying the traceback + the canonical sidecar name."""
     from src.core.specialists.post_execution import read_execution_error
 
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     (tmp_path / "run_estimation.log").write_text(
         "# post-specialist exec for econometrics_specialist\n"
         "# script: run_estimation.py\n"
@@ -436,6 +443,7 @@ def test_read_execution_error_returns_feedback_on_crash(tmp_path: Path):
         '  File "run_estimation.py", line 159, in out_of_sample\n'
         "AttributeError: 'numpy.ndarray' object has no attribute 'values'\n",
         encoding="utf-8",
+        newline="\n",
     )
     fb = read_execution_error(tmp_path, "econometrics_specialist")
     assert fb is not None
@@ -447,8 +455,8 @@ def test_read_execution_error_returns_feedback_on_crash(tmp_path: Path):
 def test_read_execution_error_none_when_exit_clean(tmp_path: Path):
     from src.core.specialists.post_execution import read_execution_error
 
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "run_estimation.log").write_text("# returncode: 0\n--- stderr ---\n", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
+    (tmp_path / "run_estimation.log").write_text("# returncode: 0\n--- stderr ---\n", encoding="utf-8", newline="\n")
     assert read_execution_error(tmp_path, "econometrics_specialist") is None
 
 
@@ -456,15 +464,17 @@ def test_read_execution_error_none_when_sidecar_populated(tmp_path: Path):
     """Even with a crash log, a populated sidecar means it already succeeded."""
     from src.core.specialists.post_execution import read_execution_error
 
-    (tmp_path / "estimation_results.json").write_text(json.dumps({"m": {"c": 1}}), encoding="utf-8")
-    (tmp_path / "run_estimation.log").write_text("# returncode: 1\n--- stderr ---\nboom", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text(json.dumps({"m": {"c": 1}}), encoding="utf-8", newline="\n")
+    (tmp_path / "run_estimation.log").write_text(
+        "# returncode: 1\n--- stderr ---\nboom", encoding="utf-8", newline="\n"
+    )
     assert read_execution_error(tmp_path, "econometrics_specialist") is None
 
 
 def test_read_execution_error_none_without_log_or_convention(tmp_path: Path):
     from src.core.specialists.post_execution import read_execution_error
 
-    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     assert read_execution_error(tmp_path, "econometrics_specialist") is None  # no log
     assert read_execution_error(tmp_path, "literature_scanner") is None  # no convention
 
@@ -480,10 +490,11 @@ async def test_run_specialist_injects_prior_crash_into_prompt(tmp_workspace: Pat
     from src.modules.llm.base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 
     # Prior attempt left a crash log + empty sidecar.
-    (tmp_workspace / "estimation_results.json").write_text("{}", encoding="utf-8")
+    (tmp_workspace / "estimation_results.json").write_text("{}", encoding="utf-8", newline="\n")
     (tmp_workspace / "run_estimation.log").write_text(
         "# returncode: 1\n--- stderr ---\nAttributeError: 'numpy.ndarray' object has no attribute 'values'\n",
         encoding="utf-8",
+        newline="\n",
     )
 
     captured: dict[str, str] = {}

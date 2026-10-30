@@ -76,7 +76,7 @@ def test_a_daily_point_loads_a_table_and_records_version_units_hash_and_citation
     with sqlite3.connect(ws / "data.db") as db:
         assert db.execute("SELECT COUNT(*) FROM ffm").fetchone()[0] == 7
 
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "nasa_power" and load["frequency"] == "daily"
     assert load["api"] == "POWER Daily API" and load["version"] == load["api_version"]
     assert load["version"].startswith("v2.")
@@ -90,9 +90,9 @@ def test_a_daily_point_loads_a_table_and_records_version_units_hash_and_citation
     assert f"POWER Daily API version {load['version'].lstrip('v')} on " in load["citation"]
     assert "Creative Commons Zero" in load["licence"] and "notification" in load["licence"]
 
-    [entry] = json.loads((ws / "data_dictionary.json").read_text())["tables"]
+    [entry] = json.loads((ws / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
     assert entry["source"] == "nasa_power" and entry["frequency"] == "daily" and entry["version"] == load["version"]
-    assert (ws / "literature.bib").read_text().count("@misc{NASA_POWER,") == 1
+    assert (ws / "literature.bib").read_text(encoding="utf-8").count("@misc{NASA_POWER,") == 1
 
 
 def test_monthly_drops_the_annual_value_and_annual_keeps_only_it(ws: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -108,7 +108,7 @@ def test_monthly_drops_the_annual_value_and_annual_keeps_only_it(ws: Path, capsy
     assert monthly["items"][0]["date"] == "2023-01"
     [year] = annual["items"]
     assert year["year"] == 2023 and "month" not in year and isinstance(year["T2M"], float)
-    loads = json.loads((ws / "data_sources.json").read_text())["loads"]
+    loads = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert [ld["frequency"] for ld in loads] == ["monthly", "annual"]
 
 
@@ -121,7 +121,7 @@ def test_a_region_loads_one_row_per_grid_cell_and_month(ws: Path, capsys: pytest
     cells = {(r["lat"], r["lon"]) for r in out["items"]}
     assert len(cells) > 1 and out["row_count"] == 12 * len(cells)
     assert all(50 <= lat <= 52 and 8 <= lon <= 10 for lat, lon in cells)
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["grid_cells"] == len(cells) and "latitude-min=50" in load["query"]
 
 

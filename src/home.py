@@ -191,7 +191,7 @@ def remember_studies_folder(folder: Path) -> Path:
     p = settings_file()
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, p)
     return folder
 

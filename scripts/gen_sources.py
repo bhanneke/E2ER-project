@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             problems.append("README.md: the data source table is out of date")
         else:
-            readme.write_text(new, encoding="utf-8")
+            readme.write_text(new, encoding="utf-8", newline="\n")
             print("README.md: data source table updated")
 
     for s in sources:
@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             problems.append(f"{s.name}: {path.relative_to(REPO)} is missing")
         else:
-            path.write_text(skill_stub(s), encoding="utf-8")
+            path.write_text(skill_stub(s), encoding="utf-8", newline="\n")
             print(f"{path.relative_to(REPO)}: stub written; edit it (the data architect and the data analyst read it)")
 
     for p in problems:

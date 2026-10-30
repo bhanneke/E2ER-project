@@ -865,12 +865,12 @@ def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None, timeout: flo
             argv, cwd=cwd, env=env, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout
         )
     except subprocess.TimeoutExpired:
-        log.write_text(f"stopped after {timeout:.0f} s\n", encoding="utf-8")
+        log.write_text(f"stopped after {timeout:.0f} s\n", encoding="utf-8", newline="\n")
         return 124, f"stopped after {timeout / 60:.0f} minutes"
     except OSError as e:
-        log.write_text(f"{e}\n", encoding="utf-8")
+        log.write_text(f"{e}\n", encoding="utf-8", newline="\n")
         return 127, str(e)
-    log.write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
+    log.write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8", newline="\n")
     tail = "\n".join(((proc.stderr or "") + (proc.stdout or "")).strip().splitlines()[-6:])
     return proc.returncode, tail
 
@@ -1043,7 +1043,9 @@ def install_network_guard(venv_python: Path) -> bool:
     if site is None or not site.is_dir():
         return False
     shutil.copy2(Path(__file__).with_name("reproduce_netguard.py"), site / "e2er_reproduce_netguard.py")
-    (site / "e2er_reproduce_netguard.pth").write_text("import e2er_reproduce_netguard\n", encoding="utf-8")
+    (site / "e2er_reproduce_netguard.pth").write_text(
+        "import e2er_reproduce_netguard\n", encoding="utf-8", newline="\n"
+    )
     return True
 
 

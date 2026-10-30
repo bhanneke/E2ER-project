@@ -83,7 +83,7 @@ def platform(monkeypatch) -> FakePlatform:
 def skill(tmp_path: Path) -> Path:
     d = tmp_path / "codebook-development"
     d.mkdir()
-    (d / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (d / "SKILL.md").write_text(SKILL, encoding="utf-8", newline="\n")
     return d
 
 
@@ -102,22 +102,24 @@ def test_a_skill_folder_takes_name_identifier_and_summary_from_skill_md(skill):
 def test_the_agent_skills_shape_is_checked_before_sending(tmp_path):
     d = tmp_path / "codebook-development"
     d.mkdir()
-    (d / "SKILL.md").write_text(SKILL.replace("name: codebook-development", "name: codebook"), encoding="utf-8")
+    (d / "SKILL.md").write_text(
+        SKILL.replace("name: codebook-development", "name: codebook"), encoding="utf-8", newline="\n"
+    )
     _, problems = cli_submit.build_request(str(d), version="0.1.0", licence="MIT")
     assert any("must match" in p for p in problems)
-    (d / "SKILL.md").write_text("# no front matter\n", encoding="utf-8")
+    (d / "SKILL.md").write_text("# no front matter\n", encoding="utf-8", newline="\n")
     _, problems = cli_submit.build_request(str(d), version="0.1.0", licence="MIT", slug="codebook-development")
     assert any("front matter" in p for p in problems)
 
 
 def test_a_template_file_is_checked_for_its_steps(tmp_path):
     f = tmp_path / "gioia.toml"
-    f.write_text(TEMPLATE, encoding="utf-8")
+    f.write_text(TEMPLATE, encoding="utf-8", newline="\n")
     body, problems = cli_submit.build_request(
         str(f), version="0.1.0", licence="MIT", summary="Grounded theory with the Gioia method."
     )
     assert problems == [] and body["kind"] == "template" and body["slug"] == "gioia-coding"
-    f.write_text(TEMPLATE.replace('kind = "specialists"', 'kind = "magic"'), encoding="utf-8")
+    f.write_text(TEMPLATE.replace('kind = "specialists"', 'kind = "magic"'), encoding="utf-8", newline="\n")
     _, problems = cli_submit.build_request(
         str(f), version="0.1.0", licence="MIT", summary="Grounded theory with the Gioia method."
     )
@@ -126,7 +128,9 @@ def test_a_template_file_is_checked_for_its_steps(tmp_path):
 
 def test_missing_licence_version_and_specialist_fields_are_named(tmp_path):
     f = tmp_path / "coder.md"
-    f.write_text("You code interview transcripts against a frozen codebook and write codes.csv.", encoding="utf-8")
+    f.write_text(
+        "You code interview transcripts against a frozen codebook and write codes.csv.", encoding="utf-8", newline="\n"
+    )
     _, problems = cli_submit.build_request(
         str(f), kind="agent", summary="Codes interview transcripts against a codebook."
     )
@@ -147,7 +151,9 @@ def test_a_key_in_the_content_is_caught_before_sending(tmp_path):
     d = tmp_path / "codebook-development"
     d.mkdir()
     (d / "SKILL.md").write_text(
-        SKILL + "\nUse sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 for the model.\n", encoding="utf-8"
+        SKILL + "\nUse sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789 for the model.\n",
+        encoding="utf-8",
+        newline="\n",
     )
     _, problems = cli_submit.build_request(str(d), version="0.1.0", licence="MIT")
     assert any("key or token" in p for p in problems)

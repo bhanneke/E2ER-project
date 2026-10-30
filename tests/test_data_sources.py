@@ -18,7 +18,7 @@ def _settings(**kw):
 
 
 def _dictionary(ws: Path, tables: list[dict]) -> None:
-    (ws / "data_dictionary.json").write_text(json.dumps({"tables": tables}))
+    (ws / "data_dictionary.json").write_text(json.dumps({"tables": tables}), encoding="utf-8", newline="\n")
 
 
 def test_tables_from_unavailable_sources_are_violations_with_the_reason(tmp_path: Path):
@@ -45,7 +45,7 @@ def test_tables_from_unavailable_sources_are_violations_with_the_reason(tmp_path
 
 def test_available_connectors_and_local_files_pass(tmp_path: Path):
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "ff.csv").write_text("date,mkt\n2020-01-02,0.1\n")
+    (tmp_path / "data" / "ff.csv").write_text("date,mkt\n2020-01-02,0.1\n", encoding="utf-8", newline="\n")
     _dictionary(
         tmp_path,
         [
@@ -66,7 +66,7 @@ def test_only_the_files_staged_into_the_study_count_not_the_live_data_folder(tmp
     """
     shared = tmp_path / "shared"
     shared.mkdir()
-    (shared / "banks.csv").write_text("a\n1\n")
+    (shared / "banks.csv").write_text("a\n1\n", encoding="utf-8", newline="\n")
     ws = tmp_path / "ws"
     ws.mkdir()
     _dictionary(ws, [{"name": "banks", "source": "local", "file": "banks.csv"}])
@@ -79,7 +79,7 @@ def test_only_the_files_staged_into_the_study_count_not_the_live_data_folder(tmp
 
 def test_the_prompt_lists_exactly_the_available_sources(tmp_path: Path):
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "ff.csv").write_text("x\n")
+    (tmp_path / "data" / "ff.csv").write_text("x\n", encoding="utf-8", newline="\n")
     block = sources_block(tmp_path, _settings())
     assert "- `yfinance` (no key needed)" in block and "- `gmd` (no key needed)" in block
     assert "not available: `fred` (needs FRED_API_KEY, which is not set)" in block
@@ -154,7 +154,7 @@ async def test_after_the_last_attempt_the_pause_lists_the_missing_sources(tmp_pa
 
 def test_a_supplied_table_matches_a_file_of_its_name(tmp_path: Path):
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "fomc_dates.csv").write_text("date\n2015-12-16\n")
+    (tmp_path / "data" / "fomc_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
     _dictionary(tmp_path, [{"name": "fomc_dates", "source": "researcher-supplied"}])
     assert all(c.ok for c in check_declared_sources(tmp_path, _settings()))
     _dictionary(tmp_path, [{"name": "other_dates", "source": "researcher-supplied"}])

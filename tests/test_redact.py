@@ -37,10 +37,10 @@ def study(tmp_path: Path) -> Path:
 
     b = _clean_bundle(tmp_path)
     (b / "design").mkdir(exist_ok=True)
-    (b / "design" / "preregistration.md").write_text(PLAN, encoding="utf-8")
-    (b / "design" / "paper_plan.md").write_text(f"Plan by {EMAIL}\n", encoding="utf-8")
+    (b / "design" / "preregistration.md").write_text(PLAN, encoding="utf-8", newline="\n")
+    (b / "design" / "paper_plan.md").write_text(f"Plan by {EMAIL}\n", encoding="utf-8", newline="\n")
     lock = {"file": "preregistration.md", "sha256": _sha(b / "design" / "preregistration.md"), "frozen_at": "x"}
-    (b / "design" / "preregistration.lock.json").write_text(json.dumps(lock))
+    (b / "design" / "preregistration.lock.json").write_text(json.dumps(lock), encoding="utf-8", newline="\n")
     write_provenance(b, {"paper_id": "p1", "governance": "full"}, exported_at="20261001")
     status, detail = _checks(b)["preregistration"]
     assert status == PASS, detail
@@ -48,7 +48,7 @@ def study(tmp_path: Path) -> Path:
 
 
 def _prov(b: Path) -> dict:
-    return json.loads((b / "provenance.json").read_text())
+    return json.loads((b / "provenance.json").read_text(encoding="utf-8"))
 
 
 def test_redact_replaces_the_text_records_an_amendment_per_file_and_verify_accepts_it(study: Path, capsys):
@@ -56,7 +56,7 @@ def test_redact_replaces_the_text_records_an_amendment_per_file_and_verify_accep
     assert redact_cli(str(study), [EMAIL], replacement="<redacted>") == 0
     out = capsys.readouterr().out
     assert "design/preregistration.md: replaced 2 occurrence(s)" in out
-    text = (study / "design" / "preregistration.md").read_text()
+    text = (study / "design" / "preregistration.md").read_text(encoding="utf-8")
     assert EMAIL not in text and text == PLAN.replace(EMAIL, "<redacted>"), "only the text changed"
     amendments = [a for a in _prov(study)["amendments"] if a["kind"] == "redacted"]
     assert {a["path"] for a in amendments} == set(before)
@@ -98,7 +98,7 @@ def test_a_further_edit_dressed_up_as_a_redaction_is_caught_by_check(study: Path
 
     prov = _prov(study)
     edit(prov)
-    (study / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (study / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     assert any(line.startswith("✗ design/preregistration.md") for line in rd.check(study, EMAIL))
 
 
@@ -107,7 +107,7 @@ def test_an_ordinary_edit_of_the_preregistration_still_fails(study: Path):
     from src.core.export.provenance import amend
 
     p = study / "design" / "preregistration.md"
-    p.write_text(p.read_text().replace("positive", "negative"))
+    p.write_text(p.read_text(encoding="utf-8").replace("positive", "negative"), encoding="utf-8", newline="\n")
     amend(study, "design/preregistration.md", "changed", at="x")
     status, detail = _checks(study)["preregistration"]
     assert status == FAIL and "preregistration.md was changed after it was frozen" in detail
@@ -118,7 +118,7 @@ def test_a_redaction_record_that_does_not_match_the_file_fails_integrity(study: 
     prov = _prov(study)
     a = next(a for a in prov["amendments"] if a["path"] == "design/paper_plan.md")
     a["redaction"]["offsets"] = [0]
-    (study / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (study / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     status, detail = _checks(study)["integrity"]
     assert status == FAIL and "design/paper_plan.md: the redaction record does not match the file" in detail
 
@@ -132,7 +132,7 @@ def test_text_in_a_binary_file_or_a_pdf_stops_the_redaction_and_changes_nothing(
     out = capsys.readouterr().out
     assert "data/data.db holds it in binary form" in out and "nothing was changed" in out
     assert (study / "provenance.json").read_bytes() == before
-    assert EMAIL in (study / "design" / "preregistration.md").read_text()
+    assert EMAIL in (study / "design" / "preregistration.md").read_text(encoding="utf-8")
     (study / "data" / "data.db").unlink()
     _add(study, "paper/paper.pdf", b"%PDF-1.4 " + EMAIL.encode())
     with pytest.raises(rd.RedactError, match="paper/paper.pdf: the PDF's text holds it"):
@@ -141,7 +141,7 @@ def test_text_in_a_binary_file_or_a_pdf_stops_the_redaction_and_changes_nothing(
 
 def test_a_folder_changed_after_export_is_refused(study: Path):
     p = study / "design" / "paper_plan.md"
-    p.write_text(p.read_text() + "edited\n")
+    p.write_text(p.read_text(encoding="utf-8") + "edited\n", encoding="utf-8", newline="\n")
     with pytest.raises(rd.RedactError, match="do(es)? not match provenance.json"):
         rd.redact(study, EMAIL)
 
@@ -194,7 +194,7 @@ def _fake_redaction(b: Path, rel: str, *, kept: bool = False, size: int | None =
         }
     )
     prov["files"][rel] = {"sha256": hashlib.sha256(new).hexdigest(), "bytes": len(new)}
-    (b / "provenance.json").write_text(dump(prov))
+    (b / "provenance.json").write_text(dump(prov), encoding="utf-8", newline="\n")
 
 
 def test_a_fake_redaction_that_replaces_a_whole_file_fails(study: Path):
@@ -224,7 +224,7 @@ def test_a_redaction_that_takes_out_more_than_contact_details_fails(study: Path)
     a["redaction"].update(offsets=[10], removed_bytes=400, kept=rd.kept_record(new, [(10, 10)]))
     a["sha256_after"] = hashlib.sha256(new).hexdigest()
     prov["files"][rel] = {"sha256": a["sha256_after"], "bytes": len(new)}
-    (study / "provenance.json").write_text(dump(prov))
+    (study / "provenance.json").write_text(dump(prov), encoding="utf-8", newline="\n")
     status, detail = _checks(study)["integrity"]
     assert status == FAIL and "at most 256" in detail
 
@@ -234,7 +234,7 @@ def test_a_redaction_record_whose_sizes_do_not_add_up_fails(study: Path):
     prov = _prov(study)
     a = next(a for a in prov["amendments"] if a["path"] == "design/preregistration.md")
     a["redaction"]["bytes_before"] += 7
-    (study / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (study / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     status, detail = _checks(study)["integrity"]
     assert status == FAIL and "sizes do not add up" in detail
     assert _checks(study)["preregistration"][0] == FAIL
@@ -253,7 +253,7 @@ def test_the_kept_bytes_are_fingerprinted_and_checked(study: Path):
     p.write_bytes(forged)
     a["sha256_after"] = hashlib.sha256(forged).hexdigest()
     prov["files"][rel]["sha256"] = a["sha256_after"]
-    (study / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (study / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     status, detail = _checks(study)["integrity"]
     assert status == FAIL and "not the ones the change kept" in detail
     assert _checks(study)["preregistration"][0] == FAIL
@@ -276,6 +276,6 @@ def test_an_earlier_redaction_in_a_chain_is_checked_by_its_sizes(study: Path):
     # Its kept bytes held the second text: their fingerprint would confirm a guess of it.
     assert "kept" not in first["redaction"]
     first["redaction"]["bytes_before"] += 3
-    (study / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (study / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
     status, detail = _checks(study)["preregistration"]
     assert status == FAIL

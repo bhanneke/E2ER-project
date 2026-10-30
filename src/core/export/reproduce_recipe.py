@@ -1142,7 +1142,7 @@ def _rewrite_workspace_paths(path: Path, workspace: Path) -> bool:
         new = re.sub(re.escape(root) + r"(?![\w.\-])", ".", new)
     if new == text:
         return False
-    path.write_text(new, encoding="utf-8")
+    path.write_text(new, encoding="utf-8", newline="\n")
     return True
 
 
@@ -1417,6 +1417,7 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
                 other_tables=json.dumps(other_tables),
             ),
             encoding="utf-8",
+            newline="\n",
         )
         files["get_data.py"] = "code/get_data.py"
         steps.append({"run": ["python", "get_data.py"], "about": "load the inputs the folder does not ship (if any)"})
@@ -1506,7 +1507,9 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
                 "# Also every package the scripts loaded when the run ran them (recorded by e2er), at the run's"
                 " versions."
             )
-        (out / "code" / "requirements.txt").write_text("\n".join([*lines, *pins]) + "\n", encoding="utf-8")
+        (out / "code" / "requirements.txt").write_text(
+            "\n".join([*lines, *pins]) + "\n", encoding="utf-8", newline="\n"
+        )
         requirements_note = f"code/requirements.txt pins {len(pins)} package(s) at the versions the run used."
         if req.unpinned:
             notes.append(
@@ -1610,5 +1613,7 @@ def write_recipe(workspace: Path, out: Path, *, date_str: str = "") -> Outcome:
             "published study, and no recorded step builds them again from data the rerun can load: a folder "
             "without them cannot be run again."
         )
-    (out / "reproduce.json").write_text(json.dumps(recipe, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (out / "reproduce.json").write_text(
+        json.dumps(recipe, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
     return Outcome(recipe=recipe, notes=notes)

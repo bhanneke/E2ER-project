@@ -95,10 +95,10 @@ def test_keyrings_fail_backend_counts_as_no_keychain(monkeypatch, creds):
     assert pc.load_token(URL) == "e2er_tok"
     assert zen.save_token("zen_tok") == str(creds)
     assert zen.stored_token() == ("zen_tok", str(creds))
-    assert json.loads(creds.read_text()) == {URL: "e2er_tok", "zenodo.org": "zen_tok"}
+    assert json.loads(creds.read_text(encoding="utf-8")) == {URL: "e2er_tok", "zenodo.org": "zen_tok"}
     pc.forget_token(URL)
     assert zen.forget_token() == [str(creds)]
-    assert json.loads(creds.read_text()) == {}
+    assert json.loads(creds.read_text(encoding="utf-8")) == {}
 
 
 def test_a_backend_that_cannot_be_loaded_counts_as_no_keychain(monkeypatch, creds):

@@ -1963,7 +1963,7 @@ class PipelineRunner:
                 dest = self._workspace / SET_ASIDE_DIR / stamp / "overwritten"
                 dest.mkdir(parents=True, exist_ok=True)
                 (dest / name).write_bytes(now)
-                kept = str((dest / name).relative_to(self._workspace))
+                kept = (dest / name).relative_to(self._workspace).as_posix()
             path.write_bytes(original)
             await log_event(
                 self._paper_id,
@@ -2174,7 +2174,9 @@ class PipelineRunner:
                     "overall_severity": attack_report.overall_severity,
                 },
                 indent=2,
-            )
+            ),
+            newline="\n",
+            encoding="utf-8",
         )
         logger.info(
             "Self-attack: %d findings, max severity %d",
@@ -2272,7 +2274,7 @@ class PipelineRunner:
             "diff": merge_result.diff,
         }
         (self._workspace / "self_attack_corrections.json").write_text(
-            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
         )
 
     async def _run_polish_phase(self) -> PaperStatus:
@@ -2374,7 +2376,7 @@ class PipelineRunner:
                 }
             )
             if merge.n_applied and (after[0] > before[0] or after[1] > before[1]):
-                draft.write_text(before_text, encoding="utf-8")
+                draft.write_text(before_text, encoding="utf-8", newline="\n")
                 record.update(
                     {
                         "decision": "undone: the corrected draft had more numbers that differ from the results",
@@ -2390,7 +2392,7 @@ class PipelineRunner:
             else:
                 record.update({"decision": "no change: the notes asked for nothing the draft needs", "changes_made": 0})
         (self._workspace / "polish_corrections.json").write_text(
-            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
         )
         await log_event(
             self._paper_id,
@@ -2756,7 +2758,9 @@ class PipelineRunner:
                     for s in scores
                 ],
             }
-        (self._workspace / "review_aggregation.json").write_text(json.dumps(doc, indent=2))
+        (self._workspace / "review_aggregation.json").write_text(
+            json.dumps(doc, indent=2), newline="\n", encoding="utf-8"
+        )
 
     def _referee_feedback_text(self, max_chars: int = 15000) -> str:
         """Concatenate the reviewer reports from disk for the deep-revision
@@ -3024,7 +3028,7 @@ class PipelineRunner:
             from ..pipeline.researcher import untraced_record
 
             doc["untraced"] = untraced_record(report)
-        note_path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+        note_path.write_text(json.dumps(doc, indent=2), encoding="utf-8", newline="\n")
         await log_event(self._paper_id, "number_check_" + decision, stage="review", payload=doc)
 
     async def _verify_numbers_auto_patch(self, report):
@@ -3204,7 +3208,7 @@ class PipelineRunner:
                 "draft_sha256": hashlib.sha256(draft.read_bytes()).hexdigest() if draft.is_file() else "",
             }
             (self._workspace / REVISION_FINDINGS_FILE).write_text(
-                json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+                json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
             )
         except OSError as e:
             logger.warning("could not record the findings for the coverage check: %s", e)
@@ -3985,7 +3989,7 @@ class PipelineRunner:
             text = target.read_text(encoding="utf-8")
             titled = with_title(text, paper_title)
             if titled != text:
-                target.write_text(titled, encoding="utf-8")
+                target.write_text(titled, encoding="utf-8", newline="\n")
         await self._record_gate(
             "abstract",
             passed=outcome.passed,
@@ -4268,7 +4272,7 @@ def _select_polish_specialists(attack_report_path: Path) -> list[str]:
         return list(POLISH_SPECIALISTS)  # run all if no report
 
     try:
-        report = json.loads(attack_report_path.read_text())
+        report = json.loads(attack_report_path.read_text(encoding="utf-8"))
         findings = report.get("findings", [])
         categories = {f.get("category", "") for f in findings}
 

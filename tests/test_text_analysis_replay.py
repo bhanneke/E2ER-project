@@ -77,7 +77,8 @@ def _cli(tmp_path: Path, study: Path, *args: str, timeout: int = 300, extra: dic
         cwd=study,
         env={**env, **(extra or {})},
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
     )
 
@@ -161,7 +162,7 @@ def test_a_text_study_replays_to_the_end_with_its_corpus_counts_and_validation_c
     res = tampered / "results" / "estimation_results.json"
     doc = json.loads(res.read_text(encoding="utf-8"))
     doc["models"]["keyness_late"]["outputs"]["terms"][0]["g2"] += 5
-    res.write_text(json.dumps(doc), encoding="utf-8")
+    res.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
     out = _cli(tmp_path, study, "verify", str(tampered))
     assert "[FAIL] method checks" in out.stdout and "(m)" in out.stdout, out.stdout
 
@@ -183,7 +184,7 @@ def test_a_text_study_replays_to_the_end_with_its_corpus_counts_and_validation_c
 
 def _overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, doc: dict) -> None:
     path = tmp_path / "overrides.json"
-    path.write_text(json.dumps(doc), encoding="utf-8")
+    path.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(path))
 
 
@@ -228,7 +229,7 @@ def test_a_dictionary_changed_after_the_design_stops_the_run_until_the_analysis_
     for old, new in edits:
         assert old in script
         script = script.replace(old, new)
-    (run / "run_estimation.py").write_text(script, encoding="utf-8")
+    (run / "run_estimation.py").write_text(script, encoding="utf-8", newline="\n")
     subprocess.run([sys.executable, "run_estimation.py"], cwd=run, check=True, capture_output=True)
     replace = {"run_estimation.py": edits}
     for name in ("estimation_results.json", "validation_sample.json"):

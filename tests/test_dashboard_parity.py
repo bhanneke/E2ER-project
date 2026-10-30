@@ -39,7 +39,9 @@ def _row(live_db: Path, status: str, *, pipeline: str = "replication", error: st
 
     ws = live_db / "workspaces" / PID
     ws.mkdir(parents=True, exist_ok=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": PID, "title": "T", **extra.get("manifest", {})}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": PID, "title": "T", **extra.get("manifest", {})}), encoding="utf-8", newline="\n"
+    )
     asyncio.run(
         execute(
             "INSERT INTO papers (id, title, research_question, status, workspace, mode, methodology, pipeline, "
@@ -132,7 +134,9 @@ def test_data_queries_waiting_for_approval_show_in_the_live_panel(live_db, monke
 def test_the_frozen_preregistration_is_deposited_from_the_page(live_db, session, monkeypatch):
     ws = _row(live_db, "completed", pipeline="empirical-preregistered")
     (ws / "preregistration.lock.json").write_text(
-        json.dumps({"file": "preregistration.md", "sha256": "a" * 64, "frozen_at": "2026-10-04T10:00:00Z"})
+        json.dumps({"file": "preregistration.md", "sha256": "a" * 64, "frozen_at": "2026-10-04T10:00:00Z"}),
+        encoding="utf-8",
+        newline="\n",
     )
     c = _client()
     assert 'id="prereg-deposit"' in c.get(f"/papers/{PID}").text
@@ -197,9 +201,11 @@ def _gmd_export(live_db: Path) -> Path:
                 {"p": PID, "t": kind},
             )
         )
-    (ws / "paper_draft.tex").write_text("\\section{A}\nText.\n")
+    (ws / "paper_draft.tex").write_text("\\section{A}\nText.\n", encoding="utf-8", newline="\n")
     (ws / "data_sources.json").write_text(
-        json.dumps({"loads": [{"connector": "gmd", "version": "2025_09", "saved_to": "data/gmd.csv"}]})
+        json.dumps({"loads": [{"connector": "gmd", "version": "2025_09", "saved_to": "data/gmd.csv"}]}),
+        encoding="utf-8",
+        newline="\n",
     )
     return export_paper(ws, live_db / "exports", date_str="20261004")
 
@@ -281,7 +287,7 @@ def test_the_finish_page_says_yahoo_allows_personal_use_only(live_db, session):
     _gmd_export(live_db)
     ws = live_db / "workspaces" / PID
     (ws / "data_sources.json").write_text(
-        json.dumps({"loads": [{"connector": "yfinance", "saved_to": "data/btc.csv"}]})
+        json.dumps({"loads": [{"connector": "yfinance", "saved_to": "data/btc.csv"}]}), encoding="utf-8", newline="\n"
     )
     export_paper(ws, live_db / "exports", date_str="20261005")
     html = _client().get(f"/papers/{PID}/finish").text
