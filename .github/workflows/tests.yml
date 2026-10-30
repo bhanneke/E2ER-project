@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, xplat]
   pull_request:
 
 permissions:
@@ -10,12 +10,24 @@ permissions:
 
 jobs:
   test:
-    name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # Linux runs every supported Python; macOS and Windows run 3.12, so a reviewer on any of the three
+    # gets a tested e2er (approved 2026-10-30). Lint and type checks run once, on Linux.
+    name: pytest (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: macos-latest
+            python-version: "3.12"
+          - os: windows-latest
+            python-version: "3.12"
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -43,19 +55,22 @@ jobs:
           python -m pip install --no-deps --no-build-isolation -e .
 
       - name: Lint (ruff check)
+        if: runner.os == 'Linux'
         run: ruff check src/ tests/
 
       - name: Lint (ruff format)
+        if: runner.os == 'Linux'
         run: ruff format --check src/ tests/
 
       - name: Type check (mypy)
+        if: runner.os == 'Linux'
         run: mypy src/
 
       - name: Run tests
         env:
           # uv is installed above: the replay tests' reproduce steps fail instead of skipping (tests/replay/uv.py).
           E2ER_REQUIRE_UV: "1"
-        run: pytest tests/ -v --tb=short -m "not e2e"
+        run: pytest tests/ -v --tb=short -m "not e2e and not reviewer_path"
 
   package:
     # The wheel a user installs must be able to start a study. 0.11.0 shipped

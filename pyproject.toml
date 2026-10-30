@@ -183,6 +183,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "e2e: real-LLM end-to-end tests (skipped unless ANTHROPIC_API_KEY is set)",
+    "reviewer_path: a reviewer's commands from a built wheel in a fresh environment (tests/test_reviewer_path.py; the CI job `reviewer path` runs them)",
 ]
-# Skip e2e by default; run explicitly with `-m e2e`.
-addopts = "-m 'not e2e'"
+# Skip e2e and the reviewer path by default; run them explicitly with `-m e2e` or `-m reviewer_path`.
+addopts = "-m 'not e2e and not reviewer_path'"
