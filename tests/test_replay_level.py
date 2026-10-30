@@ -50,7 +50,8 @@ async def test_a_specialist_writes_the_files_the_recorded_run_wrote(tmp_path: Pa
 
     r = await _call(b, tmp_path, "econometrics_specialist", paper_id="paper-42")
     script = (tmp_path / "run_estimation.py").read_text(encoding="utf-8")
-    assert "@@" not in script and str(tmp_path.resolve()) in script
+    assert "@@" not in script, [line for line in script.splitlines() if "@@" in line]
+    assert tmp_path.resolve().as_posix() in script  # the recorded path, with forward slashes on every system
     assert json.loads((tmp_path / "estimation_results.json").read_text(encoding="utf-8"))
 
     r = await _call(b, tmp_path, "data_analyst")

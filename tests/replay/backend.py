@@ -275,7 +275,12 @@ class ReplayBackend(LLMBackend):
             if old not in text:
                 raise AssertionError(f"replay override: {old!r} not found in {specialist}/{rel}")
             text = text.replace(old, new)
-        dest.write_text(text, encoding="utf-8", newline="\n")
+        # A recording's JSON next to its scripts is a script's output (estimation_results.json): written in this
+        # system's text mode, as the script writes it (CRLF on Windows), or e2er's script log sees it "changed
+        # after the script last wrote it". Everything else as the specialist wrote it, with LF.
+        files = (self.scenario.get("specialists", {}).get(specialist) or {}).get("files") or []
+        script_output = rel.endswith(".json") and any(str(f).endswith(".py") for f in files)
+        dest.write_text(text, encoding="utf-8", newline=None if script_output else "\n")
 
     def _strategist(self, system: str, messages: list[dict[str, Any]], t0: float) -> ToolLoopResult:
         prompt = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
