@@ -85,7 +85,9 @@ def unpack(package: str, dest: str | None = None) -> int:
     print(f"  {opened.files} file(s) match {pkg.MANIFEST}; fingerprint {opened.manifest.get('fingerprint')}")
     for item in opened.manifest.get("left_out") or []:
         print(f"  left out: {item['path']} ({item.get('reason')})")
-    print(f"  Next: e2er verify {opened.root}    e2er reproduce {opened.root}")
+    from .console import shell_arg
+
+    print(f"  Next: e2er verify {shell_arg(opened.root)}    e2er reproduce {shell_arg(opened.root)}")
     return 0
 
 

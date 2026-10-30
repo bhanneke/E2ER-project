@@ -106,15 +106,18 @@ def fetch(address: str, out: str | None = None, *, version: int | None = None) -
     except sp.PackageHostError as e:
         print(f"error: {e}")
         return 1
+    from .console import shell_arg
+
     shown = str(path) if out else path.name
+    arg = shell_arg(shown)
     print(f"✓ {shown}: {rec['bytes']:,} bytes, SHA-256 {rec['sha256']}, as e2er.org records it")
     print(f"  kept by the authors on {'GitHub' if rec['host'] == 'github' else 'Zenodo'}; e2er.org keeps no copy")
     print("\nNothing was opened or run. Next:")
-    print(f"  e2er inspect {shown}")
+    print(f"  e2er inspect {arg}")
     print("      what the package holds (nothing is unpacked)")
-    print(f"  e2er verify {shown} --against {against}")
+    print(f"  e2er verify {arg} --against {shell_arg(against)}")
     print("      checks every file, and compares the package with the one e2er.org records")
-    print(f"  e2er reproduce {shown}")
+    print(f"  e2er reproduce {arg}")
     print(
         "      runs the study's code again in a Docker container (no network, no folder of yours) and compares "
         "the results"

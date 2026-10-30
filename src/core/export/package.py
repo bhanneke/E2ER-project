@@ -798,10 +798,15 @@ def build(
                     resolved_as_of=as_of or None,
                     note=f"{LOCK} pins every package with its hashes; `e2er reproduce` installs from it.",
                 )
+            elif text is not None and not note:
+                # Resolved to nothing: the study's code needs Python alone (uv writes an empty lock).
+                environment["note"] = (
+                    f"{recipe['requirements']} lists no packages: the study's code needs Python alone."
+                )
             else:
                 environment["note"] = (
-                    f"{note}. The package carries {recipe['requirements']} (the study's own pins, without hashes); "
-                    "`e2er reproduce` installs from it."
+                    f"{note or 'the packages could not be resolved'}. The package carries {recipe['requirements']} "
+                    "(the study's own pins, without hashes); `e2er reproduce` installs from it."
                 )
                 notes.append(environment["note"])
         elif recipe is None:

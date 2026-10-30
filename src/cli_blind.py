@@ -434,7 +434,9 @@ def pack_blind(target: str, out: str | None, *, offline: bool = False, no_data: 
     )
     for item in packed.manifest.get("left_out") or []:
         print(f"  left out: {item['path']} ({item['reason']}); {pkg.rerun_words(item)}")
-    print(f"  Reviewers: e2er verify {packed.path.name} --against {url or '<the anonymous address>'}")
+    from .console import shell_arg
+
+    print(f"  Reviewers: e2er verify {shell_arg(packed.path.name)} --against {url or '<the anonymous address>'}")
     return 0
 
 

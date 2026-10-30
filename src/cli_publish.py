@@ -1398,9 +1398,11 @@ def _unblind(b: Path, spec: str, *, to_url: str | None) -> int:
         f"  There you choose the handle and the study's name for {base}/r/{code}; e2er.org publishes a version with "
         "your name and the anonymous version stays as it was published. A command-line token cannot unblind."
     )
+    from .console import shell_arg
+
     print(
         f"  To publish a named export afterwards, publish it as a normal new version of that study:\n"
-        f"    e2er publish {b} --owner <handle> --project <name> --to {base}"
+        f"    e2er publish {shell_arg(b)} --owner <handle> --project <name> --to {base}"
     )
     print("Nothing was sent.")
     return 1

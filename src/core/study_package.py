@@ -87,7 +87,11 @@ def record_problems(rec: Any) -> list[str]:
         return ["the package record is not an object"]
     out: list[str] = []
     url = rec.get("url")
-    if not isinstance(url, str) or urlsplit(url).scheme != "https" or not urlsplit(url).hostname:
+    if (
+        not isinstance(url, str)
+        or not urlsplit(url).hostname
+        or not (urlsplit(url).scheme == "https" or test_server_url(url))
+    ):
         out.append("its address is not an https address")
     if not isinstance(rec.get("sha256"), str) or not _SHA256.match(rec["sha256"]):
         out.append("its SHA-256 is not 64 hexadecimal characters")
@@ -318,10 +322,24 @@ def download_client() -> Any:
     return httpx.Client(timeout=httpx.Timeout(60.0, read=300.0), headers={"user-agent": "e2er-cli"})
 
 
+def test_server_url(url: str) -> bool:
+    """A package on a test's own server: http or https to this computer, in a test run only (test_guard).
+
+    e2er's tests of ``e2er fetch`` and ``e2er verify --against`` (tests/test_reviewer_path.py) serve the
+    package from a local server. Outside a test run every package address is https to a public host.
+    """
+    from .test_guard import _loopback, under_test
+
+    parts = urlsplit(url)
+    return under_test() and parts.scheme in ("http", "https") and _loopback((parts.hostname or "").lower())
+
+
 def _check_hop(url: str) -> None:
     from ..modules.fetch.http import check_url
     from .test_guard import RefusedInTestError, check_target
 
+    if test_server_url(url):
+        return  # a test's own server on this computer (never outside a test run)
     if urlsplit(url).scheme != "https":
         raise PackageHostError(f"the package's address is not https ({url[:120]}); nothing was downloaded")
     try:

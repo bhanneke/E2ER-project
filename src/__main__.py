@@ -32,6 +32,9 @@ def _refuse_inside_a_specialist() -> None:
 
 
 def main() -> None:
+    from .console import utf8_stdio
+
+    utf8_stdio()
     _refuse_inside_a_specialist()
     _ask_about_the_folders_env()
     # `e2er corpus …` delegates wholesale to its own parser. Done before the

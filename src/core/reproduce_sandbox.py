@@ -73,7 +73,24 @@ def available(runner: Runner = subprocess.run) -> tuple[str | None, str]:
     down = _docker_up(runner, docker)
     if down:
         return None, down
+    if _engine_os(runner, docker) == "windows":
+        # Docker Desktop on Windows in its Windows-containers mode (and GitHub's Windows runners) answers, but
+        # cannot start the python:<version>-slim Linux image the sandbox runs in.
+        return None, (
+            "Docker runs Windows containers on this computer, and the sandbox needs Linux containers: in Docker "
+            'Desktop choose "Switch to Linux containers"'
+        )
     return docker, ""
+
+
+def _engine_os(runner: Runner, docker: str) -> str:
+    """The containers the Docker engine runs: ``linux`` or ``windows`` (empty when Docker does not say)."""
+    try:
+        cp = runner([docker, "info", "--format", "{{.OSType}}"], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    out = cp.stdout.decode("utf-8", "replace") if isinstance(cp.stdout, bytes) else (cp.stdout or "")
+    return out.strip().lower() if cp.returncode == 0 else ""
 
 
 def python_version(recipe: dict[str, Any]) -> str:
