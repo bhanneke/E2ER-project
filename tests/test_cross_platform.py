@@ -524,3 +524,13 @@ def test_export_finds_the_workspace_however_a_script_on_windows_spells_it(tmp_pa
     )
     assert rr._rewrite_workspace_paths(script, tmp_path) is True
     assert script.read_text(encoding="utf-8") == 'A = "data.db"\nB = r"data.db"\nC = "data.db"\nD = r"."\n'
+
+
+def test_publish_github_runs_git_byte_for_byte(monkeypatch):
+    """Git for Windows converts line endings by default (core.autocrlf=true): the files must go up as they are."""
+    from src.core import github_files as gf
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(gf, "_run", lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
+    gf._git(["status"])
+    assert seen[0][:5] == ["git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false"]
