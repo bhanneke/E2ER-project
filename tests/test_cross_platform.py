@@ -355,12 +355,14 @@ def test_the_network_guard_probe_reads_a_non_ascii_path_in_utf8(monkeypatch, tmp
     seen: dict = {}
 
     def run(argv, **kw):
-        seen.update(kw)
+        seen.update(kw, argv=argv)
         return subprocess.CompletedProcess(argv, 0, f"{site}\n", "")
 
     monkeypatch.setattr(rp.subprocess, "run", run)
     assert rp.install_network_guard(tmp_path / "python") is True
     assert seen["env"]["PYTHONIOENCODING"] == "utf-8" and seen["encoding"] == "utf-8"
+    # -I ignores PYTHONIOENCODING: the probe writes the path's UTF-8 bytes itself.
+    assert "-I" in seen["argv"] and "encode('utf-8')" in seen["argv"][-1]
     assert (site / "e2er_reproduce_netguard.pth").is_file()
 
 

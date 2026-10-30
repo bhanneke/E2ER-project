@@ -1032,7 +1032,12 @@ def _utf8(env: dict[str, str]) -> dict[str, str]:
 def install_network_guard(venv_python: Path) -> bool:
     """Put the network guard into the new environment (it acts only in steps that set E2ER_REPRODUCE_NETWORK)."""
     probe = subprocess.run(
-        [str(venv_python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
+        [
+            str(venv_python),
+            "-I",  # isolated: it ignores PYTHONIOENCODING too, so the path goes out as UTF-8 bytes
+            "-c",
+            "import sys, sysconfig; sys.stdout.buffer.write(sysconfig.get_path('purelib').encode('utf-8'))",
+        ],
         capture_output=True,
         encoding="utf-8",
         errors="replace",
