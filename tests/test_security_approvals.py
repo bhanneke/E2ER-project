@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import stat
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -11,6 +10,8 @@ from fastapi.testclient import TestClient
 from src.api.app import app
 from src.modules.data import approval_seal as seal
 from src.modules.data.audit import get_approval_status_with_note
+
+from .platform_help import owner_only
 
 QID = "3c9d2b1e-7a4f-4e8b-9d6c-1f2a3b4c5d6e"
 SQL = "SELECT block_time, amount FROM dex.trades WHERE block_time >= '2026-01-01'"
@@ -39,7 +40,7 @@ def test_the_dashboards_approval_counts_and_only_for_the_same_sql():
         assert asyncio.run(get_approval_status_with_note(QID))[0] == "approved"
     with _db("approved", sql=SQL + " OR 1=1"):
         assert asyncio.run(get_approval_status_with_note(QID))[0] == "pending"
-    assert stat.S_IMODE(seal.key_file().stat().st_mode) == 0o600
+    assert owner_only(seal.key_file())
 
 
 def test_a_forged_seal_file_without_the_key_does_not_count():

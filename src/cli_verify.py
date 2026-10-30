@@ -106,6 +106,23 @@ def _load_provenance(bundle: Path) -> tuple[dict[str, Any] | None, str | None]:
     return prov, None
 
 
+def _only_line_endings(path: Path, meta: dict[str, Any]) -> bool:
+    """Whether ``path`` is the listed file with its LF line endings turned into CRLF (and nothing else).
+
+    Hashes stay byte-based: such a file still fails. This only says why, for a reader on Windows whose Git
+    converted line endings on checkout.
+    """
+    try:
+        if path.stat().st_size > 64 * 1024 * 1024:
+            return False
+        data = path.read_bytes()
+    except OSError:
+        return False
+    if b"\r\n" not in data:
+        return False
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest() == meta.get("sha256")
+
+
 def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] | None = None) -> Check:
     """Every file against provenance.json: listed, same bytes, same size; nothing else; no links.
 
@@ -153,7 +170,16 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     if listing.collisions:
         bits.append(f"names that differ only in Unicode normalisation ({', '.join(listing.collisions[:3])})")
     if mismatched:
+        crlf = [rel for rel in mismatched if _only_line_endings(on_disk[rel], files[rel])]
         bits.append(f"{len(mismatched)} modified ({', '.join(mismatched[:3])})")
+        if crlf:
+            bits.append(
+                f"{len(crlf)} of them {'differs' if len(crlf) == 1 else 'differ'} only in line endings "
+                f"({', '.join(crlf[:3])}): the bytes are "
+                "compared as they are, and something wrote Windows line endings (CRLF) into the files, usually Git "
+                "on Windows (core.autocrlf). Fetch the .e2er package instead (`e2er fetch`), or clone again with "
+                "`git clone -c core.autocrlf=false`"
+            )
     if resized and set(resized) - set(mismatched):
         odd = sorted(set(resized) - set(mismatched))
         bits.append(f"{len(odd)} with a size other than provenance.json lists ({', '.join(odd[:3])})")

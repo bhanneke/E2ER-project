@@ -19,6 +19,8 @@ from src.core import platform_client as pc
 from src.core import test_guard
 from src.core import zenodo as zen
 
+from .platform_help import owner_only
+
 REAL_KEYRING = pc._keyring
 URL = "https://e2er.org"
 
@@ -89,7 +91,7 @@ def test_keyrings_fail_backend_counts_as_no_keychain(monkeypatch, creds):
     monkeypatch.setitem(sys.modules, "keyring", stand_in(fail.Keyring()))
     assert REAL_KEYRING() is None
     assert pc.save_token(URL, "e2er_tok") == str(creds)
-    assert _mode(creds) == 0o600
+    assert owner_only(creds)
     assert pc.load_token(URL) == "e2er_tok"
     assert zen.save_token("zen_tok") == str(creds)
     assert zen.stored_token() == ("zen_tok", str(creds))
@@ -102,13 +104,13 @@ def test_keyrings_fail_backend_counts_as_no_keychain(monkeypatch, creds):
 def test_a_backend_that_cannot_be_loaded_counts_as_no_keychain(monkeypatch, creds):
     monkeypatch.setitem(sys.modules, "keyring", stand_in(broken=True))
     assert REAL_KEYRING() is None
-    assert pc.save_token(URL, "e2er_tok") == str(creds) and _mode(creds) == 0o600
+    assert pc.save_token(URL, "e2er_tok") == str(creds) and owner_only(creds)
 
 
 def test_keyring_not_importable_counts_as_no_keychain(monkeypatch, creds):
     monkeypatch.setitem(sys.modules, "keyring", None)  # import keyring raises ImportError
     assert REAL_KEYRING() is None
-    assert zen.save_token("zen_tok", sandbox=True) == str(creds) and _mode(creds) == 0o600
+    assert zen.save_token("zen_tok", sandbox=True) == str(creds) and owner_only(creds)
     assert zen.load_token(sandbox=True) == "zen_tok"
 
 
@@ -117,7 +119,7 @@ def test_a_backend_that_refuses_falls_back_to_the_file(monkeypatch, creds):
     backend = Backend(priority=5, refuse=True)
     monkeypatch.setitem(sys.modules, "keyring", stand_in(backend))
     assert REAL_KEYRING() is not None
-    assert pc.save_token(URL, "e2er_tok") == str(creds) and _mode(creds) == 0o600
+    assert pc.save_token(URL, "e2er_tok") == str(creds) and owner_only(creds)
     assert pc.load_token(URL) == "e2er_tok"
     assert zen.save_token("zen_tok") == str(creds)
     assert zen.stored_token() == ("zen_tok", str(creds))

@@ -21,6 +21,8 @@ import pytest
 from src.core import anonymise as an
 from src.core import redact as rd
 
+from .platform_help import owner_only, private_dir
+
 NAME = "Imogen Quarry"
 
 
@@ -67,7 +69,7 @@ def test_a_redaction_record_confirms_no_guess(tmp_path):
     assert rd.check(f, "798 34512")[0].startswith("✓")
     assert not rd.check(f, "798 34513")[0].startswith("✓")
     salt = rd.salt_file()
-    assert oct(salt.stat().st_mode & 0o777) == "0o600" and oct(salt.parent.stat().st_mode & 0o777) == "0o700"
+    assert owner_only(salt) and private_dir(salt.parent)
 
 
 def test_a_second_redaction_of_the_file_still_links_up(tmp_path):

@@ -1,0 +1,4 @@
+# e2er's fixtures and examples carry the SHA-256 of their files' bytes (provenance.json, reproduce.json,
+# e2er-package.json). Git on Windows turns LF into CRLF on checkout (core.autocrlf), which changes those
+# bytes and fails every check of them: every file is checked out exactly as it was committed.
+* -text

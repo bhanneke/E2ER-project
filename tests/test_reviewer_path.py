@@ -221,7 +221,16 @@ class Reviewer:
             timeout=timeout,
         )
         out = proc.stdout.decode("utf-8") + proc.stderr.decode("utf-8")  # strict: a code page would fail here
-        return proc.returncode, out
+        return proc.returncode, out.replace("\r\n", "\n")  # Windows ends lines with CRLF
+
+    def python(self, code: str) -> str:
+        """What the new environment's Python prints for ``code`` (a probe of the test's own, in UTF-8)."""
+        proc = subprocess.run(
+            [str(_exe(self.env_dir, "python")), "-c", code],
+            capture_output=True, env={**self.env, "PYTHONIOENCODING": "utf-8"}, cwd=self.cwd, timeout=120,
+        )  # fmt: skip
+        assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+        return proc.stdout.decode("utf-8").strip()
 
 
 @pytest.fixture(scope="module")
@@ -332,22 +341,12 @@ def site(study_package) -> Iterator[_Site]:
 # ── the reviewer's commands ─────────────────────────────────────────────────
 
 
-def _wheel_version(reviewer: Reviewer) -> str:
-    out = subprocess.run(
-        [str(_exe(reviewer.env_dir, "python")), "-c", "import importlib.metadata as m; print(m.version('e2er'))"],
-        capture_output=True, text=True, env=reviewer.env, cwd=reviewer.cwd, timeout=120,
-    )  # fmt: skip
-    return out.stdout.strip()
-
-
 def test_the_installed_e2er_names_its_version_and_runs_outside_the_checkout(reviewer):
     code, out = reviewer.e2er("--version")
     assert code == 0, out
-    assert out.strip() == f"e2er {_wheel_version(reviewer)}"
-    where = subprocess.run(
-        [str(_exe(reviewer.env_dir, "python")), "-c", "import src, sys; print(src.__file__)"],
-        capture_output=True, text=True, env=reviewer.env, cwd=reviewer.cwd, timeout=120,
-    ).stdout.strip()  # fmt: skip
+    version = reviewer.python("import importlib.metadata as m; print(m.version('e2er'))")
+    assert out.strip() == f"e2er {version}"
+    where = reviewer.python("import src; print(src.__file__)")
     assert Path(where).resolve().is_relative_to(reviewer.env_dir.resolve()), where
 
 
@@ -430,11 +429,7 @@ def test_fetch_downloads_the_recorded_package_and_checks_it(reviewer, study_pack
 def _docker_runs_linux(reviewer: Reviewer) -> bool:
     """Whether `e2er reproduce` on the reviewer's computer gets a sandbox (asked of the installed e2er)."""
     probe = "from src.core import reproduce_sandbox as rs; print('yes' if rs.available()[0] else 'no')"
-    out = subprocess.run(
-        [str(_exe(reviewer.env_dir, "python")), "-c", probe],
-        capture_output=True, text=True, env=reviewer.env, cwd=reviewer.cwd, timeout=120,
-    )  # fmt: skip
-    return out.stdout.strip() == "yes"
+    return reviewer.python(probe) == "yes"
 
 
 def _reproduced(out: str) -> None:
@@ -479,6 +474,7 @@ def test_reproduce_without_the_sandbox_reproduces_the_study_exactly(reviewer, st
     assert code == 0, out
     assert "with --no-sandbox they run on this computer AS YOU" in out
     _reproduced(out)
+    assert "The network guard could not be put into the environment" not in out
     leftovers = [p.name for p in Path(reviewer.env["TEMP"]).iterdir() if p.name.startswith("e2er-")]
     assert leftovers == [], "the run folder and the unpacked package are removed"
     # e2er keeps nothing in the reviewer's home (pip, which builds the study's environment, keeps its cache there).

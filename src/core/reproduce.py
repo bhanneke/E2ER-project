@@ -860,7 +860,10 @@ def _venv_python(venv: Path) -> Path:
 def _run(argv: list[str], *, cwd: Path, env: dict[str, str] | None, timeout: float, log: Path) -> tuple[int, str]:
     """Run a command, write its output to ``log``; (exit code, last lines of the output)."""
     try:
-        proc = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
+        # UTF-8 both ways (step_env asks the steps' Python for it): Windows would decode in its code page.
+        proc = subprocess.run(
+            argv, cwd=cwd, env=env, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout
+        )
     except subprocess.TimeoutExpired:
         log.write_text(f"stopped after {timeout:.0f} s\n", encoding="utf-8")
         return 124, f"stopped after {timeout / 60:.0f} minutes"
@@ -913,8 +916,9 @@ def make_environment(run_dir: Path, recipe: dict[str, Any], folder: Path, logs: 
         "'packages': {d.metadata['Name']: d.version for d in m.distributions()}}))"
     )
     out = subprocess.run(
-        [str(py), "-I", "-c", probe], cwd=run_dir, env=minimal_env(), capture_output=True, text=True, timeout=120
-    )
+        [str(py), "-I", "-c", probe], cwd=run_dir, env=_utf8(minimal_env()), capture_output=True, encoding="utf-8",
+        errors="replace", timeout=120,
+    )  # fmt: skip
     try:
         info = json.loads(out.stdout)
     except ValueError:
@@ -994,6 +998,7 @@ def step_env(venv_python: Path, run_dir: Path | None = None) -> dict[str, str]:
     env["PATH"] = os.pathsep.join([str(venv_bin), scripts, env.get("PATH", "")])
     env["VIRTUAL_ENV"] = str(venv_bin.parent)
     env["PYTHON_COLORS"] = "0"  # plain tracebacks in the logs and the report
+    env = _utf8(env)  # a step that prints ü or 文 does not stop on Windows (its output goes to a pipe)
     e2er_data = shutil.which("e2er-data", path=scripts) or shutil.which("e2er-data")
     if e2er_data:
         env["E2ER_DATA"] = e2er_data
@@ -1014,14 +1019,25 @@ def step_env(venv_python: Path, run_dir: Path | None = None) -> dict[str, str]:
     return env
 
 
+def _utf8(env: dict[str, str]) -> dict[str, str]:
+    """``env`` with the child's Python writing UTF-8 into its pipes.
+
+    On Windows a Python writing into a pipe uses the code page (cp1252): a path with ``文献`` in it
+    stopped the probe of the new environment, and the network guard was not put in (2026-10-30, the
+    reviewer path on Windows). PYTHONIOENCODING changes only the standard streams, not ``open()``.
+    """
+    return {**env, "PYTHONIOENCODING": env.get("PYTHONIOENCODING") or "utf-8"}
+
+
 def install_network_guard(venv_python: Path) -> bool:
     """Put the network guard into the new environment (it acts only in steps that set E2ER_REPRODUCE_NETWORK)."""
     probe = subprocess.run(
         [str(venv_python), "-I", "-c", "import sysconfig; print(sysconfig.get_path('purelib'))"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
-        env=minimal_env(),
+        env=_utf8(minimal_env()),
     )
     site = Path(probe.stdout.strip()) if probe.returncode == 0 and probe.stdout.strip() else None
     if site is None or not site.is_dir():

@@ -756,12 +756,23 @@ def build(
 
     prov = _read_json(folder / "provenance.json") or {}
     files = study_files(folder)
+    clashes = case_collisions(files)
+    if clashes:
+        pairs = "; ".join(f"{a} and {b}" for a, b in clashes[:5])
+        raise PackageError(
+            f"names that differ only in case: {pairs}. macOS and Windows keep them as one, so the package could "
+            "not be opened there. Rename one of each pair and export again."
+        )
     recipe, why = _recipe(folder)
     left_out = left_out_data(folder, files, recipe, no_data=no_data, host=host, max_file_bytes=max_file_bytes)
     for item in left_out:
         files.pop(item["path"], None)
     rebuild = rebuild_for(folder, recipe, left_out)
     notes: list[str] = []
+    for name in files:
+        on_windows = windows_name_problem(name)
+        if on_windows:
+            notes.append(f"{name} {on_windows}: the package cannot be opened on Windows. Rename it and export again.")
     for item in left_out:
         if item["rebuilt_by"] is None and item["needed"]:
             notes.append(
@@ -1104,6 +1115,46 @@ def _folded(name: str) -> str:
     return unicodedata.normalize("NFC", name).casefold()
 
 
+#: Names Windows keeps for devices: ``NUL`` or ``con.txt`` opens the device, not a file.
+_WINDOWS_DEVICES = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
+_WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
+
+
+def windows_name_problem(rel: str) -> str | None:
+    """Why Windows cannot hold the file ``rel`` (a package path), or None.
+
+    ``a:b`` would write an NTFS stream of ``a``, ``NUL`` the null device, and a name ending in a dot or a
+    space loses it (``data.`` becomes ``data``): the file would not be the one the package lists.
+    """
+    for seg in rel.split("/"):
+        bad = sorted({c for c in seg if c in _WINDOWS_FORBIDDEN})
+        if bad:
+            return f"has {' '.join(bad)} in its name, which Windows does not allow"
+        if seg.endswith((".", " ")):
+            return "ends with a dot or a space, which Windows drops from a name"
+        if seg.split(".")[0].rstrip(" ").upper() in _WINDOWS_DEVICES:
+            return f"is named {seg.split('.')[0]}, a device on Windows"
+    return None
+
+
+def case_collisions(paths: Any) -> list[tuple[str, str]]:
+    """Pairs of paths that differ only in case (or Unicode form): one file on macOS and Windows."""
+    seen: dict[str, str] = {}
+    out: list[tuple[str, str]] = []
+    for rel in paths:
+        parts = rel.split("/")
+        # A folder counts too: Data/a.csv and data/b.csv are one folder on macOS and Windows.
+        for i in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:i])
+            folded = _folded(prefix)
+            other = seen.setdefault(folded, prefix)
+            if other != prefix and (other, prefix) not in out:
+                out.append((other, prefix))
+    return out
+
+
 def check_entries(zf: zipfile.ZipFile, manifest: dict[str, Any], max_total: int = MAX_TOTAL_BYTES) -> None:
     """Refuse an unsafe or incomplete archive before anything is written (names, links, sizes, the list)."""
     infos = zf.infolist()
@@ -1122,6 +1173,8 @@ def check_entries(zf: zipfile.ZipFile, manifest: dict[str, Any], max_total: int 
             raise PackageError(f"the package holds a symbolic link ({name}); a package holds files only")
         if info.is_dir():
             continue
+        if sys.platform == "win32" and windows_name_problem(name):
+            raise PackageError(f"{name} cannot be written on Windows: it {windows_name_problem(name)}")
         folded = _folded(name)
         if folded in seen:
             raise PackageError(f"the package holds {name} twice (or two names that differ only in case)")
@@ -1180,7 +1233,10 @@ def open_package(path: Path, dest: Path, *, max_total: int = MAX_TOTAL_BYTES) ->
                 raise PackageError(
                     f"the package unpacks to {human_size(need)}, and {probe} has {human_size(free)} free; refused"
                 )
-            dest.mkdir(parents=True, exist_ok=True)
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise PackageError(_unwritable("the folder", dest, e)) from e
             root = dest.resolve()
             for item in sorted(manifest["contents"], key=lambda c: c["path"]):
                 _extract(zf, item, root)
@@ -1203,10 +1259,13 @@ def _extract(zf: zipfile.ZipFile, item: dict[str, Any], root: Path) -> None:
     target = root.joinpath(*rel.split("/"))
     if not target.resolve().is_relative_to(root):
         raise PackageError(f"unsafe name in the package: {rel!r} leaves the folder")
-    target.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
     written = 0
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    except OSError as e:
+        raise PackageError(_unwritable(rel, target, e)) from e
     with os.fdopen(fd, "wb") as fout, zf.open(rel) as fin:
         for chunk in iter(lambda: fin.read(1 << 20), b""):
             written += len(chunk)
@@ -1216,6 +1275,22 @@ def _extract(zf: zipfile.ZipFile, item: dict[str, Any], root: Path) -> None:
             fout.write(chunk)
     if written != item["bytes"] or h.hexdigest() != item["sha256"]:
         raise PackageError(f"{rel} does not match {MANIFEST}: it was changed after packing")
+
+
+#: The longest path Windows opens unless long paths are turned on (MAX_PATH, with its final NUL).
+WINDOWS_MAX_PATH = 260
+
+
+def _unwritable(rel: str, target: Path, e: OSError) -> str:
+    """Why ``rel`` could not be written at ``target``, in words (and what to do on Windows about a long path)."""
+    why = f"{rel} could not be written ({e.strerror or type(e).__name__})"
+    if sys.platform == "win32" and len(str(target)) >= WINDOWS_MAX_PATH:
+        why += (
+            f": its path has {len(str(target))} characters, and Windows opens at most {WINDOWS_MAX_PATH - 1} "
+            "unless long paths are turned on. Unpack into a short folder (C:\\e2er\\study), or turn on long "
+            "paths (docs/REVIEWING.md says how)"
+        )
+    return why
 
 
 # ── a package's own files in an unpacked folder ──────────────────────────────

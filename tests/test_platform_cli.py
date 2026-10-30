@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import stat
 from pathlib import Path
 
 import httpx
@@ -17,6 +16,8 @@ from src.core import platform_client as pc
 from src.core.dossier import dossier_id
 from src.core.secret_scan import find_local_paths, find_secrets
 from tests.run_db import make_run_db, paper_id_of
+
+from .platform_help import owner_only
 
 ROOT = Path(__file__).resolve().parents[1]
 SHOWCASE = ROOT / "tests" / "fixtures" / "showcase_export"
@@ -185,7 +186,7 @@ def test_login_stores_the_token_privately_and_whoami_uses_it(platform: FakePlatf
     assert f"{URL}/device" in out and "ABCD-1234" in out
     cred = tmp_path / "credentials.json"
     assert json.loads(cred.read_text())[URL].startswith("e2er_")
-    assert stat.S_IMODE(cred.stat().st_mode) == 0o600
+    assert owner_only(cred)
     assert cli_platform.whoami(URL) == 0 and "ada@example.org" in capsys.readouterr().out
     assert cli_platform.logout(URL) == 0 and URL not in json.loads(cred.read_text())
 
@@ -229,7 +230,7 @@ def test_a_refusing_keychain_falls_back_to_the_credentials_file(tmp_path, monkey
     monkeypatch.delenv("E2ER_TOKEN", raising=False)
     where = pc.save_token("https://preview.e2er.org", "e2er_abc")
     assert where.endswith("credentials.json")
-    assert (tmp_path / "credentials.json").stat().st_mode & 0o777 == 0o600
+    assert owner_only(tmp_path / "credentials.json")
     assert pc.load_token("https://preview.e2er.org") == "e2er_abc"
 
 

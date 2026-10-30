@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,8 @@ import pytest
 from src import cli_review, cli_zenodo
 from src.core import platform_client as pc
 from src.core import zenodo as zen
+
+from .platform_help import owner_only
 
 TOKEN = "ZenTok" + "x" * 54  # not a real token
 REAL_KEYRING = pc._keyring
@@ -156,7 +157,7 @@ def test_without_a_keychain_the_credentials_file_mode_600(monkeypatch, capsys, f
     assert cli_zenodo.login() == 0
     assert str(creds) in capsys.readouterr().out
     assert json.loads(creds.read_text()) == {"https://e2er.org": "e2er_keep", "zenodo.org": TOKEN}
-    assert stat.S_IMODE(creds.stat().st_mode) == 0o600
+    assert owner_only(creds)
     assert zen.load_token() == TOKEN and zen.load_token(sandbox=True) is None
     # A keychain that refuses (no GUI session) falls back the same way.
     monkeypatch.setattr(pc, "_keyring", lambda: FakeKeyring(refuse=True))
@@ -190,7 +191,7 @@ def test_logout_removes_it_from_keychain_and_file(monkeypatch, capsys, keychain,
     assert "the system keychain" in out and str(creds) in out and TOKEN not in out
     assert keychain.store == {("sandbox.zenodo.org", "token"): "sandbox-one"}
     assert json.loads(creds.read_text()) == {"https://e2er.org": "e2er_keep"}
-    assert stat.S_IMODE(creds.stat().st_mode) == 0o600
+    assert owner_only(creds)
     assert cli_zenodo.logout() == 0
     assert "No zenodo.org token was stored" in capsys.readouterr().out
 

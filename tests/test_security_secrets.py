@@ -17,6 +17,8 @@ from src.core import test_guard
 from src.core import zenodo as zen
 from tests.test_keyring_backend import REAL_KEYRING, Backend, stand_in
 
+from .platform_help import WINDOWS, owner_only, private_dir
+
 # Built from parts so this file itself holds no token-shaped string a scanner of the repo would flag.
 SAMPLES = {
     "gh CLI oauth (gho_)": "gho_" + "A1b2" * 9,
@@ -140,8 +142,9 @@ def test_the_credentials_file_is_written_owner_only_through_a_temporary_file(mon
 
     monkeypatch.setattr(os, "replace", spy)
     pc.save_token("https://e2er.org", "e2er_tok")
-    assert _mode(creds) == 0o600 and _mode(creds.parent) == 0o700
-    assert replaced and replaced[0][0].startswith(".credentials-") and replaced[0][1] == 0o600
+    assert owner_only(creds) and private_dir(creds.parent)
+    assert replaced and replaced[0][0].startswith(".credentials-")
+    assert WINDOWS or replaced[0][1] == 0o600, "owner-only before it takes the name (POSIX modes)"
     assert not [p for p in creds.parent.iterdir() if p.name.endswith(".tmp")]
 
 
@@ -155,7 +158,7 @@ def test_a_damaged_credentials_file_is_read_with_a_warning_and_kept(monkeypatch,
     pc.save_token("https://e2er.org", "e2er_tok")
     assert pc.load_token("https://e2er.org") == "e2er_tok"
     kept = creds.with_name("credentials.json.damaged")
-    assert kept.read_text() == "{not json" and _mode(kept) == 0o600
+    assert kept.read_text() == "{not json" and owner_only(kept)
 
 
 def test_a_token_in_the_keychain_removes_the_files_old_copy(monkeypatch, creds):

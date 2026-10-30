@@ -251,22 +251,10 @@ def _key(entry: dict[str, Any]) -> tuple[Any, ...]:
 def _locked(path: Path) -> Iterator[None]:
     """An exclusive lock on ``.<name>.lock`` beside the file while the block runs (parallel loads of a study)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path.with_name(f".{path.name}.lock"), "a+b") as fh:
-        try:
-            import fcntl
+    from ...core.file_lock import exclusive
 
-            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        except ImportError:  # Windows
-            import msvcrt
-
-            fh.seek(0)
-            while True:
-                try:
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-                    break
-                except OSError:
-                    time.sleep(0.05)
-        yield  # the lock goes with the file handle
+    with open(path.with_name(f".{path.name}.lock"), "a+b") as fh, exclusive(fh):
+        yield
 
 
 def _read_loads(path: Path) -> list[Any]:

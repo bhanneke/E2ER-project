@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import stat
 import time
 import uuid
 from pathlib import Path
@@ -31,6 +30,8 @@ from fastapi.testclient import TestClient
 from src.api import local_session as ls
 from src.api.app import app
 from src.paths import clean_path_input, inspect_data, inspect_literature, resolve_bib_answer
+
+from .platform_help import owner_only
 
 BASE = "http://127.0.0.1:8290"
 TOKEN = "test-session-token-0123456789"
@@ -321,7 +322,7 @@ def test_a_wrong_launch_token_sets_nothing(home, session):
 
 def test_the_session_file_is_owner_only(home):
     p = ls.write_session_file(8290, "abc")
-    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    assert owner_only(p)
     assert ls.read_session_token(8290) == "abc"
     ls.remove_session_file(8290)
     assert not p.exists()
@@ -411,7 +412,7 @@ def test_setup_writes_env_mode_600_and_masks_keys(project, session):
     )
     assert r.status_code == 200, r.text
     env = project / ".env"
-    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+    assert owner_only(env)
     text = env.read_text()
     assert "LLM_BACKEND=claude_code" in text and "CLAUDE_CODE_MODEL=haiku" in text
     assert f"LITERATURE_BIBTEX_FILE='{lib / 'My Library.bib'}'" in text
@@ -465,7 +466,7 @@ def test_init_writes_env_owner_only(tmp_path):
 
     p = tmp_path / ".env"
     _write_env(p, "LLM_BACKEND=claude_code\n", force=True)
-    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+    assert owner_only(p)
 
 
 # ── doctor ──────────────────────────────────────────────────────────────────
