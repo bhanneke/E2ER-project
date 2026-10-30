@@ -236,6 +236,7 @@ def test_the_steps_get_an_empty_home_and_no_credentials(tmp_path, monkeypatch):
         "HTTP_PROXY": "http://proxy:3128",
         "XDG_CONFIG_HOME": str(tmp_path / "cfg"),
         "HOME": str(tmp_path / "realhome"),
+        "USERPROFILE": str(tmp_path / "realhome"),
     }.items():
         monkeypatch.setenv(k, v)
     run = tmp_path / "e2er-reproduce-x"

@@ -107,7 +107,13 @@ def test_a_systematic_review_replays_from_the_protocol_to_a_reproduced_meta_anal
         assert (bundle / rel).is_file(), rel
     assert not list(bundle.rglob("fulltext")), "full texts are not exported"
 
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     db = tmp_path / "home" / ".e2er" / "papers.db"
     out = subprocess.run(

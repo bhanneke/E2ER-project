@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: [main, dev, xplat]
+    branches: [main, dev]
   pull_request:
 
 permissions:

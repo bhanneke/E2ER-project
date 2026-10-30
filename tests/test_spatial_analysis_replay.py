@@ -101,7 +101,13 @@ def test_a_spatial_study_replays_to_the_end_with_its_geometry_weights_and_maps_c
     bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
     assert (bundle / "design" / "spatial_design.json").is_file()
     assert (bundle / "results" / "spatial_weights.csv").is_file()
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     db = tmp_path / "home" / ".e2er" / "papers.db"
     out = subprocess.run(

@@ -71,7 +71,13 @@ def _start(api: str) -> str:
 
 
 def _cli(tmp_path: Path, study: Path, *args: str, timeout: int = 300, extra: dict | None = None):
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     return subprocess.run(
         [sys.executable, "-m", "tests.replay.cli", *args],
         cwd=study,

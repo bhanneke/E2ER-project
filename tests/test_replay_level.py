@@ -108,7 +108,7 @@ async def test_a_wait_override_makes_the_attempt_take_that_long(tmp_path: Path, 
     b = ReplayBackend("fomc")
     t0 = time.monotonic()
     assert (await _call(b, tmp_path / "ws", "idea_developer")).success
-    assert time.monotonic() - t0 >= 0.3
+    assert time.monotonic() - t0 >= 0.3 - 0.02  # Windows' clock and asyncio's timers tick every ~16 ms
     t0 = time.monotonic()
     assert (await _call(b, tmp_path / "ws", "idea_developer")).success
     assert time.monotonic() - t0 < 0.3
@@ -263,6 +263,7 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
     env = {
         **os.environ,
         "HOME": str(home),
+        "USERPROFILE": str(home),
         "PYTHONPATH": str(ROOT),
         "E2ER_REPLAY_SCENARIO": scenario,
         "E2ER_REPLAY_NETLOG": str(tmp_path / "net.txt"),
@@ -681,7 +682,13 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
 
     # Published (offline: nothing is sent) and verified like any study: the dossier carries the rounds.
     bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     out = subprocess.run(
         [*cli, "publish", str(bundle), "--owner", "replay", "--project", "fomc-iterative", "--name", "Replay"]

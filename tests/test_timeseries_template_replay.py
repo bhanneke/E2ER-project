@@ -127,7 +127,13 @@ def test_a_forecasting_study_replays_to_the_end_with_its_hold_out_frozen_before_
     bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
     for name in ("design/forecast_design.json", "design/holdout_freeze.json", "results/forecast_check.json"):
         assert (bundle / name).is_file(), name
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     db = tmp_path / "home" / ".e2er" / "papers.db"
     out = subprocess.run(

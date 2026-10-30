@@ -310,6 +310,7 @@ def test_a_command_started_by_a_test_inherits_the_guard(tmp_path):
     env = {
         **os.environ,
         "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),
         "E2ER_TOKEN": "e2er_" + "S" * 43,
         "HTTPS_PROXY": DEAD_PROXY,
         "PYTHONPATH": str(ROOT),
