@@ -248,6 +248,10 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+#: The replay servers' log files, the latest last (a failing test shows the end of its server's log).
+_SERVER_LOGS: list[Path] = []
+
+
 @contextlib.contextmanager
 def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
     """`e2er serve` under the replay level for a study folder in tmp; yields (api, study folder).
@@ -300,6 +304,7 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
         # The server's output goes to a file: a pipe nobody reads while it runs fills up (4 KB on Windows),
         # and the server then stops at its next log line and answers no request.
         log_path = tmp_path / f"replay-server-{port}.log"
+        _SERVER_LOGS.append(log_path)
         log = log_path.open("wb")
         server = subprocess.Popen(
             [sys.executable, "-m", "tests.replay.cli", "serve", "--no-browser", "--port", str(port)],
@@ -347,9 +352,16 @@ def _approve_to_the_end(api: str, pid: str) -> tuple[dict, list[str]]:
         p = _wait(api, pid)
         if p["status"] == "completed":
             break
-        stage = httpx.get(
+        pending = httpx.get(
             f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
-        ).json()["pending"]["stage"]
+        ).json()["pending"]
+        if pending is None:
+            tail = _SERVER_LOGS[-1].read_bytes().decode(errors="replace")[-4000:] if _SERVER_LOGS else ""
+            pytest.fail(
+                f"the run stopped with no review to approve: status {p['status']}, last_error {p.get('last_error')!r}, "
+                f"after {stops}\nserver log (end):\n{tail}"
+            )
+        stage = pending["stage"]
         stops.append(stage)
         r = httpx.post(
             f"{api}/api/papers/{pid}/review",
