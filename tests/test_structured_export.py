@@ -12,37 +12,51 @@ def _workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "ws-uuid"
     ws.mkdir()
     (ws / "manifest.json").write_text(
-        json.dumps({"title": "Routing Around Royalties", "research_question": "Did aggregators erode royalties?"})
+        json.dumps({"title": "Routing Around Royalties", "research_question": "Did aggregators erode royalties?"}),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\begin{document}hi\\end{document}")
-    (ws / "abstract.tex").write_text("We study royalties.")
-    (ws / "literature.bib").write_text("@article{x2024, title={X}}")
-    (ws / "run_estimation.py").write_text("import pandas as pd")
-    (ws / "_explore.py").write_text("# probe")
-    (ws / "run_estimation.log").write_text("ran ok")
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\begin{document}hi\\end{document}", encoding="utf-8", newline="\n"
+    )
+    (ws / "abstract.tex").write_text("We study royalties.", encoding="utf-8", newline="\n")
+    (ws / "literature.bib").write_text("@article{x2024, title={X}}", encoding="utf-8", newline="\n")
+    (ws / "run_estimation.py").write_text("import pandas as pd", encoding="utf-8", newline="\n")
+    (ws / "_explore.py").write_text("# probe", encoding="utf-8", newline="\n")
+    (ws / "run_estimation.log").write_text("ran ok", encoding="utf-8", newline="\n")
     (ws / "data.db").write_bytes(b"SQLite format 3\x00")
-    (ws / "data_summary.md").write_text("rows: 2.1M")
+    (ws / "data_summary.md").write_text("rows: 2.1M", encoding="utf-8", newline="\n")
     (ws / "estimation_results.json").write_text(
-        json.dumps({"main": {"coefficients": {"aggregator_routed": {"estimate": -0.0087, "p_value": 0.43}}}})
+        json.dumps({"main": {"coefficients": {"aggregator_routed": {"estimate": -0.0087, "p_value": 0.43}}}}),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "identification_strategy.md").write_text("DiD around Oct 2022")
+    (ws / "identification_strategy.md").write_text("DiD around Oct 2022", encoding="utf-8", newline="\n")
     (ws / "identification_spec.json").write_text(
-        json.dumps({"primary": {"estimator": "did", "fixed_effects": ["unit", "time"], "controls": []}})
+        json.dumps({"primary": {"estimator": "did", "fixed_effects": ["unit", "time"], "controls": []}}),
+        encoding="utf-8",
+        newline="\n",
     )
     tables = ws / "tables"
     tables.mkdir()
-    (tables / "main.tex").write_text("\\begin{tabular}{lc}\\hline a & -0.0087 \\\\\\hline\\end{tabular}")
-    (tables / "robustness.tex").write_text("\\begin{tabular}{lc}\\hline b & 0.12 \\\\\\hline\\end{tabular}")
+    (tables / "main.tex").write_text(
+        "\\begin{tabular}{lc}\\hline a & -0.0087 \\\\\\hline\\end{tabular}", encoding="utf-8", newline="\n"
+    )
+    (tables / "robustness.tex").write_text(
+        "\\begin{tabular}{lc}\\hline b & 0.12 \\\\\\hline\\end{tabular}", encoding="utf-8", newline="\n"
+    )
     repl = ws / "replication"
     repl.mkdir()
-    (repl / "audit_log.csv").write_text("step,detail\n1,queried\n")
-    (repl / "data_queries.sql").write_text("SELECT 1;")
-    (repl / "estimation.py").write_text("# replication entry point")
-    (ws / "review_mechanism.md").write_text("# Referee\nContribution: 4/10")
+    (repl / "audit_log.csv").write_text("step,detail\n1,queried\n", encoding="utf-8", newline="\n")
+    (repl / "data_queries.sql").write_text("SELECT 1;", encoding="utf-8", newline="\n")
+    (repl / "estimation.py").write_text("# replication entry point", encoding="utf-8", newline="\n")
+    (ws / "review_mechanism.md").write_text("# Referee\nContribution: 4/10", encoding="utf-8", newline="\n")
     (ws / "review_aggregation.json").write_text(
-        json.dumps({"verdict": "MECHANISM_FAIL", "weighted_avg": 4.0, "rationale": "proxy too weak"})
+        json.dumps({"verdict": "MECHANISM_FAIL", "weighted_avg": 4.0, "rationale": "proxy too weak"}),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / ".pipeline_state.json").write_text("{}")  # internal — must not be exported
+    (ws / ".pipeline_state.json").write_text("{}", encoding="utf-8", newline="\n")  # internal — must not be exported
     return ws
 
 
@@ -127,7 +141,7 @@ def test_export_writes_provenance_manifest(tmp_path: Path):
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
     prov_path = out / "provenance.json"
     assert prov_path.is_file()
-    prov = json.loads(prov_path.read_text())
+    prov = json.loads(prov_path.read_text(encoding="utf-8"))
     assert prov["schema"] == "e2er-provenance/1"
     # Inventories real bundle files, including the last-written README.
     assert "paper/paper.tex" in prov["files"]
@@ -144,11 +158,13 @@ def test_readme_discloses_governance_regime(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "manifest.json").write_text(
-        json.dumps({"title": "Shadow Run", "research_question": "Q", "governance": "off", "backend": "claude_code"})
+        json.dumps({"title": "Shadow Run", "research_question": "Q", "governance": "off", "backend": "claude_code"}),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "paper_draft.tex").write_text("x")
+    (ws / "paper_draft.tex").write_text("x", encoding="utf-8", newline="\n")
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
-    readme = (out / "README.md").read_text()
+    readme = (out / "README.md").read_text(encoding="utf-8")
     assert "governance=`off`" in readme
     assert "backend=`claude_code`" in readme
     assert "shadow" in readme.lower()
@@ -157,7 +173,7 @@ def test_readme_discloses_governance_regime(tmp_path: Path):
 def test_readme_full_regime_no_shadow_warning(tmp_path: Path):
     ws = _workspace(tmp_path)  # its manifest has no governance → defaults to full
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
-    readme = (out / "README.md").read_text()
+    readme = (out / "README.md").read_text(encoding="utf-8")
     assert "governance=`full`" in readme
     assert "ran in shadow" not in readme.lower()
 
@@ -165,7 +181,7 @@ def test_readme_full_regime_no_shadow_warning(tmp_path: Path):
 def test_readme_has_the_review_score_and_coef(tmp_path: Path):
     ws = _workspace(tmp_path)
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
-    readme = (out / "README.md").read_text()
+    readme = (out / "README.md").read_text(encoding="utf-8")
     assert "Routing Around Royalties" in readme
     # A score, never the internal code that picked the revision path.
     assert "e2er's internal quality review:** " in readme
@@ -177,19 +193,19 @@ def test_readme_reproduce_section_follows_what_the_folder_has(tmp_path: Path):
     ws = _workspace(tmp_path)
     (ws / "run_estimation.py").unlink()  # no estimation script, so no recipe at export
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
-    readme = (out / "README.md").read_text()
+    readme = (out / "README.md").read_text(encoding="utf-8")
     # no recipe: say so and why, and never promise a command that cannot run
     assert "has no `reproduce.json`" in readme and "cd code && python" not in readme
     assert "the study has no estimation script" in readme
     assert "`data.db`, SQLite" in readme
-    (ws / "run_estimation.py").write_text("import pandas as pd")
+    (ws / "run_estimation.py").write_text("import pandas as pd", encoding="utf-8", newline="\n")
 
-    (ws / "reproduce.json").write_text('{"schema": "e2er-reproduce/1"}')
-    (ws / "requirements.txt").write_text("numpy==2.3.5\n")
-    (ws / "get_data.py").write_text("# reload inputs")
+    (ws / "reproduce.json").write_text('{"schema": "e2er-reproduce/1"}', encoding="utf-8", newline="\n")
+    (ws / "requirements.txt").write_text("numpy==2.3.5\n", encoding="utf-8", newline="\n")
+    (ws / "get_data.py").write_text("# reload inputs", encoding="utf-8", newline="\n")
     (ws / "data.db").unlink()
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
-    readme = (out / "README.md").read_text()
+    readme = (out / "README.md").read_text(encoding="utf-8")
     assert "e2er reproduce ." in readme
     assert "data.db" not in readme
     assert (out / "reproduce.json").is_file()
@@ -208,8 +224,8 @@ def test_internal_files_not_exported(tmp_path: Path):
 def test_best_effort_on_missing_artifacts(tmp_path: Path):
     ws = tmp_path / "sparse"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"title": "Sparse"}))
-    (ws / "review_aggregation.json").write_text(json.dumps({"verdict": "REJECTED"}))
+    (ws / "manifest.json").write_text(json.dumps({"title": "Sparse"}), encoding="utf-8", newline="\n")
+    (ws / "review_aggregation.json").write_text(json.dumps({"verdict": "REJECTED"}), encoding="utf-8", newline="\n")
     # No paper/code/data at all — export must still succeed (rejected-run case).
     out = export_paper(ws, tmp_path / "out", date_str="20260627")
     assert out.is_dir()

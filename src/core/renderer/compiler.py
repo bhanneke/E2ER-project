@@ -84,7 +84,7 @@ def strip_html_comments(path: Path) -> bool:
     cleaned = _HTML_COMMENT_RE.sub("", text)
     if cleaned == text:
         return False
-    path.write_text(cleaned, encoding="utf-8")
+    path.write_text(cleaned, encoding="utf-8", newline="\n")
     logger.warning(
         "%s: removed %d HTML comment(s), which LaTeX would print", path.name, len(_HTML_COMMENT_RE.findall(text))
     )
@@ -127,9 +127,9 @@ async def compile_latex(workspace: Path, main_file: str = "paper_draft.tex") -> 
     body = tex_path.read_text(encoding="utf-8")
     if not looks_like_full_document(body):
         backup = workspace / "paper_draft.body.tex"
-        backup.write_text(body, encoding="utf-8")
+        backup.write_text(body, encoding="utf-8", newline="\n")
         wrapped = assemble_document(body)
-        tex_path.write_text(wrapped, encoding="utf-8")
+        tex_path.write_text(wrapped, encoding="utf-8", newline="\n")
         logger.info("Wrapped paper_draft.tex with preamble (body backup at %s)", backup)
 
     # Figures render to the workspace root as `fig_*.pdf`, but drafters commonly

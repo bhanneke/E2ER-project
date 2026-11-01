@@ -167,7 +167,13 @@ def _git(args: list[str], cwd: Path | None = None) -> list[str]:
         return []
     try:
         proc = subprocess.run(
-            [exe, *args], cwd=cwd, capture_output=True, text=True, timeout=20, env={**os.environ, "GIT_PAGER": "cat"}
+            [exe, *args],
+            cwd=cwd,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            env={**os.environ, "GIT_PAGER": "cat"},
         )
     except (OSError, subprocess.TimeoutExpired):
         return []
@@ -903,7 +909,7 @@ def anonymise(folder: Path, identifiers: list[Identifier], *, at: str | None = N
         prov.setdefault("amendments", []).append(entry)
         result.changed[rel] = rules
     prov["files"] = dict(sorted(listed.items()))
-    prov_path.write_text(dump(prov), encoding="utf-8")
+    prov_path.write_text(dump(prov), encoding="utf-8", newline="\n")
     return result
 
 

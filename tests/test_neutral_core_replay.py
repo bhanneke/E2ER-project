@@ -136,7 +136,13 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
     # Exported, published offline and verified like any study: `e2er verify` reads the kind
     # from the results file (no template outside the run) and checks its numbers.
     bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     db = tmp_path / "home" / ".e2er" / "papers.db"
     out = subprocess.run(
@@ -145,11 +151,20 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout
     assert "[PASS] results contract" in out.stdout, out.stdout
@@ -161,7 +176,8 @@ def test_a_descriptive_study_replays_to_the_end_without_regression_or_identifica
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=600,
     )
     assert out.returncode == 0, out.stdout + out.stderr

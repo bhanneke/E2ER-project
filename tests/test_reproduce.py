@@ -24,10 +24,10 @@ def _study(tmp_path: Path, published: dict, *, data: str = "1\n2\n4\n", recipe: 
     (folder / "code").mkdir(parents=True)
     (folder / "results").mkdir()
     (folder / "data").mkdir()
-    (folder / "code" / "run.py").write_text(SCRIPT, encoding="utf-8")
-    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8")
-    (folder / "data" / "x.csv").write_text(data, encoding="utf-8")
-    (folder / "results" / "results.json").write_text(json.dumps(published), encoding="utf-8")
+    (folder / "code" / "run.py").write_text(SCRIPT, encoding="utf-8", newline="\n")
+    (folder / "code" / "requirements.txt").write_text("# no packages\n", encoding="utf-8", newline="\n")
+    (folder / "data" / "x.csv").write_text(data, encoding="utf-8", newline="\n")
+    (folder / "results" / "results.json").write_text(json.dumps(published), encoding="utf-8", newline="\n")
     base = {
         "schema": rp.SCHEMA,
         "requirements": "code/requirements.txt",
@@ -36,7 +36,7 @@ def _study(tmp_path: Path, published: dict, *, data: str = "1\n2\n4\n", recipe: 
         "inputs": [{"path": "data/x.csv", "sha256": hashlib.sha256(b"1\n2\n4\n").hexdigest()}],
         "compare": [{"published": "results/results.json", "produced": "results.json"}],
     }
-    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe or base), encoding="utf-8")
+    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe or base), encoding="utf-8", newline="\n")
     return folder
 
 
@@ -91,8 +91,8 @@ def test_compare_value(published, produced, label) -> None:
 
 def test_compare_json_counts_missing_and_new_values(tmp_path: Path) -> None:
     pub, new = tmp_path / "p.json", tmp_path / "n.json"
-    pub.write_text(json.dumps({"a": 1.0, "b": {"c": [1, 2]}, "gone": 3}), encoding="utf-8")
-    new.write_text(json.dumps({"a": 1.0, "b": {"c": [1, 2.5]}, "extra": 4}), encoding="utf-8")
+    pub.write_text(json.dumps({"a": 1.0, "b": {"c": [1, 2]}, "gone": 3}), encoding="utf-8", newline="\n")
+    new.write_text(json.dumps({"a": 1.0, "b": {"c": [1, 2.5]}, "extra": 4}), encoding="utf-8", newline="\n")
     fc = rp.compare_json(pub, new, "p.json", "n.json")
     assert fc.counts[rp.IDENTICAL] == 2
     assert fc.counts[rp.DIFFERS] == 1
@@ -103,7 +103,7 @@ def test_compare_json_counts_missing_and_new_values(tmp_path: Path) -> None:
 
 def test_compare_json_says_when_the_rerun_wrote_nothing(tmp_path: Path) -> None:
     pub = tmp_path / "p.json"
-    pub.write_text("{}", encoding="utf-8")
+    pub.write_text("{}", encoding="utf-8", newline="\n")
     fc = rp.compare_json(pub, tmp_path / "absent.json", "p.json", "absent.json")
     assert fc.problem == "the rerun did not write it"
 
@@ -138,7 +138,7 @@ def test_reproduce_reports_differences_and_exits_1(tmp_path: Path, capsys) -> No
 
 def test_a_failing_step_exits_2_with_its_output(tmp_path: Path, capsys) -> None:
     folder = _study(tmp_path, {"main": {}})
-    (folder / "code" / "run.py").write_text("raise SystemExit('no data here')\n", encoding="utf-8")
+    (folder / "code" / "run.py").write_text("raise SystemExit('no data here')\n", encoding="utf-8", newline="\n")
     assert reproduce(str(folder), yes=True, sandbox=False) == 2
     text = capsys.readouterr().out
     assert "FAILED (exit 1)" in text and "no data here" in text

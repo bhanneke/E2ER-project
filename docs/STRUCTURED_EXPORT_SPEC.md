@@ -133,6 +133,10 @@ exported folder into one file, `<slug>.e2er` (next to the folder unless `-o` say
 otherwise); `e2er export --package` does the same after an export, and the finish page
 offers it as "Download package (.e2er)". `e2er verify`, `e2er reproduce`, `e2er unpack
 <file> [folder]` and `e2er inspect <file>` read it. Code: `src/core/export/package.py`.
+A published study's package is hosted by its authors (a GitHub release, a file in the
+code deposit on Zenodo) and recorded on e2er.org as `package: {url, sha256, bytes, host,
+fingerprint}`; `e2er fetch <address>` downloads and checks it (docs/publishing.md, "The
+study package next to the files"; code: `src/core/study_package.py`).
 
 **Container.** A zip archive, every entry compressed with deflate (level 6). The first
 entry is `e2er-package.json`; every other entry follows in sorted order of its path.

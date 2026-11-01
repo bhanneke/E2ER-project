@@ -70,8 +70,8 @@ def isolated(tmp_path: Path, monkeypatch) -> Path:
 def catalogue(tmp_path: Path, monkeypatch, isolated: Path) -> Path:
     rise = tmp_path / "RISE"
     (rise / "skills").mkdir(parents=True)
-    (rise / "skills" / "demo.yml").write_text(MIT_PACK)
-    (rise / "skills" / "curated.yml").write_text(NC_PACK)
+    (rise / "skills" / "demo.yml").write_text(MIT_PACK, encoding="utf-8", newline="\n")
+    (rise / "skills" / "curated.yml").write_text(NC_PACK, encoding="utf-8", newline="\n")
     monkeypatch.setattr("src.modules.skills_catalogue.catalogue_path", lambda explicit=None: rise)
     return rise
 
@@ -147,8 +147,8 @@ def test_a_pack_e2er_could_not_bundle_can_still_be_installed(client, catalogue):
 
 def test_an_installed_pack_is_shown_as_installed(client, catalogue, isolated):
     (isolated / "demo").mkdir(parents=True)
-    (isolated / "demo" / "alpha.md").write_text("# Alpha")
-    (isolated / "demo" / "pack.json").write_text('{"pack": {"license": "MIT"}}')
+    (isolated / "demo" / "alpha.md").write_text("# Alpha", encoding="utf-8", newline="\n")
+    (isolated / "demo" / "pack.json").write_text('{"pack": {"license": "MIT"}}', encoding="utf-8", newline="\n")
 
     body = client.get("/skills").text
     row = body[body.index("Demo Pack") :]

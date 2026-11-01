@@ -28,7 +28,7 @@ def _setup(tmp_path: Path, monkeypatch) -> Path:
 def test_save_to_never_writes_through_staged_symlink(tmp_path: Path, monkeypatch):
     ws = _setup(tmp_path, monkeypatch)
     original = tmp_path / "original_trades.csv"
-    original.write_text("id;price\n1;100\n", encoding="utf-8")
+    original.write_text("id;price\n1;100\n", encoding="utf-8", newline="\n")
     (ws / "data" / "trades.csv").symlink_to(original)
 
     result: dict = {"items": [{"a": 1}, {"a": 2}]}
@@ -45,7 +45,7 @@ def test_save_to_never_writes_through_staged_symlink(tmp_path: Path, monkeypatch
 
 def test_save_to_existing_file_is_not_overwritten(tmp_path: Path, monkeypatch):
     ws = _setup(tmp_path, monkeypatch)
-    (ws / "data" / "out.csv").write_text("keep me", encoding="utf-8")
+    (ws / "data" / "out.csv").write_text("keep me", encoding="utf-8", newline="\n")
 
     result: dict = {"items": [{"a": 1}]}
     _maybe_save_csv(result, _args("paper1", "out.csv"))
@@ -67,8 +67,8 @@ def test_save_to_fresh_name_saves_normally(tmp_path: Path, monkeypatch):
 
 def test_save_to_suffix_skips_taken_names(tmp_path: Path, monkeypatch):
     ws = _setup(tmp_path, monkeypatch)
-    (ws / "data" / "x.csv").write_text("0", encoding="utf-8")
-    (ws / "data" / "x_1.csv").write_text("1", encoding="utf-8")
+    (ws / "data" / "x.csv").write_text("0", encoding="utf-8", newline="\n")
+    (ws / "data" / "x_1.csv").write_text("1", encoding="utf-8", newline="\n")
 
     result: dict = {"items": [{"a": 1}]}
     _maybe_save_csv(result, _args("paper1", "x.csv"))

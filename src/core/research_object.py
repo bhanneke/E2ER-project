@@ -284,5 +284,5 @@ def build_manifest(
 
 def write_manifest(bundle: Path, manifest: dict[str, Any]) -> Path:
     out = Path(bundle) / MANIFEST_NAME
-    out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    out.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return out

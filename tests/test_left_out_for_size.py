@@ -35,7 +35,7 @@ def _put(folder: Path, rel: str, content: bytes) -> None:
     prov_path = folder / "provenance.json"
     prov = json.loads(prov_path.read_text(encoding="utf-8"))
     prov["files"][rel] = {"sha256": hashlib.sha256(content).hexdigest(), "bytes": len(content)}
-    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8")
+    prov_path.write_text(json.dumps(prov, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def _open_study(tmp_path: Path, *, reload: bool, prepare: bool = True) -> Path:
@@ -145,7 +145,7 @@ def test_a_declaration_counts_in_a_folder_only_when_provenance_records_the_file_
     prov_path = folder / "provenance.json"
     prov = json.loads(prov_path.read_text(encoding="utf-8"))
     prov["files"]["data/data.db"]["bytes"] = 145_076_224
-    prov_path.write_text(json.dumps(prov), encoding="utf-8")
+    prov_path.write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     assert pkg.too_large_for_host(folder, item)
     assert not pkg.too_large_for_host(folder, {**item, "host": "Somewhere"})
     assert not pkg.too_large_for_host(folder, {**item, "kind": "terms"})

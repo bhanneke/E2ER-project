@@ -58,7 +58,9 @@ async def test_haiku_single_pass_smoke(tmp_path):
         f'{{"paper_id": "{paper_id}", "title": "Block height vs. elapsed time on Ethereum",'
         ' "research_question": "Describe the empirical relationship between block height'
         ' and wall-clock time on Ethereum mainnet.",'
-        ' "datasets": [], "mode": "single_pass", "current_stage": "idea"}'
+        ' "datasets": [], "mode": "single_pass", "current_stage": "idea"}',
+        encoding="utf-8",
+        newline="\n",
     )
 
     backend = AnthropicBackend()

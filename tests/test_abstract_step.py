@@ -274,7 +274,9 @@ def test_jel_codes_outside_economics():
 
 def test_the_showcase_abstract_fails_on_what_the_diagnosis_named():
     """The Bitcoin showcase's abstract.tex: too long, eight numbers, the mirrored clause, the negated ending."""
-    tex = (Path(__file__).parent / "fixtures" / "showcase_export" / "paper" / "abstract.tex").read_text()
+    tex = (Path(__file__).parent / "fixtures" / "showcase_export" / "paper" / "abstract.tex").read_text(
+        encoding="utf-8"
+    )
     probs = " | ".join(ab.check(tex).problems)
     for part in ("more than 160", "more than 3", "mirrored", "the last sentence"):
         assert part in probs
@@ -309,11 +311,13 @@ def test_insert_adds_an_abstract_where_the_draft_has_none():
 def test_the_compiler_puts_abstract_tex_into_the_paper(tmp_path, monkeypatch):
     from src.core.renderer import compiler
 
-    (tmp_path / "paper_draft.tex").write_text("\\title{T}\n\\section{Introduction}\nBody text.\n")
-    (tmp_path / "abstract.tex").write_text(ROAD)
+    (tmp_path / "paper_draft.tex").write_text(
+        "\\title{T}\n\\section{Introduction}\nBody text.\n", encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "abstract.tex").write_text(ROAD, encoding="utf-8", newline="\n")
     monkeypatch.setattr(compiler, "_select_engine", lambda: None)
     asyncio.run(compiler.compile_latex(tmp_path))
-    tex = (tmp_path / "paper_draft.tex").read_text()
+    tex = (tmp_path / "paper_draft.tex").read_text(encoding="utf-8")
     assert "The median country records 12.3 deaths" in tex
     assert tex.index("\\maketitle") < tex.index("\\begin{abstract}") < tex.index("\\section{Introduction}")
 
@@ -322,11 +326,13 @@ def test_report_shows_the_abstract_without_latex(tmp_path):
     from src.core.export.report import paper_abstract
 
     (tmp_path / "paper").mkdir()
-    (tmp_path / "paper" / "abstract.tex").write_text("\\title{T}\n" + ROAD)
+    (tmp_path / "paper" / "abstract.tex").write_text("\\title{T}\n" + ROAD, encoding="utf-8", newline="\n")
     text = paper_abstract(tmp_path)
     assert text.startswith("Road traffic deaths") and "src:" not in text and "Keywords" not in text
     (tmp_path / "paper" / "abstract.tex").unlink()
-    (tmp_path / "paper" / "paper.tex").write_text("\\maketitle\n" + ROAD + "\\section{A}")
+    (tmp_path / "paper" / "paper.tex").write_text(
+        "\\maketitle\n" + ROAD + "\\section{A}", encoding="utf-8", newline="\n"
+    )
     assert paper_abstract(tmp_path) == text
 
 
@@ -341,7 +347,9 @@ def test_with_title_keeps_the_studys_title():
 
 def test_headline_entries_are_the_values_the_paper_cites(tmp_path):
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"groups": {"g": [{"mean": 19.44}, {"mean": 6.7}]}, "sample": {"n": 195}})
+        json.dumps({"groups": {"g": [{"mean": 19.44}, {"mean": 6.7}]}, "sample": {"n": 195}}),
+        encoding="utf-8",
+        newline="\n",
     )
     paper = (
         "Text.\n% src: estimation_results.json#sample.n, groups.g.1.mean\nMore.\n% src: estimation_results.json#nope"
@@ -356,8 +364,10 @@ def test_headline_entries_are_the_values_the_paper_cites(tmp_path):
 
 
 def _workspace(tmp_path: Path) -> Path:
-    (tmp_path / "estimation_results.json").write_text(json.dumps(ROAD_RESULTS))
-    (tmp_path / "paper_draft.tex").write_text("\\title{T}\n\\section{Results}\nThe median is 12.3.\n")
+    (tmp_path / "estimation_results.json").write_text(json.dumps(ROAD_RESULTS), encoding="utf-8", newline="\n")
+    (tmp_path / "paper_draft.tex").write_text(
+        "\\title{T}\n\\section{Results}\nThe median is 12.3.\n", encoding="utf-8", newline="\n"
+    )
     return tmp_path
 
 
@@ -368,13 +378,13 @@ def test_write_abstract_sends_the_writer_back_once_then_passes(tmp_path):
 
     async def execute(focus: str) -> bool:
         focuses.append(focus)
-        (ws / "abstract.tex").write_text(bad if len(focuses) == 1 else ROAD)
+        (ws / "abstract.tex").write_text(bad if len(focuses) == 1 else ROAD, encoding="utf-8", newline="\n")
         return True
 
     out = asyncio.run(ab.write_abstract(ws, execute, economics=False))
     assert out.passed and out.attempts == 2
     assert "Sent back by the abstract check" in focuses[1] and "p-value" in focuses[1]
-    record = json.loads((ws / ab.CHECK_FILE).read_text())
+    record = json.loads((ws / ab.CHECK_FILE).read_text(encoding="utf-8"))
     assert record["passed"] and record["history"][0]["passed"] is False
 
 
@@ -384,12 +394,14 @@ def test_write_abstract_records_a_finding_after_the_second_failure(tmp_path):
 
     async def execute(focus: str) -> bool:
         calls.append(focus)
-        (ws / "abstract.tex").write_text(_env("We ask how rates vary. The study makes no causal claim."))
+        (ws / "abstract.tex").write_text(
+            _env("We ask how rates vary. The study makes no causal claim."), encoding="utf-8", newline="\n"
+        )
         return True
 
     out = asyncio.run(ab.write_abstract(ws, execute, economics=False))
     assert not out.passed and len(calls) == 2  # one resend, no more
-    record = json.loads((ws / ab.CHECK_FILE).read_text())
+    record = json.loads((ws / ab.CHECK_FILE).read_text(encoding="utf-8"))
     assert record["passed"] is False and "finding" in record and record["problems"]
 
 
@@ -409,7 +421,9 @@ def test_write_abstract_without_enforcement_does_not_resend(tmp_path):
 def test_the_writer_gets_the_paper_the_entries_and_the_reviewers_points(tmp_path):
     ws = _workspace(tmp_path)
     (ws / "paper_draft.tex").write_text(
-        "\\section{R}\nThe median is 12.3.\n% src: estimation_results.json#sample.n_observations\n"
+        "\\section{R}\nThe median is 12.3.\n% src: estimation_results.json#sample.n_observations\n",
+        encoding="utf-8",
+        newline="\n",
     )
     (ws / ab.FINDINGS_FILE).write_text(
         json.dumps(
@@ -422,7 +436,9 @@ def test_the_writer_gets_the_paper_the_entries_and_the_reviewers_points(tmp_path
                     }
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     ctx = ab.work_context(ws, "p1")
     assert "The median is 12.3." in ctx
@@ -442,7 +458,7 @@ def test_abstract_findings_ignore_the_score_floor(tmp_path):
         "it should state the finding in words.\n- The conclusion is fine.\n\n"
         "OVERALL SCORE: 8/10\nRECOMMENDATION: Accept\n"
     )
-    (tmp_path / "review_writing.md").write_text(review)
+    (tmp_path / "review_writing.md").write_text(review, encoding="utf-8", newline="\n")
     (tmp_path / "self_attack_report.json").write_text(
         json.dumps(
             {
@@ -455,7 +471,9 @@ def test_abstract_findings_ignore_the_score_floor(tmp_path):
                     }
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     score = parse_review_output("writing_reviewer", review)
     assert score is not None and collect_review_findings([score]) == []  # above the floor: no review finding
@@ -593,7 +611,9 @@ def test_the_runner_writes_checks_and_titles_the_abstract(tmp_path, monkeypatch)
 
     events = _events(monkeypatch)
     ws = _workspace(tmp_path)
-    (ws / "paper_draft.tex").write_text("\\title{Road Deaths, 2021}\n\\section{Results}\nThe median is 12.3.\n")
+    (ws / "paper_draft.tex").write_text(
+        "\\title{Road Deaths, 2021}\n\\section{Results}\nThe median is 12.3.\n", encoding="utf-8", newline="\n"
+    )
     writer = _Writer(ROAD)
     runner = _runner(ws, writer)
     token = activate(runner._spec)
@@ -602,10 +622,10 @@ def test_the_runner_writes_checks_and_titles_the_abstract(tmp_path, monkeypatch)
     finally:
         deactivate(token)
     assert writer.calls == 1
-    assert (ws / "abstract.tex").read_text().startswith("\\title{Road Deaths, 2021}")
+    assert (ws / "abstract.tex").read_text(encoding="utf-8").startswith("\\title{Road Deaths, 2021}")
     gate = [p for k, p in events if k == "gate_enforced" and p.get("gate") == "abstract"]
     assert gate and gate[0]["passed"] is True
-    assert json.loads((ws / ab.CHECK_FILE).read_text())["passed"] is True
+    assert json.loads((ws / ab.CHECK_FILE).read_text(encoding="utf-8"))["passed"] is True
 
 
 def test_a_second_failure_is_a_finding_in_the_dossier_and_the_run_goes_on(tmp_path, monkeypatch):
@@ -659,11 +679,13 @@ def test_the_revision_keeps_abstract_findings_for_the_abstract_step(tmp_path, mo
     events = _events(monkeypatch)
     (tmp_path / "review_writing.md").write_text(
         "# Review\n\nThe abstract lists too many numbers and ends on a negation.\n\nOVERALL SCORE: 7.5/10\n"
-        "RECOMMENDATION: Minor Revision\n"
+        "RECOMMENDATION: Minor Revision\n",
+        encoding="utf-8",
+        newline="\n",
     )
     runner = _runner(tmp_path, _Writer(ROAD))
     asyncio.run(runner._record_abstract_findings())
-    doc = json.loads((tmp_path / ab.FINDINGS_FILE).read_text())
+    doc = json.loads((tmp_path / ab.FINDINGS_FILE).read_text(encoding="utf-8"))
     assert [f["source_detail"] for f in doc["findings"]] == ["writing_reviewer"]
     assert any(k == "abstract_findings" for k, _p in events)
 

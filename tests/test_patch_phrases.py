@@ -6,7 +6,7 @@ from src.core.specialists.contract_check import check_patch_phrases
 
 
 def _write(tmp_path, edits):
-    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8")
+    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8", newline="\n")
 
 
 def test_a_replacement_with_a_rejected_construction_fails(tmp_path):

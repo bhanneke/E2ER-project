@@ -79,7 +79,7 @@ def test_events_load_a_table_and_record_query_version_hash_terms_and_citation(
         assert db.execute("SELECT COUNT(*) FROM quakes").fetchone()[0] == out["row_count"]
     assert (ws / "data" / "quakes.csv").is_file()
 
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "usgs" and load["table"] == "quakes"
     assert load["terms"].startswith("https://www.usgs.gov/") and "public domain" in load["terms_summary"]
     assert load["citation_by"] == "source" and "10.5066/F7MS3QZH" in load["citation"]
@@ -89,17 +89,17 @@ def test_events_load_a_table_and_record_query_version_hash_terms_and_citation(
     [f] = load["files"]
     assert f["sha256"] == hashlib.sha256(_recorded_csv()).hexdigest()
 
-    [entry] = json.loads((ws / "data_dictionary.json").read_text())["tables"]
+    [entry] = json.loads((ws / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
     assert entry["source"] == "usgs" and entry["frequency"] == "event" and entry["cite_key"] == CITE_KEY
     assert entry["source_files"] == [{"url": f["url"], "sha256": f["sha256"]}]
 
-    bib = (ws / "literature.bib").read_text()
+    bib = (ws / "literature.bib").read_text(encoding="utf-8")
     assert bib.count("@misc{USGS_ComCat,") == 1
     # A second load does not add the entry again.
     with use_cassette(FIXTURE):
         code, out = _run([*ARGS, "--table", "quakes2"], capsys)
     assert code == 0 and out["citation_added"] is False
-    assert (ws / "literature.bib").read_text().count("@misc{USGS_ComCat,") == 1
+    assert (ws / "literature.bib").read_text(encoding="utf-8").count("@misc{USGS_ComCat,") == 1
 
 
 async def test_fetch_data_records_the_same_load(ws: Path) -> None:
@@ -122,9 +122,9 @@ async def test_fetch_data_records_the_same_load(ws: Path) -> None:
     # The same records as e2er-data: the load, the table's dictionary entry and the citation.
     assert out["error"] is None and out["items"]
     assert out["recorded_in"] == ["data_sources.json", "data_dictionary.json"]
-    assert out["cite_key"] in (ws / "literature.bib").read_text()
+    assert out["cite_key"] in (ws / "literature.bib").read_text(encoding="utf-8")
     assert "_load_record" not in out
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "usgs" and load["table"] == "quakes" and load["files"]
 
 
@@ -154,7 +154,7 @@ def test_a_period_over_the_service_limit_is_split_by_counts(ws: Path, capsys: py
     code, out = _run(["usgs", "events", "--start", "2020-01-01", "--end", "2022-01-01", "--table", "q"], capsys)
     assert code == 0, out
     assert [r["id"] for r in out["items"]] == ["a", "edge", "b"]
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["windows"] == 2 and len(load["files"]) == 2
 
 

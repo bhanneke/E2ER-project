@@ -376,7 +376,8 @@ def _render_with_dot(dot_path: Path, fmt: str, out_path: Path) -> bool:
             [dot_bin, f"-T{fmt}", str(dot_path), "-o", str(out_path)],
             check=True,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         return True
     except (subprocess.CalledProcessError, OSError) as e:  # pragma: no cover
@@ -401,7 +402,7 @@ def generate(out_dir: Path | None = None) -> Path:
 
     dot_text = build_dot()
     dot_path = out_dir / "pipeline.dot"
-    dot_path.write_text(dot_text, encoding="utf-8")
+    dot_path.write_text(dot_text, encoding="utf-8", newline="\n")
 
     rendered: list[str] = []
     if shutil.which("dot"):

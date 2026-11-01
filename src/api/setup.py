@@ -3,7 +3,8 @@
 Everything a first-time researcher used to do in `e2er init` happens on one
 page. The page writes the same `.env` that `e2er init` writes (in the studies
 folder, mode 600; see src/home.py), then runs the doctor checks. The first time
-it asks for the studies folder (default ``~/e2er-studies``) and remembers it.
+it asks for the studies folder (it offers the folder e2er was started in, else
+``~/e2er-studies``; see home.launch_folder) and remembers it.
 
 The folder browser lists folders on this computer, so it and the save endpoint
 sit behind :func:`local_session.require_local_session` (token, loopback, local
@@ -70,7 +71,7 @@ KEY_LABELS = {
 }
 
 #: The AI providers' keys the setup page saves. GEMINI_API_KEY belongs to the
-#: Gemini CLI backend, which since October 2026 runs with a key only.
+#: Gemini CLI backend, which since 18 June 2026 runs with a paid key only.
 _API_KEY_SETTINGS = {"ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "GEMINI_API_KEY"}
 _KNOWN_KEYS = {k for k, _, _ in OPTIONAL_KEYS} | _API_KEY_SETTINGS
 _MODEL_SETTINGS = {"CLAUDE_CODE_MODEL", "ANTHROPIC_MODEL", "OPENROUTER_MODEL", "CODEX_MODEL", "GEMINI_MODEL"}
@@ -262,11 +263,20 @@ def _folder_view() -> dict[str, Any]:
     from .. import home
 
     remembered = home.remembered_studies_folder()
+    kind = home.kind()
+    launch = home.launch_folder()
+    # Nothing set up: the folder e2er was started in, when started there on purpose; else the default.
+    proposed = launch if kind == "none" and launch is not None else home.default_studies_folder()
+    offered = home.offered_launch_folder() if kind == "studies" else None
     return {
-        "folder_kind": home.kind(),
+        "folder_kind": kind,
         "folder": str(home.project_dir()),
         "studies_folder": str(remembered) if remembered else "",
         "default_studies_folder": str(home.default_studies_folder()),
+        "proposed_studies_folder": str(proposed),
+        "proposed_is_launch": kind == "none" and launch is not None,
+        # Started in another folder of its own while the studies folder is in use: named, and offered.
+        "launch_folder": str(offered) if offered else "",
     }
 
 
@@ -296,6 +306,8 @@ class SaveSetup(BaseModel):
     studies_folder: str = ""
     #: A project folder with its own settings becomes the studies folder.
     make_studies_folder: bool = False
+    #: Keep the settings and studies in the folder e2er was started in (a project folder of its own).
+    use_launch_folder: bool = False
     #: The GitHub login used as the owner when publishing (GITHUB_USERNAME).
     github_login: str = ""
 
@@ -306,8 +318,62 @@ def _github_login(raw: str) -> str:
 
     login = raw.strip().lstrip("@").lower()
     if login and not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,38})", login):
-        raise HTTPException(status_code=422, detail=f"{raw.strip()!r} is not a GitHub login (letters, digits, -).")
+        # GitHub's own rule: letters, digits and hyphens, up to 39 characters; `_` and `.` are never
+        # part of a GitHub login (a display name or an e-mail address may have them).
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"GitHub login: {raw.strip()!r} is not a GitHub login. A GitHub login has only letters, digits "
+                "and hyphens (no _ or .); yours is the name in the address of your GitHub profile, "
+                "github.com/<login>. Leave the field empty to save the other settings without it."
+            ),
+        )
     return login
+
+
+def _unchanged(chosen: str, *saved: str) -> bool:
+    """Is ``chosen`` the path already in the settings (as saved, or the same folder)?"""
+    for s in saved:
+        if s and (s == chosen or _same_folder(Path(s).expanduser(), Path(chosen).expanduser())):
+            return True
+    return False
+
+
+def _literature_settings(raw: str, current: dict[str, str], notes: list[str]) -> tuple[str, str]:
+    """LITERATURE_BIBTEX_FILE and LITERATURE_DIR for the literature chosen on the page.
+
+    Only a new choice that cannot be literature (no such path, a file that is not .bib, several
+    .bib files to pick from) stops the save. The saved choice is kept as it is, and an empty
+    folder is saved with a note: "Create folders" makes an empty literature folder, and it used
+    to refuse every later save, so the AI provider, GitHub login and keys were lost with it
+    (tester report, 2026-10-27).
+    """
+    chosen = clean_path_input(raw)
+    lit = inspect_literature(Path(chosen))
+    if lit.usable:
+        s = lit.settings()
+        return s.get("LITERATURE_BIBTEX_FILE", ""), s.get("LITERATURE_DIR", "")
+    saved_bib, saved_dir = current.get("LITERATURE_BIBTEX_FILE", ""), current.get("LITERATURE_DIR", "")
+    if _unchanged(chosen, saved_bib, saved_dir):
+        notes.append(f"Literature: {lit.message} The saved choice {chosen} is kept; add files to it later.")
+        return saved_bib, saved_dir
+    if lit.kind == "empty":
+        notes.append(f"Literature: {lit.path} has no .bib file and no PDFs yet. It is saved; add files to it later.")
+        return "", lit.path
+    raise HTTPException(status_code=422, detail=f"Literature: {lit.message}")
+
+
+def _data_setting(raw: str, current: dict[str, str], notes: list[str]) -> str:
+    """LOCAL_DATA_DIR for the data folder chosen on the page; the saved one never stops a save."""
+    chosen = clean_path_input(raw)
+    d = inspect_data(Path(chosen))
+    if d.ok:
+        return d.path
+    saved = current.get("LOCAL_DATA_DIR", "")
+    if _unchanged(chosen, saved):
+        notes.append(f"Data folder: {d.message} The saved choice {chosen} is kept.")
+        return saved
+    raise HTTPException(status_code=422, detail=f"Data folder: {d.message}")
 
 
 def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str, list[str]]:
@@ -343,16 +409,9 @@ def build_env(req: SaveSetup, current: dict[str, str], root: Path) -> tuple[str,
 
     bib, lit_dir, data_dir = "", "", ""
     if req.literature.strip():
-        lit = inspect_literature(Path(clean_path_input(req.literature)))
-        if not lit.usable:
-            raise HTTPException(status_code=422, detail=f"Literature: {lit.message}")
-        s = lit.settings()
-        bib, lit_dir = s.get("LITERATURE_BIBTEX_FILE", ""), s.get("LITERATURE_DIR", "")
+        bib, lit_dir = _literature_settings(req.literature, current, notes)
     if req.data_dir.strip():
-        d = inspect_data(Path(clean_path_input(req.data_dir)))
-        if not d.ok:
-            raise HTTPException(status_code=422, detail=f"Data folder: {d.message}")
-        data_dir = d.path
+        data_dir = _data_setting(req.data_dir, current, notes)
     if req.create_folders:
         made_data, made_lit = _scaffold_project_dirs(root)
         data_dir = data_dir or str(made_data)
@@ -401,17 +460,32 @@ async def save_setup(req: SaveSetup) -> dict[str, Any]:
     from ..config import get_settings
 
     before = _read_env()  # the settings in use now: kept when the studies folder is chosen or changed
+    before_root = env_path().parent
     root, folder_note = _choose_folder(req)
     current = _read_env_at(root / ".env") or before
     body, notes = build_env(req, current, root)
     path = root / ".env"
     write_env_file(path, body)
+    if req.use_launch_folder and not _same_folder(root, before_root):
+        # The researcher's own settings, copied from the studies folder by this page: the lines
+        # that choose a program or a sandbox stay in use there (src/env_trust.py).
+        from ..env_trust import remember, risky_lines
+
+        if lines := risky_lines(path):
+            remember(path, lines)
     get_settings.cache_clear()
     from .app import forget_preflight
 
     forget_preflight()  # new settings: Preflight checks again
     logger.info("setup page wrote %s", path)
     return {"ok": True, "path": str(path), "notes": ([folder_note] if folder_note else []) + notes}
+
+
+def _same_folder(a: Path, b: Path) -> bool:
+    try:
+        return a.resolve() == b.resolve()
+    except OSError:
+        return False
 
 
 def _read_env_at(p: Path) -> dict[str, str]:
@@ -433,6 +507,16 @@ def _choose_folder(req: SaveSetup) -> tuple[Path, str]:
 
     kind = home.kind()
     asked = clean_path_input(req.studies_folder) if req.studies_folder.strip() else ""
+    launch = home.offered_launch_folder() if req.use_launch_folder else None
+    if launch is not None:
+        # A project folder of its own: e2er started here uses it (home.project_dir, rule 2); the
+        # studies folder stays what e2er uses from every other folder.
+        if os.environ.get(home.ENV_PROJECT):
+            os.environ[home.ENV_PROJECT] = str(launch.resolve())
+        return launch, (
+            f"e2er keeps the settings and studies of {launch} in that folder; started from any other folder "
+            "it uses your studies folder."
+        )
     if kind == "project" and not req.make_studies_folder:
         return home.project_dir(), ""
     if kind == "project":

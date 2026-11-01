@@ -135,7 +135,7 @@ def test_a_run_without_paths_gives_the_same_dossier_as_before(tmp_path: Path, bu
     """Issued dossiers keep their address: the cut touches only strings holding a path."""
     pid = paper_id_of(bundle)
     db = make_run_db(tmp_path / "study", pid)
-    m = json.loads((SHOWCASE / "e2er.json").read_text()) if (SHOWCASE / "e2er.json").is_file() else None
+    m = json.loads((SHOWCASE / "e2er.json").read_text(encoding="utf-8")) if (SHOWCASE / "e2er.json").is_file() else None
     rec = read_run(db, pid)
     monkeypatch.setattr("src.core.dossier.strip_local_paths", lambda v: v)
     unscrubbed = read_run(db, pid)

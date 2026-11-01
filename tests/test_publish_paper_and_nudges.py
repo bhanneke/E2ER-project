@@ -29,7 +29,7 @@ def bundle(tmp_path: Path) -> Path:
 
 
 def _manifest(bundle: Path) -> dict:
-    return json.loads((bundle / "e2er.json").read_text())
+    return json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
 
 
 def test_the_paper_is_private_unless_stated_and_the_manifest_then_has_no_access(bundle: Path, tmp_path: Path, capsys):

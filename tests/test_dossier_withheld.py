@@ -71,7 +71,11 @@ def test_a_redacted_files_earlier_fingerprint_is_in_nothing_publish_writes_or_se
     doc = manifest["dossier"]["doc"]
     entry = next((tmp_path / "entry").rglob("*.json")).read_text(encoding="utf-8")
     body = json.dumps(request_body(manifest, b))
-    for name, text in [("e2er.json", (b / "e2er.json").read_text()), ("registry entry", entry), ("request", body)]:
+    for name, text in [
+        ("e2er.json", (b / "e2er.json").read_text(encoding="utf-8")),
+        ("registry entry", entry),
+        ("request", body),
+    ]:
         assert old not in text, f"{name} carries the fingerprint of the file before its redaction"
         assert kept in text, f"{name} lost the fingerprint of a file nobody redacted"
     steps = {s["specialist"]: s for s in doc["workflow"] if s.get("type") == "specialist"}

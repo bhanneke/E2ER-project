@@ -71,8 +71,8 @@ def test_failure_bundle_returns_full_structure(tmp_path):
     paper_id = str(uuid.uuid4())
     workspace = tmp_path / paper_id
     workspace.mkdir()
-    (workspace / "data_summary.md").write_text("# Data Summary\n\nAllium degraded.")
-    (workspace / "paper_plan.md").write_text("# Plan")
+    (workspace / "data_summary.md").write_text("# Data Summary\n\nAllium degraded.", encoding="utf-8", newline="\n")
+    (workspace / "paper_plan.md").write_text("# Plan", encoding="utf-8", newline="\n")
 
     events = [
         _event("circuit_breaker_tripped", {"specialist": "data_analyst", "attempts": 3}),

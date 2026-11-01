@@ -25,8 +25,9 @@ from src.modules.llm.claude_code import (
     _SPEC_WRITING_SPECIALISTS,
     allowed_tools_for,
 )
+from tests.platform_help import checkout_command
 
-WRAPPER = Path(__file__).resolve().parent.parent / "scripts" / "e2er-run"
+WRAPPER = checkout_command("e2er-run")
 
 
 # ── who gets the runner ──────────────────────────────────────────────────────
@@ -102,14 +103,16 @@ def test_other_specialists_are_not():
 
 
 def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([str(WRAPPER), *args], cwd=cwd, capture_output=True, text=True, timeout=60, check=False)
+    return subprocess.run(
+        [str(WRAPPER), *args], cwd=cwd, capture_output=True, encoding="utf-8", errors="replace", timeout=60, check=False
+    )
 
 
 @pytest.fixture()
 def sandbox(tmp_path: Path) -> Path:
-    (tmp_path / "ok.py").write_text("print('ran')\n")
-    (tmp_path / "bad.py").write_text("raise ValueError('boom')\n")
-    (tmp_path / "notpy.txt").write_text("x\n")
+    (tmp_path / "ok.py").write_text("print('ran')\n", encoding="utf-8", newline="\n")
+    (tmp_path / "bad.py").write_text("raise ValueError('boom')\n", encoding="utf-8", newline="\n")
+    (tmp_path / "notpy.txt").write_text("x\n", encoding="utf-8", newline="\n")
     return tmp_path
 
 

@@ -41,13 +41,13 @@ def _table(ws: Path, name: str, n: int, filled: int, *, extra: str = "") -> None
 
 
 def _dictionary(ws: Path, tables: list[dict]) -> None:
-    (ws / "data_dictionary.json").write_text(json.dumps({"tables": tables}))
+    (ws / "data_dictionary.json").write_text(json.dumps({"tables": tables}), encoding="utf-8", newline="\n")
 
 
 def test_a_table_of_dates_without_values_fails_the_data_contract(tmp_path: Path):
     _dictionary(tmp_path, [{"name": "dgs2", "source": "fred", "series": "DGS2"}])
     _table(tmp_path, "dgs2", 2765, 0)
-    (tmp_path / "data_summary.md").write_text("dgs2: 2,765 rows\n")
+    (tmp_path / "data_summary.md").write_text("dgs2: 2,765 rows\n", encoding="utf-8", newline="\n")
     [check] = check_declared_tables(tmp_path)
     assert not check.ok and check.artifact == "data.db"
     assert "dgs2.value: 0 of 2765 non-null (needs 90%)" in check.reason
@@ -93,7 +93,7 @@ def test_settings_strip_keys_from_the_environment_and_env_files(tmp_path: Path, 
     assert Settings(_env_file=None).fred_api_key == FRED_KEY
     monkeypatch.delenv("FRED_API_KEY")
     env = tmp_path / ".env"
-    env.write_text(f"FRED_API_KEY=' {FRED_KEY}'\nGITHUB_TOKEN=\" ghp_x \"\n")
+    env.write_text(f"FRED_API_KEY=' {FRED_KEY}'\nGITHUB_TOKEN=\" ghp_x \"\n", encoding="utf-8", newline="\n")
     s = Settings(_env_file=str(env))
     assert s.fred_api_key == FRED_KEY and s.github_token == "ghp_x"
 
@@ -210,15 +210,15 @@ def test_the_runtime_has_scipy_and_statsmodels():
     """The runner executes run_estimation.py with e2er's interpreter; both must import there."""
     import tomllib
 
-    deps = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["dependencies"]
+    deps = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
     assert any(d.startswith("scipy") for d in deps) and any(d.startswith("statsmodels") for d in deps)
 
 
 def test_the_econometrics_skills_forbid_hand_written_distributions():
-    schema = (ROOT / "skills/files/econometrics/estimation-results-schema.md").read_text()
+    schema = (ROOT / "skills/files/econometrics/estimation-results-schema.md").read_text(encoding="utf-8")
     assert "scipy.stats" in schema and "Never write your own" in schema
     assert "`hypothesis`" in schema and "exclusions" in schema
-    assert "scipy.stats" in (ROOT / "skills/files/econometrics/event-study.md").read_text()
+    assert "scipy.stats" in (ROOT / "skills/files/econometrics/event-study.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("df", [1, 2, 3, 5, 9, 19, 30, 120, 1000, 50000])

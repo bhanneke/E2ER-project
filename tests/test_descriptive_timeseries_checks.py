@@ -30,7 +30,7 @@ CLIMATE = ROOT / "tests" / "fixtures" / "replay" / "climate" / "files"
 
 
 def _write(path: Path, doc: object) -> None:
-    path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(doc, indent=2), encoding="utf-8", newline="\n")
 
 
 # ── the data check ──────────────────────────────────────────────────────────

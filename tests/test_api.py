@@ -104,7 +104,7 @@ def test_create_paper_manifest_content(client, tmp_path):
             },
         )
 
-    manifest = json.loads(Path(resp.json()["workspace"]).joinpath("manifest.json").read_text())
+    manifest = json.loads(Path(resp.json()["workspace"]).joinpath("manifest.json").read_text(encoding="utf-8"))
     assert manifest["title"] == "Bitcoin Volatility"
     assert manifest["mode"] == "iterative"
     assert manifest["current_stage"] == "idea"
@@ -184,9 +184,9 @@ def test_list_artifacts_returns_file_list(client, tmp_path):
     paper_id = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0"
     ws = tmp_path / "workspaces" / paper_id
     ws.mkdir(parents=True)
-    (ws / "paper_plan.md").write_text("# Plan")
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}")
-    (ws / ".gitignore").write_text("*.aux")  # hidden files excluded
+    (ws / "paper_plan.md").write_text("# Plan", encoding="utf-8", newline="\n")
+    (ws / "paper_draft.tex").write_text("\\documentclass{article}", encoding="utf-8", newline="\n")
+    (ws / ".gitignore").write_text("*.aux", encoding="utf-8", newline="\n")  # hidden files excluded
 
     with patch("src.api.app.get_settings") as mock_settings:
         mock_settings.return_value.workspace_root = str(tmp_path / "workspaces")

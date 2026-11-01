@@ -35,16 +35,16 @@ def _reanchor(bundle: Path) -> None:
     """What a forger does after editing: rewrite provenance.json's inventory from the disk."""
     from src.core.export.provenance import inventory
 
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     prov["files"] = inventory(bundle)
-    (bundle / "provenance.json").write_text(json.dumps(prov, indent=2))
+    (bundle / "provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8", newline="\n")
 
 
 def _edit_prov(bundle: Path, fn) -> None:
     p = bundle / "provenance.json"
-    d = json.loads(p.read_text())
+    d = json.loads(p.read_text(encoding="utf-8"))
     fn(d)
-    p.write_text(json.dumps(d, indent=2))
+    p.write_text(json.dumps(d, indent=2), encoding="utf-8", newline="\n")
 
 
 def _published(tmp_path: Path) -> Path:
@@ -69,7 +69,9 @@ def _published(tmp_path: Path) -> Path:
                 "dossier_id": did,
                 "content_id": m["content_id"],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     return b
 
@@ -91,7 +93,7 @@ def test_a_linked_folder_cannot_hide_or_inject_files(tmp_path: Path):
     b = _clean_bundle(tmp_path)
     moved = tmp_path / "results"
     shutil.move(str(b / "results"), moved)
-    (moved / "robustness_results.json").write_text("{}")
+    (moved / "robustness_results.json").write_text("{}", encoding="utf-8", newline="\n")
     os.symlink(moved, b / "results")
     status, detail = _checks(b)["integrity"]
     assert status == FAIL and "results" in detail
@@ -133,10 +135,10 @@ def test_forged_derivation_edges_fail(tmp_path: Path):
 def test_a_key_given_twice_is_refused(tmp_path: Path):
     b = _clean_bundle(tmp_path)
     p = b / "provenance.json"
-    text = p.read_text().replace(
+    text = p.read_text(encoding="utf-8").replace(
         '"files": {', '"files": {\n    "README.md": {"sha256": "' + "0" * 64 + '", "bytes": 0},', 1
     )
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8", newline="\n")
     status, detail = _checks(b)["integrity"]
     assert status == FAIL and "appears twice" in detail
 
@@ -144,11 +146,13 @@ def test_a_key_given_twice_is_refused(tmp_path: Path):
 @pytest.mark.parametrize(
     "write",
     [
-        lambda p: p.write_text("{"),
-        lambda p: p.write_text(json.dumps({"files": ["README.md"]})),
-        lambda p: p.write_text(json.dumps({"files": {"README.md": "abc"}})),
-        lambda p: p.write_text(json.dumps({"files": {"README.md": {"sha256": "x", "bytes": "1"}}})),
-        lambda p: p.write_text("[]"),
+        lambda p: p.write_text("{", encoding="utf-8", newline="\n"),
+        lambda p: p.write_text(json.dumps({"files": ["README.md"]}), encoding="utf-8", newline="\n"),
+        lambda p: p.write_text(json.dumps({"files": {"README.md": "abc"}}), encoding="utf-8", newline="\n"),
+        lambda p: p.write_text(
+            json.dumps({"files": {"README.md": {"sha256": "x", "bytes": "1"}}}), encoding="utf-8", newline="\n"
+        ),
+        lambda p: p.write_text("[]", encoding="utf-8", newline="\n"),
     ],
 )
 def test_malformed_provenance_fails_cleanly(tmp_path: Path, write, capsys):
@@ -168,14 +172,18 @@ def test_malformed_provenance_fails_cleanly(tmp_path: Path, write, capsys):
 def test_files_named_like_the_exempt_ones_are_checked_anywhere_but_the_root(tmp_path: Path, rel: str):
     b = _clean_bundle(tmp_path)
     (b / rel).parent.mkdir(parents=True, exist_ok=True)
-    (b / rel).write_text("{}")
+    (b / rel).write_text("{}", encoding="utf-8", newline="\n")
     status, detail = _checks(b)["integrity"]
     assert status == FAIL and "unlisted" in detail
 
 
 def test_an_edited_report_html_fails(tmp_path: Path):
     b = _clean_bundle(tmp_path)
-    (b / "report.html").write_text((b / "report.html").read_text().replace("Verify Me", "Something Else"))
+    (b / "report.html").write_text(
+        (b / "report.html").read_text(encoding="utf-8").replace("Verify Me", "Something Else"),
+        encoding="utf-8",
+        newline="\n",
+    )
     status, detail = _checks(b)["integrity"]
     assert status == FAIL and "report.html" in detail
 
@@ -244,9 +252,9 @@ def test_provenance_edited_and_reanchored_no_longer_matches_e2er_json(tmp_path: 
 )
 def test_e2er_json_that_does_not_describe_the_folder_fails(tmp_path: Path, edit, why, capsys):
     b = _published(tmp_path)
-    m = json.loads((b / "e2er.json").read_text())
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     edit(m)
-    (b / "e2er.json").write_text(json.dumps(m))
+    (b / "e2er.json").write_text(json.dumps(m), encoding="utf-8", newline="\n")
     status, detail = _checks(b)["anchor"]
     assert status == FAIL and why in detail
     assert verify(str(b)) == 1
@@ -263,15 +271,15 @@ def test_e2er_json_deleted_from_a_published_folder_fails(tmp_path: Path):
 
 def test_a_tampered_link_fails(tmp_path: Path):
     b = _published(tmp_path)
-    (b / ".e2er" / "link.json").write_text('{"content_id": "sha256:00"}')
+    (b / ".e2er" / "link.json").write_text('{"content_id": "sha256:00"}', encoding="utf-8", newline="\n")
     status, detail = _checks(b)["anchor"]
     assert status == FAIL and "link.json" in detail
 
 
 def _described_again(b: Path) -> tuple[dict, dict]:
     """The link of an earlier platform version, and e2er.json describing the folder since (a deposit without --to)."""
-    link = json.loads((b / ".e2er" / "link.json").read_text())
-    m = json.loads((b / "e2er.json").read_text())
+    link = json.loads((b / ".e2er" / "link.json").read_text(encoding="utf-8"))
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     link.update(dossier_id="sha256:" + "a" * 64, content_id="sha256:" + "b" * 64)
     return link, m
 
@@ -280,7 +288,7 @@ def test_a_link_to_an_earlier_platform_version_passes_when_it_records_this_descr
     b = _published(tmp_path)
     link, m = _described_again(b)
     link["described_here"] = {"content_id": m["content_id"], "dossier_id": m["dossier"]["id"], "at": "now"}
-    (b / ".e2er" / "link.json").write_text(json.dumps(link))
+    (b / ".e2er" / "link.json").write_text(json.dumps(link), encoding="utf-8", newline="\n")
     status, detail = _checks(b)["anchor"]
     assert status == PASS and "describes it again since version 1 on https://e2er.example" in detail
 
@@ -291,7 +299,7 @@ def test_a_link_recording_another_description_fails(tmp_path: Path, field: str):
     link, m = _described_again(b)
     link["described_here"] = {"content_id": m["content_id"], "dossier_id": m["dossier"]["id"]}
     link["described_here"][field] = "sha256:" + "c" * 64
-    (b / ".e2er" / "link.json").write_text(json.dumps(link))
+    (b / ".e2er" / "link.json").write_text(json.dumps(link), encoding="utf-8", newline="\n")
     status, detail = _checks(b)["anchor"]
     assert status == FAIL and "link.json names another" in detail
 
@@ -334,7 +342,7 @@ def _study_record(content_id: str, dossier_id: str) -> dict:
 def test_against_the_published_study_anchors_the_folder(tmp_path: Path, site, capsys):
     records, seen = site
     b = _published(tmp_path)
-    m = json.loads((b / "e2er.json").read_text())
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     records["/api/v1/studies/bhanneke/demo"] = _study_record(m["content_id"], m["dossier"]["id"])
     assert verify(str(b), against="https://e2er.example/bhanneke/demo") == 0
     out = capsys.readouterr().out
@@ -346,20 +354,22 @@ def test_against_the_published_study_anchors_the_folder(tmp_path: Path, site, ca
 def test_against_catches_a_consistent_rewrite_of_the_whole_folder(tmp_path: Path, site):
     records, _ = site
     b = _published(tmp_path)
-    m = json.loads((b / "e2er.json").read_text())
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     records["/api/v1/studies/bhanneke/demo"] = _study_record(m["content_id"], m["dossier"]["id"])
     # the forger edits the paper, re-anchors provenance.json and rewrites e2er.json and the link
     tex = b / "paper" / "paper.tex"
-    tex.write_text(tex.read_text().replace("See", "We find a large effect. See"))
+    tex.write_text(
+        tex.read_text(encoding="utf-8").replace("See", "We find a large effect. See"), encoding="utf-8", newline="\n"
+    )
     _reanchor(b)
-    files = json.loads((b / "provenance.json").read_text())["files"]
+    files = json.loads((b / "provenance.json").read_text(encoding="utf-8"))["files"]
     for o in m["outputs"]:
         o["sha256"] = files[o["path"]]["sha256"]
     m["content_id"] = "sha256:" + _sha(b / "provenance.json")
-    (b / "e2er.json").write_text(json.dumps(m))
-    link = json.loads((b / ".e2er" / "link.json").read_text())
+    (b / "e2er.json").write_text(json.dumps(m), encoding="utf-8", newline="\n")
+    link = json.loads((b / ".e2er" / "link.json").read_text(encoding="utf-8"))
     link["content_id"] = m["content_id"]
-    (b / ".e2er" / "link.json").write_text(json.dumps(link))
+    (b / ".e2er" / "link.json").write_text(json.dumps(link), encoding="utf-8", newline="\n")
     assert verify(str(b)) == 0  # the folder agrees with itself
     assert verify(str(b), against="https://e2er.example/bhanneke/demo") == 1
 
@@ -367,13 +377,15 @@ def test_against_catches_a_consistent_rewrite_of_the_whole_folder(tmp_path: Path
 def test_against_a_dossier_address_and_a_saved_file(tmp_path: Path, site, capsys):
     records, _ = site
     b = _published(tmp_path)
-    m = json.loads((b / "e2er.json").read_text())
+    m = json.loads((b / "e2er.json").read_text(encoding="utf-8"))
     short = m["dossier"]["id"].removeprefix("sha256:")[:16]
     records[f"/api/v1/dossiers/{short}"] = m["dossier"]["doc"]
     assert verify(str(b), against=f"https://e2er.example/d/{short}") == 0
     assert "fixes the data files only" in capsys.readouterr().out
     saved = tmp_path / "study.json"
-    saved.write_text(json.dumps(_study_record("sha256:" + "9" * 64, m["dossier"]["id"])))
+    saved.write_text(
+        json.dumps(_study_record("sha256:" + "9" * 64, m["dossier"]["id"])), encoding="utf-8", newline="\n"
+    )
     assert verify(str(b), against_file=str(saved)) == 1
 
 
@@ -390,14 +402,16 @@ def test_deleting_the_preregistration_lock_fails_the_required_check(tmp_path: Pa
     from src.core.export.provenance import write_provenance
 
     b = _clean_bundle(tmp_path)
-    (b / "design" / "preregistration.md").write_text("# Plan\n")
+    (b / "design" / "preregistration.md").write_text("# Plan\n", encoding="utf-8", newline="\n")
     (b / "design" / "preregistration.lock.json").write_text(
         json.dumps(
             {"file": "preregistration.md", "sha256": _sha(b / "design" / "preregistration.md"), "frozen_at": "x"}
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     write_provenance(b, {"paper_id": "p1", "governance": "full"}, exported_at="20261001")
-    assert json.loads((b / "provenance.json").read_text())["run"]["preregistration"]
+    assert json.loads((b / "provenance.json").read_text(encoding="utf-8"))["run"]["preregistration"]
     (b / "design" / "preregistration.lock.json").unlink()
     _reanchor(b)
     status, detail = _checks(b)["preregistration"]
@@ -409,7 +423,7 @@ def test_a_replication_without_its_report_fails_instead_of_looking_like_a_paper(
 
     b = tmp_path / "repl"
     (b / "misc").mkdir(parents=True)
-    (b / "misc" / "notes.md").write_text("x")
+    (b / "misc" / "notes.md").write_text("x", encoding="utf-8", newline="\n")
     write_provenance(b, {"paper_id": "p1", "pipeline": "replication"}, exported_at="20261001")
     status, detail = _checks(b)["reproduction"]
     assert status == FAIL and "replication template" in detail
@@ -424,13 +438,17 @@ def test_zero_citations_and_zero_table_cells_are_skips_not_passes(tmp_path: Path
     b = tmp_path / "b"
     (b / "paper").mkdir(parents=True)
     (b / "results").mkdir()
-    (b / "paper" / "paper.tex").write_text("\\begin{document}No tables, no citations.\\end{document}\n")
-    (b / "results" / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {}}}))
+    (b / "paper" / "paper.tex").write_text(
+        "\\begin{document}No tables, no citations.\\end{document}\n", encoding="utf-8", newline="\n"
+    )
+    (b / "results" / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {}}}), encoding="utf-8", newline="\n"
+    )
     write_provenance(b, {"paper_id": "p1"}, exported_at="20261001")
     # An export of e2er 0.16.0, before output records: "results from code" is skipped too.
-    prov = json.loads((b / "provenance.json").read_text())
+    prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
     prov["run"]["e2er_version"] = "0.16.0"
-    (b / "provenance.json").write_text(json.dumps(prov))
+    (b / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     c = _checks(b)
     assert c["citations"][0] == SKIP and "cites nothing" in c["citations"][1]
     assert c["numbers"][0] == SKIP
@@ -454,7 +472,11 @@ def test_the_banner_names_exactly_the_checks_that_passed(tmp_path: Path, capsys)
 def test_a_table_cell_that_is_no_source_value_fails(tmp_path: Path, cell: str):
     b = _clean_bundle(tmp_path)
     tex = b / "paper" / "paper.tex"
-    tex.write_text(tex.read_text().replace("Treatment & 12.5", f"Treatment & 12.5 & {cell}"))
+    tex.write_text(
+        tex.read_text(encoding="utf-8").replace("Treatment & 12.5", f"Treatment & 12.5 & {cell}"),
+        encoding="utf-8",
+        newline="\n",
+    )
     _reanchor(b)
     status, detail = _checks(b)["numbers"]
     assert status == FAIL and cell in detail
@@ -463,6 +485,8 @@ def test_a_table_cell_that_is_no_source_value_fails(tmp_path: Path, cell: str):
 def test_a_rounded_cell_passes(tmp_path: Path):
     b = _clean_bundle(tmp_path)
     res = b / "results" / "estimation_results.json"
-    res.write_text(json.dumps({"main": {"coefficients": {"treat": {"estimate": 12.4987}}}}))
+    res.write_text(
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 12.4987}}}}), encoding="utf-8", newline="\n"
+    )
     _reanchor(b)
     assert _checks(b)["numbers"][0] == PASS

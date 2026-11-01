@@ -25,7 +25,8 @@ def test_manifest_is_current():
         [sys.executable, str(SCRIPT), "--check"],
         cwd=REPO,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     assert result.returncode == 0, (
         f"{MANIFEST.relative_to(REPO)} is stale — run scripts/gen_specialist_manifest.py\n{result.stderr}"

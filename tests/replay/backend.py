@@ -224,6 +224,7 @@ class ReplayBackend(LLMBackend):
                 continue
             self._write(workspace, folder, rel, paper_id or "", replace.get(rel) or [])
             written.append(rel)
+        _times_in_order(workspace, written)
         u = rec.get("usage") or {}
         return ToolLoopResult(
             success=True,
@@ -255,6 +256,14 @@ class ReplayBackend(LLMBackend):
             return own
         return self.base_root / "files" / specialist / rel
 
+    def _recorded_files(self, specialist: str) -> list[str]:
+        """The files the recording of ``specialist`` lists, in this scenario or the one it builds on."""
+        own = (self.scenario.get("specialists", {}).get(specialist) or {}).get("files")
+        if own or self.base_root is None:
+            return list(own or [])
+        base = json.loads((self.base_root / "scenario.json").read_text(encoding="utf-8"))
+        return list((base.get("specialists", {}).get(specialist) or {}).get("files") or [])
+
     def _write(self, workspace: Path, specialist: str, rel: str, paper_id: str, replace: list[list[str]]) -> None:
         src = self._source(specialist, rel)
         dest = workspace / rel
@@ -268,12 +277,19 @@ class ReplayBackend(LLMBackend):
             shutil.copyfile(src, dest)
             return
         text = src.read_text(encoding="utf-8")
-        text = text.replace("@@WORKSPACE@@", str(workspace.resolve())).replace("@@PAPER_ID@@", paper_id)
+        # Forward slashes: the recorded files put the path into Python strings and JSON, where a Windows path's
+        # backslashes are escapes (C:\\Users: "truncated \\UXXXXXXXX escape"); Windows takes C:/Users/… as well.
+        text = text.replace("@@WORKSPACE@@", workspace.resolve().as_posix()).replace("@@PAPER_ID@@", paper_id)
         for old, new in replace:
             if old not in text:
                 raise AssertionError(f"replay override: {old!r} not found in {specialist}/{rel}")
             text = text.replace(old, new)
-        dest.write_text(text, encoding="utf-8")
+        # A recording's JSON next to its scripts is a script's output (estimation_results.json): written in this
+        # system's text mode, as the script writes it (CRLF on Windows), or e2er's script log sees it "changed
+        # after the script last wrote it". Everything else as the specialist wrote it, with LF.
+        files = self._recorded_files(specialist)
+        script_output = rel.endswith(".json") and any(str(f).endswith(".py") for f in files)
+        dest.write_text(text, encoding="utf-8", newline=None if script_output else "\n")
 
     def _strategist(self, system: str, messages: list[dict[str, Any]], t0: float) -> ToolLoopResult:
         prompt = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "user")
@@ -349,6 +365,21 @@ def _merge(src: Path, dest: Path) -> None:
 
         seen = {key(x) for x in mine.get("loads") or []}
         mine["loads"] = (mine.get("loads") or []) + [x for x in recorded.get("loads") or [] if key(x) not in seen]
-        dest.write_text(json.dumps(mine, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        dest.write_text(json.dumps(mine, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         return
     raise AssertionError(f"replay: no merge for {dest.name}")
+
+
+def _times_in_order(workspace: Path, written: list[str]) -> None:
+    """Give a call's files increasing modification times (1 ms apart, ending now) in the order the recording lists
+    them, as the recorded run wrote them, seconds apart.
+
+    The replay writes them within a millisecond, and Windows takes a file's time from a clock that advances every
+    ~16 ms: files written in one tick had the same time, and e2er's order by file times (a workspace with no script
+    log, reproduce_recipe.chain_of) left out revise_estimation.py, written in the tick of run_estimation.py (Windows
+    CI, 2026-10-30). ``os.utime`` sets the time exactly, whatever the clock's tick.
+    """
+    end = time.time_ns()
+    for i, rel in enumerate(written):
+        t = end - (len(written) - 1 - i) * 1_000_000
+        os.utime(workspace / rel, ns=(t, t))

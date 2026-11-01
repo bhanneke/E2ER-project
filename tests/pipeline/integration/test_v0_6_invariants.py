@@ -92,9 +92,11 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
                 "methodology": "empirical",
                 "current_stage": "review",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "paper_draft.tex").write_text(_DRAFT)
+    (ws / "paper_draft.tex").write_text(_DRAFT, encoding="utf-8", newline="\n")
     return ws
 
 
@@ -121,7 +123,9 @@ def _review_file(ws: Path, reviewer: str, score: float, recommendation: str) -> 
         "writing_reviewer": "review_writing.md",
     }[reviewer]
     (ws / artifact).write_text(
-        f"# Review from {reviewer}\n\nIssues.\n\nOVERALL SCORE: {score:.1f}/10\nRECOMMENDATION: {recommendation}\n"
+        f"# Review from {reviewer}\n\nIssues.\n\nOVERALL SCORE: {score:.1f}/10\nRECOMMENDATION: {recommendation}\n",
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -172,7 +176,7 @@ class TestLegacyRevisorNeverDispatched:
         async def _capture(work_order, *args, **kwargs):
             dispatched.append(work_order.specialist)
             if work_order.specialist == "patch_revisor":
-                (ws / "paper_draft.tex.edits.json").write_text("[]")
+                (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
             return Contribution(
                 paper_id=runner._paper_id,
                 specialist=work_order.specialist,
@@ -217,7 +221,7 @@ class TestLegacyRevisorNeverDispatched:
         async def _capture(work_order, *args, **kwargs):
             dispatched.append(work_order.specialist)
             if work_order.specialist == "patch_revisor":
-                (ws / "paper_draft.tex.edits.json").write_text("[]")
+                (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
             return Contribution(
                 paper_id=runner._paper_id,
                 specialist=work_order.specialist,
@@ -247,7 +251,9 @@ class TestLegacyRevisorNeverDispatched:
         runner = _runner(tmp_path, mock_llm)
         ws = runner._workspace
         # Force verify_numbers to find a critical mismatch
-        (ws / "estimation_results.json").write_text(json.dumps({"main": {"coef": 0.50, "se": 0.10}}))
+        (ws / "estimation_results.json").write_text(
+            json.dumps({"main": {"coef": 0.50, "se": 0.10}}), encoding="utf-8", newline="\n"
+        )
 
         dispatched: list[str] = []
 
@@ -310,7 +316,9 @@ async def test_review_plus_verify_numbers_findings_both_reach_patch_revisor(tmp_
                     }
                 ],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
     captured = [""]
@@ -318,7 +326,7 @@ async def test_review_plus_verify_numbers_findings_both_reach_patch_revisor(tmp_
     async def _capture(work_order, *args, **kwargs):
         if work_order.specialist == "patch_revisor":
             captured[0] = work_order.focus
-            (ws / "paper_draft.tex.edits.json").write_text("[]")
+            (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
         return Contribution(
             paper_id=runner._paper_id,
             specialist=work_order.specialist,
@@ -393,7 +401,9 @@ async def test_merger_refuses_out_of_scope_edit_from_major_revision_site(tmp_pat
                             "replace": "something else",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -421,7 +431,7 @@ async def test_merger_refuses_out_of_scope_edit_from_major_revision_site(tmp_pat
     # revision round changed nothing and the run completes (after 0.13.1).
     assert result == PaperStatus.COMPLETED
     # The draft was NOT modified
-    assert (ws / "paper_draft.tex").read_text() == _DRAFT
+    assert (ws / "paper_draft.tex").read_text(encoding="utf-8") == _DRAFT
 
 
 # ---------------------------------------------------------------------------

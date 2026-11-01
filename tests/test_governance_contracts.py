@@ -317,8 +317,10 @@ async def test_cascade_guard_halts_in_every_regime(tmp_path: Path):
 
 
 async def test_cascade_guard_silent_when_artifacts_present(tmp_path: Path):
-    (tmp_path / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {"x": {"estimate": 1}}}}))
-    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 50)
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"x": {"estimate": 1}}}}), encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "econometric_spec.md").write_text("# Spec\n" + "content " * 50, encoding="utf-8", newline="\n")
     logged = AsyncMock(return_value=None)
     with patch("src.db.events.log_event", new=logged):
         await guard_artifacts(_missing_artifact_contribs(), tmp_path, "off")

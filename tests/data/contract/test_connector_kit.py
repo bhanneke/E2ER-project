@@ -236,13 +236,13 @@ def test_a_new_source_loads_records_and_cites(ws: Path, fake: Source, capsys: py
     assert code == 0, out
     assert out["items"] == [{"year": 2020, "v": 1.5}, {"year": 2021, "v": None}]
     assert out["recorded_in"] == ["data_sources.json", "data_dictionary.json"] and out["citation_added"] is True
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "fakestat" and load["version"] == "v3" and load["cite_key"] == "FakeStat2026"
     assert load["request"] == {"command": "obs", "series": "GDP", "countries": ["DEU", "FRA"], "annual": True}
     assert load["query"] == f"{API}/obs?series=GDP"
-    [entry] = json.loads((ws / "data_dictionary.json").read_text())["tables"]
+    [entry] = json.loads((ws / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
     assert entry["source"] == "fakestat" and entry["version"] == "v3"
-    assert "@misc{FakeStat2026," in (ws / "literature.bib").read_text()
+    assert "@misc{FakeStat2026," in (ws / "literature.bib").read_text(encoding="utf-8")
 
 
 def test_a_source_whose_data_may_not_be_passed_on_gets_terms_and_a_reload(fake: Source) -> None:
@@ -437,7 +437,7 @@ async def test_a_cassette_records_once_and_replays_offline(tmp_path: Path) -> No
         with use_cassette(path, record=True):
             async with PoliteClient("t") as http:
                 assert await http.get_text("https://x.org/v", {"z": 1, "a": 2}) == "a,b\n1,2\n"
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     assert doc["interactions"][0]["url"] == "https://x.org/v?a=2&z=1"
     with use_cassette(path):  # no respx, no network
         async with PoliteClient("t") as http:

@@ -33,10 +33,10 @@ def _bundle(tmp_path: Path) -> Path:
     """A synthetic export bundle with the report files the edge derivation reads."""
     b = tmp_path / "bundle"
     (b / "paper").mkdir(parents=True)
-    (b / "paper" / "paper.tex").write_text("\\cite{smith2021}")
+    (b / "paper" / "paper.tex").write_text("\\cite{smith2021}", encoding="utf-8", newline="\n")
     (b / "results" / "figures").mkdir(parents=True)
     (b / "results" / "estimation_results.json").write_text(
-        json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.042}}}})
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.042}}}}), encoding="utf-8", newline="\n"
     )
     (b / "results" / "number_verification.json").write_text(
         json.dumps(
@@ -53,9 +53,11 @@ def _bundle(tmp_path: Path) -> Path:
                     }
                 ],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
-    (b / "results" / "figure_spec.json").write_text(json.dumps({"figures": []}))
+    (b / "results" / "figure_spec.json").write_text(json.dumps({"figures": []}), encoding="utf-8", newline="\n")
     (b / "results" / "figures" / "fig1.pdf").write_bytes(b"%PDF")
     (b / "reviews").mkdir()
     (b / "reviews" / "citation_integrity.json").write_text(
@@ -65,15 +67,17 @@ def _bundle(tmp_path: Path) -> Path:
                     {"cite_key": "smith2021", "status": "verified_doi", "verifier": "openalex", "matched_doi": "10.1/x"}
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     (b / "code" / "scratch").mkdir(parents=True)
-    (b / "code" / "run_estimation.py").write_text("import pandas")
-    (b / "code" / "scratch" / "run_estimation.log").write_text("ok")
+    (b / "code" / "run_estimation.py").write_text("import pandas", encoding="utf-8", newline="\n")
+    (b / "code" / "scratch" / "run_estimation.log").write_text("ok", encoding="utf-8", newline="\n")
     (b / "data").mkdir()
     (b / "data" / "data.db").write_bytes(b"SQLite format 3\x00")
     (b / "replication").mkdir()
-    (b / "replication" / "data_queries.sql").write_text("SELECT 1;")
+    (b / "replication" / "data_queries.sql").write_text("SELECT 1;", encoding="utf-8", newline="\n")
     return b
 
 
@@ -93,7 +97,7 @@ def test_inventory_hashes_every_file(tmp_path: Path):
 
 def test_inventory_excludes_provenance_itself(tmp_path: Path):
     b = _bundle(tmp_path)
-    (b / PROVENANCE_FILE).write_text("{}")
+    (b / PROVENANCE_FILE).write_text("{}", encoding="utf-8", newline="\n")
     assert PROVENANCE_FILE not in inventory(b)
 
 
@@ -130,9 +134,11 @@ def test_source_key_convention_matches_verify_numbers(tmp_path: Path):
 
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.042}}}}))
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 0.042}}}}), encoding="utf-8", newline="\n"
+    )
     tex = ws / "paper.tex"
-    tex.write_text("\\begin{tabular}{c}\n0.042 \\\\\n\\end{tabular}\n")
+    tex.write_text("\\begin{tabular}{c}\n0.042 \\\\\n\\end{tabular}\n", encoding="utf-8", newline="\n")
 
     report = verify_numbers(tex, ws)
     assert report.matched_cells, "fixture should match at least one cell"
@@ -165,7 +171,7 @@ def test_run_metadata_from_manifest(tmp_path: Path):
 def test_degrades_gracefully_without_reports(tmp_path: Path):
     b = tmp_path / "empty"
     (b / "paper").mkdir(parents=True)
-    (b / "paper" / "paper.tex").write_text("x")
+    (b / "paper" / "paper.tex").write_text("x", encoding="utf-8", newline="\n")
     prov = build_provenance(b, {"paper_id": "p"}, exported_at="20260627")
     assert prov["edges"] == []
     assert "paper/paper.tex" in prov["files"]
@@ -179,12 +185,14 @@ def test_write_provenance_round_trips_and_validates(tmp_path: Path):
     b = _bundle(tmp_path)
     path = write_provenance(b, MANIFEST, exported_at="20260627")
     assert path.name == PROVENANCE_FILE
-    doc = json.loads(path.read_text())
+    doc = json.loads(path.read_text(encoding="utf-8"))
     assert doc["run"]["e2er_version"]  # non-empty (real version or "unknown")
 
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(
-        (Path(__file__).resolve().parent.parent / "docs" / "schemas" / "provenance.schema.json").read_text()
+        (Path(__file__).resolve().parent.parent / "docs" / "schemas" / "provenance.schema.json").read_text(
+            encoding="utf-8"
+        )
     )
     jsonschema.validate(doc, schema)  # raises on non-conformance
 

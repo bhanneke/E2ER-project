@@ -163,7 +163,9 @@ def test_the_sources_are_added_once_and_an_existing_key_is_kept(tmp_path: Path):
 
     spec = find_spec("text-analysis")
     (tmp_path / "literature.bib").write_text(
-        "@article{blei2003latent,\n  title = {Mine},\n  e2er_source = {researcher},\n}\n", encoding="utf-8"
+        "@article{blei2003latent,\n  title = {Mine},\n  e2er_source = {researcher},\n}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     added = add_method_sources(tmp_path, spec)
     assert len(added) == 8 and "blei2003latent" not in added
@@ -203,8 +205,10 @@ def test_the_dossier_and_the_finish_page_name_them_method_sources(tmp_path: Path
     paper = tmp_path / "bundle" / "paper"
     paper.mkdir(parents=True)
     add_method_sources(tmp_path, find_spec("text-analysis"))
-    (paper / "refs.bib").write_text((tmp_path / "literature.bib").read_text(encoding="utf-8"), encoding="utf-8")
-    (paper / "paper.tex").write_text("G2 \\citep{dunning1993accurate}.", encoding="utf-8")
+    (paper / "refs.bib").write_text(
+        (tmp_path / "literature.bib").read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+    )
+    (paper / "paper.tex").write_text("G2 \\citep{dunning1993accurate}.", encoding="utf-8", newline="\n")
     refs = _references(tmp_path / "bundle")
     assert refs == [
         {
@@ -224,7 +228,7 @@ async def test_the_citation_check_verifies_a_method_source_like_any_reference(tm
 
     add_method_sources(tmp_path, find_spec("text-analysis"))
     draft = tmp_path / "paper_draft.tex"
-    draft.write_text("NMF \\citep{lee1999learning}.", encoding="utf-8")
+    draft.write_text("NMF \\citep{lee1999learning}.", encoding="utf-8", newline="\n")
     found = PaperMetadata(
         title="Learning the parts of objects by non-negative matrix factorization", doi="10.1038/44565"
     )
@@ -250,7 +254,7 @@ async def test_the_citation_check_verifies_a_method_source_like_any_reference(tm
 def _text_check(ws: Path, models: list[str]) -> None:
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "text_check.json").write_text(
-        json.dumps({"passed": True, "notes": [], "seed_independent_models": models}), encoding="utf-8"
+        json.dumps({"passed": True, "notes": [], "seed_independent_models": models}), encoding="utf-8", newline="\n"
     )
 
 
@@ -296,14 +300,16 @@ def test_the_draft_writers_contract_sends_the_claim_back(tmp_path: Path):
     from src.core.specialists.contract_check import check_draft_phrases, check_patch_phrases
 
     _text_check(tmp_path, ["topics"])
-    (tmp_path / "paper_draft.tex").write_text(CLAIMS[0], encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(CLAIMS[0], encoding="utf-8", newline="\n")
     result = check_draft_phrases(tmp_path, "paper_draft.tex")
     assert not result.ok and "stability across seeds" in result.reason
     (tmp_path / "paper_draft.tex.edits.json").write_text(
-        json.dumps({"edits": [{"edit_type": "replace_text", "find": "x", "replace": CLAIMS[2]}]}), encoding="utf-8"
+        json.dumps({"edits": [{"edit_type": "replace_text", "find": "x", "replace": CLAIMS[2]}]}),
+        encoding="utf-8",
+        newline="\n",
     )
     assert not check_patch_phrases(tmp_path).ok
-    (tmp_path / "paper_draft.tex").write_text(HONEST[0], encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(HONEST[0], encoding="utf-8", newline="\n")
     assert check_draft_phrases(tmp_path, "paper_draft.tex").ok
 
 
@@ -323,6 +329,6 @@ def test_method_sources_alone_do_not_make_a_draft_without_citations_fail(tmp_pat
 
     add_method_sources(tmp_path, find_spec("text-analysis"))
     assert study_references(tmp_path) == 0
-    with (tmp_path / "literature.bib").open("a", encoding="utf-8") as f:
+    with (tmp_path / "literature.bib").open("a", encoding="utf-8", newline="\n") as f:
         f.write("\n@article{web2021found,\n  title = {Found},\n  e2er_source = {web},\n}\n")
     assert study_references(tmp_path) == 1

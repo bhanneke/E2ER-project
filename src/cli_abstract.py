@@ -108,7 +108,7 @@ def _workspace(bundle: Path, ws: Path, template: str) -> None:
     question, title = _question_and_title(bundle)
     manifest = _load(ws / "manifest.json") or {}
     manifest.update({"pipeline": template, "title": title, "research_question": question})
-    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
 
 
 def _report_with(report: str, text: str) -> str:
@@ -210,7 +210,7 @@ def rewrite(
             write_abstract_findings(ws, collect_abstract_findings(ws, spec.panel()))
             economics = active_economics()
             if supplied is not None:
-                (ws / ab.ABSTRACT_FILE).write_text(supplied, encoding="utf-8")
+                (ws / ab.ABSTRACT_FILE).write_text(supplied, encoding="utf-8", newline="\n")
                 checked = ab.check_workspace(ws, economics=economics)
                 outcome = ab.AbstractOutcome(passed=checked.passed, attempts=1, check=checked)
             else:
@@ -274,9 +274,9 @@ def rewrite(
                 path.write_bytes(data)
 
     try:
-        (b / "paper" / "abstract.tex").write_text(new_abstract, encoding="utf-8")
+        (b / "paper" / "abstract.tex").write_text(new_abstract, encoding="utf-8", newline="\n")
         tex = b / "paper" / "paper.tex"
-        tex.write_text(ab.insert(tex.read_text(encoding="utf-8"), new_abstract), encoding="utf-8")
+        tex.write_text(ab.insert(tex.read_text(encoding="utf-8"), new_abstract), encoding="utf-8", newline="\n")
         try:
             (compile_pdf or recompile_paper)(b)
         except PublishError as e:
@@ -284,7 +284,9 @@ def rewrite(
         report = b / "report.html"
         if report.is_file():
             report.write_text(
-                _report_with(report.read_text(encoding="utf-8"), ab.readable(new_abstract)), encoding="utf-8"
+                _report_with(report.read_text(encoding="utf-8"), ab.readable(new_abstract)),
+                encoding="utf-8",
+                newline="\n",
             )
         kind = ab.AMENDMENT_KIND if supplied is None else ab.EDITED_KIND
         why = ab.AMENDMENT_REASON if supplied is None else str(reason).strip()
@@ -322,7 +324,7 @@ def rewrite(
             prov.setdefault("amendments", []).append(entry)
             written.append(entry)
         prov["files"] = dict(sorted(listed.items()))
-        (b / "provenance.json").write_text(dump(prov), encoding="utf-8")
+        (b / "provenance.json").write_text(dump(prov), encoding="utf-8", newline="\n")
 
         from .cli_verify import _run_checks, _verdict
 

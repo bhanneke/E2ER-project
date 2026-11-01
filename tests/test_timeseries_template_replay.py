@@ -127,7 +127,13 @@ def test_a_forecasting_study_replays_to_the_end_with_its_hold_out_frozen_before_
     bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
     for name in ("design/forecast_design.json", "design/holdout_freeze.json", "results/forecast_check.json"):
         assert (bundle / name).is_file(), name
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     db = tmp_path / "home" / ".e2er" / "papers.db"
     out = subprocess.run(
@@ -136,11 +142,20 @@ def test_a_forecasting_study_replays_to_the_end_with_its_hold_out_frozen_before_
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout and "[PASS] results contract" in out.stdout, out.stdout
     out = subprocess.run(
@@ -148,7 +163,8 @@ def test_a_forecasting_study_replays_to_the_end_with_its_hold_out_frozen_before_
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=600,
     )
     assert out.returncode == 0, out.stdout + out.stderr
@@ -177,7 +193,7 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
     run.mkdir()
     shutil.copy(CLIMATE / "files" / "data_analyst" / "data.db", run / "data.db")
     (run / "run_estimation.py").write_text(
-        (econ / "run_estimation.py").read_text(encoding="utf-8").replace(*leak), encoding="utf-8"
+        (econ / "run_estimation.py").read_text(encoding="utf-8").replace(*leak), encoding="utf-8", newline="\n"
     )
     subprocess.run([sys.executable, "run_estimation.py"], cwd=run, check=True)
     recorded = (econ / "estimation_results.json").read_text(encoding="utf-8")
@@ -188,6 +204,7 @@ def test_a_model_fitted_on_the_hold_out_stops_the_run_until_the_analysis_is_redo
         # Leaky twice: the check before the draft sends the analysis back once, then stops the run.
         json.dumps({"econometrics_specialist": {"attempts": [{"replace": replace}, {"replace": replace}]}}),
         encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(overrides))  # read by the server the next line starts
     with _replay_server(tmp_path, "climate", []) as (api, _study):

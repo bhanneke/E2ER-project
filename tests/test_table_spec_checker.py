@@ -26,16 +26,17 @@ from src.core.renderer.check_tables import (
     check,
     main,
 )
+from tests.platform_help import checkout_command
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WRAPPER = REPO_ROOT / "scripts" / "e2er-check-tables"
+WRAPPER = checkout_command("e2er-check-tables")
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
 
 
 def _write(ws: Path, name: str, obj) -> None:
-    (ws / name).write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    (ws / name).write_text(json.dumps(obj, indent=2), encoding="utf-8", newline="\n")
 
 
 #: Canary #6's estimation output, trimmed to the fields the spec touches.
@@ -251,7 +252,7 @@ def test_missing_spec_cannot_be_checked(tmp_path: Path):
 
 
 def test_unparseable_spec_cannot_be_checked(tmp_path: Path):
-    (tmp_path / "table_spec.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / "table_spec.json").write_text("{not json", encoding="utf-8", newline="\n")
     code, text = check(tmp_path)
     assert code == EXIT_CANNOT_CHECK
     assert "could not be checked" in text
@@ -302,7 +303,8 @@ def test_wrapper_rejects_arguments(tmp_path: Path):
         [str(WRAPPER), "table_spec.json"],
         cwd=tmp_path,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=60,
     )
     assert proc.returncode == 2
@@ -318,7 +320,8 @@ def test_wrapper_checks_the_directory_it_was_called_from(canary6: Path):
         [str(WRAPPER)],
         cwd=canary6,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
         env=env,
     )

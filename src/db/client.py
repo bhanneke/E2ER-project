@@ -130,7 +130,7 @@ async def get_pool():
             max_size=10,
             open=False,
         )
-        await _pool.open()
+        await _pool.open(encoding="utf-8")
     return _pool
 
 

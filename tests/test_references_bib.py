@@ -18,7 +18,7 @@ def test_write_literature_bib_keys_match_cite_keys(tmp_path: Path):
         PaperMetadata(title="Blockchain Institutions", authors=["H. Halaburda"], year=2023),
     ]
     _write_literature_bib(tmp_path, items)
-    bib = (tmp_path / "literature.bib").read_text()
+    bib = (tmp_path / "literature.bib").read_text(encoding="utf-8")
     assert bib.count("@article") == 2
     # The generated bib keys are exactly the keys a drafter naturally cites.
     for it in items:
@@ -26,10 +26,10 @@ def test_write_literature_bib_keys_match_cite_keys(tmp_path: Path):
 
 
 def test_write_literature_bib_dedupes_and_preserves_existing(tmp_path: Path):
-    (tmp_path / "literature.bib").write_text("@article{existing2020foo, title={Foo}}\n")
+    (tmp_path / "literature.bib").write_text("@article{existing2020foo, title={Foo}}\n", encoding="utf-8", newline="\n")
     items = [PaperMetadata(title="Foo Bar", authors=["Zoe Q"], year=2021)]
     _write_literature_bib(tmp_path, items)
-    bib = (tmp_path / "literature.bib").read_text()
+    bib = (tmp_path / "literature.bib").read_text(encoding="utf-8")
     assert "existing2020foo" in bib  # a pre-existing save_bibtex entry is kept
     assert items[0].bibtex_key in bib
 
@@ -80,7 +80,9 @@ def test_every_offered_reference_is_in_the_bib_with_the_key_the_prompt_shows(tmp
     bib = tmp_path / "refs.bib"
     bib.write_text(
         "@article{Bernanke:2005, title={What Explains the Stock Market's Reaction},"
-        " author={Bernanke, Ben}, year={2005}}\n"
+        " author={Bernanke, Ben}, year={2005}}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     zotero = [PaperMetadata(title="From Zotero Online", authors=["Zed Otero"], year=2019, source="zotero")]
     settings = SimpleNamespace(

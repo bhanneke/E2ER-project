@@ -10,6 +10,8 @@ Hermetic. Verifies:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.db.client import _resolve_backend, _sqlite_path, _translate_to_sqlite
@@ -34,7 +36,7 @@ def test_resolve_backend_rejects_unknown_scheme():
 def test_sqlite_path_default():
     """Empty URL → ~/.e2er/papers.db (expanded)."""
     p = _sqlite_path("")
-    assert p.endswith("/.e2er/papers.db")
+    assert Path(p).parts[-2:] == (".e2er", "papers.db")  # the system's own separators
     assert "~" not in p, "tilde should be expanded"
 
 
@@ -44,7 +46,7 @@ def test_sqlite_path_explicit():
     sqlite:////abs/x.db   → absolute (four slashes for an absolute path)
     """
     assert _sqlite_path("sqlite:///relative.db") == "relative.db"
-    assert _sqlite_path("sqlite:////abs/path/x.db") == "/abs/path/x.db"
+    assert Path(_sqlite_path("sqlite:////abs/path/x.db")) == Path("/abs/path/x.db")
 
 
 def test_sqlite_path_expands_tilde():
@@ -53,7 +55,7 @@ def test_sqlite_path_expands_tilde():
 
     p = _sqlite_path("sqlite:///~/.e2er/custom.db")
     assert p.startswith(os.path.expanduser("~"))
-    assert p.endswith("/.e2er/custom.db")
+    assert Path(p).parts[-2:] == (".e2er", "custom.db")
 
 
 def test_translate_param_style():

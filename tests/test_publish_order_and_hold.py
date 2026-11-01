@@ -176,10 +176,10 @@ def test_a_held_version_is_a_success_with_the_confirm_address(bundle: Path, monk
     assert publish(str(bundle), to_url=URL, **BASE, **REPO, data="private", code="private", yes=True) == 0
     out = capsys.readouterr().out
     assert "Held on https://platform.test" in out and "https://platform.test/account#held" in out
-    link = json.loads((bundle / ".e2er" / "link.json").read_text())
+    link = json.loads((bundle / ".e2er" / "link.json").read_text(encoding="utf-8"))
     assert link["held"] is True and link["hold"] == "h-1" and link["version"] is None
     assert link["owner_project"] == "bhanneke/demo" and link["confirm_url"] == HELD["confirm_url"]
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert link["dossier_id"] == m["dossier"]["id"] and link["content_id"] == m["content_id"]
     from src.cli_verify import PASS, _check_anchor
 
@@ -203,10 +203,10 @@ def test_a_held_link_is_not_carried_over_until_confirmed(tmp_path: Path):
     """A later version without the run database: the held version is not public, so it is not carried over."""
     b = tmp_path / "s"
     (b / ".e2er").mkdir(parents=True)
-    (b / "e2er.json").write_text(json.dumps({"dossier": {"id": "sha256:" + "a" * 64}}))
+    (b / "e2er.json").write_text(json.dumps({"dossier": {"id": "sha256:" + "a" * 64}}), encoding="utf-8", newline="\n")
     link = {"platform_url": URL, "owner_project": "bhanneke/demo", "dossier_id": "sha256:" + "a" * 64, **HELD}
     link["dossier_id"] = "sha256:" + "a" * 64
-    (b / ".e2er" / "link.json").write_text(json.dumps(link))
+    (b / ".e2er" / "link.json").write_text(json.dumps(link), encoding="utf-8", newline="\n")
 
     def request(base, method, path, token=None, body=None):
         return 404, {"error": "not found"}
@@ -228,7 +228,9 @@ def test_status_of_a_held_folder_says_where_to_confirm(tmp_path: Path, monkeypat
 
     b = tmp_path / "s"
     (b / ".e2er").mkdir(parents=True)
-    (b / ".e2er" / "link.json").write_text(json.dumps({"platform_url": URL, "dossier_id": "x", **HELD}))
+    (b / ".e2er" / "link.json").write_text(
+        json.dumps({"platform_url": URL, "dossier_id": "x", **HELD}), encoding="utf-8", newline="\n"
+    )
     monkeypatch.setattr(pc, "request", lambda *a, **k: (404, {"error": "not found"}))
     assert status(str(b)) == 0
     assert "held on https://platform.test, waiting for your confirmation" in capsys.readouterr().out

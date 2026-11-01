@@ -25,6 +25,7 @@ def write_results_script(ws: Path, results: dict[str, Any] | None = None, *, run
         'with open("estimation_results.json", "w", encoding="utf-8") as f:\n'
         "    json.dump(RESULTS, f)\n",
         encoding="utf-8",
+        newline="\n",
     )
     if run:
         from src.core.specialists.post_execution import _run_recorded

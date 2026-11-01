@@ -326,7 +326,7 @@ def _redact_secrets(target: Path, notes: list[str] | None) -> None:
     cleaned, kinds = redact_text(text)
     if not kinds:
         return
-    target.write_text(cleaned, encoding="utf-8")
+    target.write_text(cleaned, encoding="utf-8", newline="\n")
     msg = f"`code/scratch/{target.name}`: removed what looked like a {', '.join(kinds)} from the export's copy"
     logger.warning("export: %s", msg)
     if notes is not None:
@@ -627,7 +627,7 @@ def export_paper(
         text = paper_tex.read_text(encoding="utf-8")
         fixed = point_bibliography(text, paper_tex.parent)
         if fixed != text:
-            paper_tex.write_text(fixed, encoding="utf-8")
+            paper_tex.write_text(fixed, encoding="utf-8", newline="\n")
 
     # Figures: copy a figures/ dir if the renderer produced one.
     fig_src = workspace / "figures"
@@ -694,7 +694,7 @@ def export_paper(
         logger.warning("export: reproduce.json was not written: %s", e)
         no_recipe = f"e2er could not write it ({type(e).__name__}: {e})"
     (out / "README.md").write_text(
-        _render_readme(workspace, manifest, slug, notes, out=out, no_recipe=no_recipe), encoding="utf-8"
+        _render_readme(workspace, manifest, slug, notes, out=out, no_recipe=no_recipe), encoding="utf-8", newline="\n"
     )
 
     # The shareable view, rendered from the provenance about to be written, so

@@ -152,6 +152,13 @@ Every workflow in `.github/workflows/` (CI and release alike):
 
 `tests/test_workflow_supply_chain.py` fails when one of these slips.
 
+`--universal` resolves one file for every platform: it lists the hashes of the Linux, macOS and Windows
+wheels alike, so the jobs on all three systems install from the same `ci.txt` (the `test` matrix and the
+`reviewer path` job, which also downloads them with `pip download --require-hashes` for its offline
+install). No file per platform is needed; if a refresh ever leaves a platform's wheel out, `pip install
+--require-hashes` fails on that system's job, and the file is compiled again with that platform named
+(`uv pip compile … --python-platform windows`) and merged.
+
 Refresh the hashed files after changing a dependency in `pyproject.toml` (or to take newer
 versions), and commit them with the change:
 

@@ -269,7 +269,7 @@ def db_tables_now(workspace: Path) -> dict[str, str] | None:
     tables = table_digests(workspace / DATABASE)
     if tables is not None and _db_stat(workspace) == stat:
         try:
-            cache.write_text(json.dumps({"stat": stat, "tables": tables}), encoding="utf-8")
+            cache.write_text(json.dumps({"stat": stat, "tables": tables}), encoding="utf-8", newline="\n")
         except OSError:
             pass
     return tables
@@ -377,7 +377,7 @@ def record_script_run(
             packages = record.get("packages")
             if isinstance(packages, dict):
                 line["packages"] = dict(sorted(packages.items()))
-        with open(Path(workspace) / SCRIPT_RUNS, "a", encoding="utf-8") as f:
+        with open(Path(workspace) / SCRIPT_RUNS, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(line) + "\n")
     except OSError as e:
         logger.warning("script log: %s not recorded: %s", rel, e)
@@ -419,7 +419,7 @@ def confirm_output(workspace: Path, rel: str, sha: str) -> None:
                 row.setdefault("confirmed", {})[rel] = {"same_values_as": sha, "rerun_wrote": outputs[rel]}
                 outputs[rel] = sha
                 lines[i] = json.dumps(row)
-                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
                 return
     except OSError as e:
         logger.warning("script log: %s not confirmed: %s", rel, e)

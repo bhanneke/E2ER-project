@@ -47,7 +47,7 @@ def bundle(plain_bundle: Path) -> Path:  # noqa: F811
 
 
 def _manifest(b: Path) -> dict:
-    return json.loads((b / "e2er.json").read_text())
+    return json.loads((b / "e2er.json").read_text(encoding="utf-8"))
 
 
 def test_public_gaia_data_without_confirmation_are_refused(bundle: Path, tmp_path: Path, capsys):

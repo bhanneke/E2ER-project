@@ -98,7 +98,7 @@ def _add_github(b: Path) -> None:
     }
     _add(b, CSV, b"full_name,stars\nowner/a,1\nowner/b,2\n")
     path = b / "data" / "data_sources.json"
-    sources = json.loads(path.read_text()) if path.is_file() else {"loads": []}
+    sources = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"loads": []}
     sources["loads"].append(load)
     _add(b, "data/data_sources.json", (json.dumps(sources, indent=2) + "\n").encode())
 

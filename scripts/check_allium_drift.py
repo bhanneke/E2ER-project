@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.diff_dir)
         out.mkdir(parents=True, exist_ok=True)
         for name, text in result["diffs"].items():
-            (out / f"{name}.diff").write_text(text + "\n", encoding="utf-8")
+            (out / f"{name}.diff").write_text(text + "\n", encoding="utf-8", newline="\n")
     lines = [
         f"status={result['status']}",
         f"fingerprint={result['fingerprint']}",
@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     ]
     target = os.environ.get("GITHUB_OUTPUT")
     if target:
-        with open(target, "a", encoding="utf-8") as fh:
+        with open(target, "a", encoding="utf-8", newline="\n") as fh:
             fh.write("\n".join(lines) + "\n")
     print("\n".join(lines))
     return 0

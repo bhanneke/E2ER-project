@@ -17,7 +17,7 @@ from src.core.experiment import ExperimentConfig, harvest_run, run_experiment, w
 def _write(root: Path, rel: str, payload: dict) -> None:
     p = root / rel
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(payload), encoding="utf-8")
+    p.write_text(json.dumps(payload), encoding="utf-8", newline="\n")
 
 
 def _harvest(**kw):
@@ -105,6 +105,7 @@ def test_rejected_run_is_harvested_from_its_workspace(tmp_path: Path) -> None:
     (ws / "number_verification.json").write_text(
         json.dumps({"total_values_in_tables": 0, "prose_total": 278, "prose_mismatched": 166, "mismatches": []}),
         encoding="utf-8",
+        newline="\n",
     )
     row = _harvest(status="rejected", bundle_path=None, workspace_path=str(ws))
     assert row["fabrication_count"] == 166
@@ -150,6 +151,7 @@ def test_workspace_fn_is_used_for_non_completed_runs(tmp_path: Path) -> None:
     (ws / "number_verification.json").write_text(
         json.dumps({"total_values_in_tables": 1, "prose_total": 5, "prose_mismatched": 3, "mismatches": []}),
         encoding="utf-8",
+        newline="\n",
     )
     cfg = ExperimentConfig(name="t", research_questions=["q"], regimes=["off"], repeats=1, backends=["claude_code"])
     rows = run_experiment(

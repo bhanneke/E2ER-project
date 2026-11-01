@@ -395,7 +395,9 @@ def add_references(ws: Path) -> int:
             existing.add(key)
     write_json(keys_path, keys)
     if add:
-        bib.write_text((text.rstrip() + "\n\n" if text.strip() else "") + "\n".join(add), encoding="utf-8")
+        bib.write_text(
+            (text.rstrip() + "\n\n" if text.strip() else "") + "\n".join(add), encoding="utf-8", newline="\n"
+        )
     return len(add)
 
 

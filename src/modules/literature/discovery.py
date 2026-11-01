@@ -210,7 +210,7 @@ def _write_literature_bib(workspace: Path, items: list[PaperMetadata], *, keep_e
         for it in items:
             if it.title and not (keep_existing and it.bibtex_key in entries):
                 entries[it.bibtex_key] = it.to_bibtex()
-        bib_path.write_text("\n\n".join(entries.values()) + "\n", encoding="utf-8")
+        bib_path.write_text("\n\n".join(entries.values()) + "\n", encoding="utf-8", newline="\n")
         logger.info("Wrote %d bib entries to %s", len(entries), bib_path.name)
     except OSError as e:
         logger.warning("could not write literature.bib: %s", e)
@@ -343,6 +343,7 @@ def _record_web_search(
             )
             + "\n",
             encoding="utf-8",
+            newline="\n",
         )
     except OSError as e:
         logger.warning("could not record the web search: %s", e)

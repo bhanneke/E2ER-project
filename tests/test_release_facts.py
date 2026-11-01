@@ -35,7 +35,7 @@ def test_the_format_is_fixed():
     assert doc["concept_doi"] == "10.5281/zenodo.20187238" and doc["doi"] is None
     assert doc["tag_url"] == f"https://github.com/bhanneke/E2ER-project/releases/tag/v{doc['version']}"
     assert rf.validate(doc) == []
-    docs = (ROOT / "docs" / "RELEASING.md").read_text()
+    docs = (ROOT / "docs" / "RELEASING.md").read_text(encoding="utf-8")
     for key in [*doc, *doc["counts"]]:
         assert f'"{key}"' in docs
 
@@ -50,7 +50,7 @@ def test_the_counts_come_from_the_code():
     assert counts["specialists"] == len(set(SPECIALIST_ARTIFACTS) | set(SPECIALIST_SKILLS)) > 0
     assert counts["data_sources"] == len(_connectors()) > 0
     # The same number docs/SPECIALISTS.md states (it is generated from the registry too).
-    assert f"**{counts['specialists']}** specialists" in (ROOT / "docs" / "SPECIALISTS.md").read_text()
+    assert f"**{counts['specialists']}** specialists" in (ROOT / "docs" / "SPECIALISTS.md").read_text(encoding="utf-8")
 
 
 def test_the_counts_agree_with_an_independent_count():
@@ -63,7 +63,9 @@ def test_the_counts_agree_with_an_independent_count():
     counts = rf.facts(ROOT, tests=1)["counts"]
 
     def tracked(*specs: str) -> list[str]:
-        out = subprocess.run(["git", "ls-files", "--", *specs], cwd=ROOT, capture_output=True, text=True)
+        out = subprocess.run(
+            ["git", "ls-files", "--", *specs], cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace"
+        )
         if out.returncode != 0:
             pytest.skip("not a git checkout")
         return [line for line in out.stdout.splitlines() if line]
@@ -72,9 +74,9 @@ def test_the_counts_agree_with_an_independent_count():
     assert counts["templates"] == len(templates), templates
     assert counts["skills"] == len([f for f in tracked("skills/files") if f.endswith(".md")])
     sources = (ROOT / "src/modules/data/sources").glob("*.py")
-    defined = [p for p in sources if re.search(r"(?m)^SOURCE = Source\(", p.read_text())]
+    defined = [p for p in sources if re.search(r"(?m)^SOURCE = Source\(", p.read_text(encoding="utf-8"))]
     assert counts["data_sources"] == len(defined) + 1  # + Allium, which is no kit source
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     block = readme.split("<!-- sources:start -->", 1)[1].split("<!-- sources:end -->", 1)[0]
     rows = [line for line in block.splitlines() if line.startswith("| ") and not line.startswith("| Source |")]
     assert counts["data_sources"] == len(rows)
@@ -86,7 +88,7 @@ def test_version_and_date_are_the_release_script_s():
     from src import __version__
 
     assert doc["version"] == __version__
-    assert f'date-released: "{doc["date"]}"' in (ROOT / "CITATION.cff").read_text()
+    assert f'date-released: "{doc["date"]}"' in (ROOT / "CITATION.cff").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -115,7 +117,7 @@ def test_write_refuses_a_changed_format(tmp_path: Path):
     with pytest.raises(ValueError):
         rf.write(dict(doc, counts={**doc["counts"], "tests": "many"}), tmp_path / "f.json")
     rf.write(doc, tmp_path / "f.json")
-    assert json.loads((tmp_path / "f.json").read_text()) == doc
+    assert json.loads((tmp_path / "f.json").read_text(encoding="utf-8")) == doc
 
 
 # ── the Zenodo version DOI (Zenodo's public records API, faked) ──────────────
@@ -183,7 +185,7 @@ def test_waits_until_zenodo_has_it_then_fills_the_file(tmp_path: Path):
 
     got = rf.fill_doi(path, wait=1800, every=30, fetch=fetch, sleep=sleep, clock=lambda: now[0])
     assert got == "10.5281/zenodo.77" and slept == [30, 30]
-    out = json.loads(path.read_text())
+    out = json.loads(path.read_text(encoding="utf-8"))
     assert out["doi"] == "10.5281/zenodo.77" and rf.validate(out) == []
 
 
@@ -197,11 +199,11 @@ def test_gives_up_after_the_wait_and_leaves_doi_null(tmp_path: Path):
 
     got = rf.fill_doi(path, wait=120, every=30, fetch=FakeZenodo(None, []), sleep=sleep, clock=lambda: now[0])
     assert got is None and now[0] <= 120
-    assert json.loads(path.read_text())["doi"] is None
+    assert json.loads(path.read_text(encoding="utf-8"))["doi"] is None
 
 
 def test_the_release_workflow_writes_and_attaches_the_file():
-    wf = (ROOT / ".github" / "workflows" / "release.yml").read_text()
+    wf = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "scripts/release_facts.py" in wf and "release-facts.json" in wf
     assert "release_facts.py zenodo-doi" in wf
     assert "scripts/release.py --check" in wf  # the version check is the release script's

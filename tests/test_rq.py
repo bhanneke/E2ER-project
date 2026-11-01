@@ -33,7 +33,7 @@ def test_rq_produces_valid_json(tmp_path: Path, monkeypatch):
     out = tmp_path / "rq.json"
     rc = m.rq("does clv help LPs", out=str(out))
     assert rc == 0
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert set(m.RQ_KEYS) <= set(data)
     assert data["research_question"].startswith("Does concentrated liquidity")
     assert data["candidate_variables"] == ["impermanent_loss", "pool_type", "trading_volume"]
@@ -43,14 +43,14 @@ def test_rq_parses_fenced_json(tmp_path: Path, monkeypatch):
     _mock_pipeline(monkeypatch, f"```json\n{json.dumps(_PAYLOAD)}\n```")
     rc = m.rq("draft", out=str(tmp_path / "rq.json"))
     assert rc == 0
-    assert json.loads((tmp_path / "rq.json").read_text())["research_question"]
+    assert json.loads((tmp_path / "rq.json").read_text(encoding="utf-8"))["research_question"]
 
 
 def test_rq_normalizes_scalar_to_list(tmp_path: Path, monkeypatch):
     _mock_pipeline(monkeypatch, json.dumps({"research_question": "RQ", "feasibility_notes": "single note"}))
     out = tmp_path / "rq.json"
     assert m.rq("draft", out=str(out)) == 0
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["feasibility_notes"] == ["single note"]
     assert data["candidate_variables"] == []  # missing → empty list
 
@@ -84,7 +84,7 @@ def test_resolve_rq_input_from_json_file(tmp_path: Path):
     from src.cli_run import resolve_rq_input
 
     j = tmp_path / "rq.json"
-    j.write_text(json.dumps({"research_question": "From the rq.json file"}))
+    j.write_text(json.dumps({"research_question": "From the rq.json file"}), encoding="utf-8", newline="\n")
     assert resolve_rq_input(None, str(j)) == "From the rq.json file"
 
 
@@ -92,7 +92,7 @@ def test_resolve_rq_input_from_plain_text(tmp_path: Path):
     from src.cli_run import resolve_rq_input
 
     t = tmp_path / "rq.txt"
-    t.write_text("A plain-text research question\n")
+    t.write_text("A plain-text research question\n", encoding="utf-8", newline="\n")
     assert resolve_rq_input(None, str(t)) == "A plain-text research question"
 
 

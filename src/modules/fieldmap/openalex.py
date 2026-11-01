@@ -159,7 +159,7 @@ class Client:
             time.sleep(self.pause_s)
         if cache is not None:
             cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(json.dumps(data), encoding="utf-8")
+            cache.write_text(json.dumps(data), encoding="utf-8", newline="\n")
         return data
 
 

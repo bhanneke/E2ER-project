@@ -95,7 +95,7 @@ def test_the_finish_page_publishes_without_a_terminal():
 def test_a_new_session_secret_per_start_and_the_old_file_goes(home):
     """Since 0.19.0 the token lives only as long as one start of e2er (security review 2026-10-23)."""
     ls.secret_file().parent.mkdir(parents=True, exist_ok=True)
-    ls.secret_file().write_text("x" * 32)
+    ls.secret_file().write_text("x" * 32, encoding="utf-8", newline="\n")
     assert ls.new_token() != ls.new_token()
     ls.forget_stable_secret()
     assert not ls.secret_file().exists()
@@ -130,7 +130,7 @@ def test_localhost_pages_go_to_127_0_0_1():
 def test_every_page_loads_the_error_handler():
     html = _client().get("/library").text
     assert '<script src="/static/e2er.js"></script>' in html
-    js = (Path(__file__).parents[1] / "src" / "api" / "static" / "e2er.js").read_text()
+    js = (Path(__file__).parents[1] / "src" / "api" / "static" / "e2er.js").read_text(encoding="utf-8")
     assert "htmx:responseError" in js and "htmx:sendError" in js and "e2er is not reachable" in js
 
 
@@ -169,7 +169,9 @@ def test_the_zenodo_key_saved_under_settings_is_used(home, monkeypatch, tmp_path
 
     proj = tmp_path / "proj"
     proj.mkdir()
-    (proj / ".env").write_text("LLM_BACKEND=claude_code\nZENODO_TOKEN= zen-from-settings \n")
+    (proj / ".env").write_text(
+        "LLM_BACKEND=claude_code\nZENODO_TOKEN= zen-from-settings \n", encoding="utf-8", newline="\n"
+    )
     monkeypatch.chdir(proj)
     monkeypatch.delenv("ZENODO_TOKEN", raising=False)
     monkeypatch.setitem(sys.modules, "keyring", None)
@@ -240,7 +242,9 @@ def test_a_new_researcher_gets_a_remembered_studies_folder(home, tmp_path, monke
     assert r.status_code == 200, r.text
     folder = home / "e2er-studies"
     assert (folder / ".env").is_file() and not (elsewhere / ".env").exists()
-    assert json.loads((home / ".e2er" / "settings.json").read_text())["studies_folder"] == str(folder.resolve())
+    assert json.loads((home / ".e2er" / "settings.json").read_text(encoding="utf-8"))["studies_folder"] == str(
+        folder.resolve()
+    )
     # e2er started from any other folder uses it: settings, studies and exports.
     other = tmp_path / "Desktop"
     other.mkdir()
@@ -262,7 +266,7 @@ def test_a_folder_with_its_own_settings_keeps_working_as_before(home, tmp_path, 
     studies = h.remember_studies_folder(tmp_path / "studies")
     proj = tmp_path / "old-project"
     proj.mkdir()
-    (proj / ".env").write_text("LLM_BACKEND=codex\n")
+    (proj / ".env").write_text("LLM_BACKEND=codex\n", encoding="utf-8", newline="\n")
     monkeypatch.chdir(proj)
     get_settings.cache_clear()
     assert h.kind() == "project" and h.project_dir() == proj
@@ -290,7 +294,7 @@ def test_a_run_folder_is_found_from_its_id(tmp_path, monkeypatch):
 
     root = tmp_path / "workspaces"
     ws = h.new_workspace(root, "Ünïcode & FOMC: a test!", "abc")
-    (ws / "manifest.json").write_text('{"paper_id": "abc"}')
+    (ws / "manifest.json").write_text('{"paper_id": "abc"}', encoding="utf-8", newline="\n")
     assert ws.name.endswith("-unicode-fomc-a-test")
     h._KNOWN.clear()
     assert h.find_workspace("abc", root) == ws
@@ -339,11 +343,11 @@ def test_download_all_files_leaves_out_hidden_history_and_backups(tmp_path, monk
     pid = "5f0c4a63-8a61-4a5e-9d4e-3c2b1a0f9e8d"
     ws = tmp_path / "ws"
     (ws / ".history").mkdir(parents=True)
-    (ws / ".history" / "review_technical.md.1").write_text("old")
-    (ws / "review_technical.md").write_text("new")
-    (ws / "review_technical.md.previous").write_text("older e2er")
-    (ws / ".pipeline_state.json").write_text("{}")
-    (ws / "manifest.json").write_text("{}")
+    (ws / ".history" / "review_technical.md.1").write_text("old", encoding="utf-8", newline="\n")
+    (ws / "review_technical.md").write_text("new", encoding="utf-8", newline="\n")
+    (ws / "review_technical.md.previous").write_text("older e2er", encoding="utf-8", newline="\n")
+    (ws / ".pipeline_state.json").write_text("{}", encoding="utf-8", newline="\n")
+    (ws / "manifest.json").write_text("{}", encoding="utf-8", newline="\n")
     row = {"id": pid, "title": "FOMC study", "workspace": str(ws), "status": "completed", "max_cost_usd": 5}
     with (
         patch("src.db.client.fetch_one", AsyncMock(return_value=row)),
@@ -365,13 +369,14 @@ def test_the_sign_in_command_names_the_program_the_terminal_finds(tmp_path, monk
 
     app_codex = tmp_path / "ChatGPT.app" / "Contents" / "Resources" / "codex"
     app_codex.parent.mkdir(parents=True)
-    app_codex.write_text("")
+    app_codex.write_text("", encoding="utf-8", newline="\n")
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert signin_command("codex", str(app_codex)) == f"{app_codex} login"  # the full path
     spaced = tmp_path / "My Apps" / "codex"
     spaced.parent.mkdir()
-    spaced.write_text("")
-    assert signin_command("codex", str(spaced)) == f"'{spaced}' login"  # quoted for the terminal
+    spaced.write_text("", encoding="utf-8", newline="\n")
+    quoted = f'& "{spaced}"' if sys.platform == "win32" else f"'{spaced}'"  # PowerShell needs & before a quoted program
+    assert signin_command("codex", str(spaced)) == f"{quoted} login"  # quoted for the terminal
     monkeypatch.setattr("shutil.which", lambda name: str(app_codex))
     assert signin_command("codex", str(app_codex)) == "codex login"
     assert signin_command("claude_code", str(app_codex)) == "claude"
@@ -408,7 +413,7 @@ def test_a_stop_you_asked_for_lists_what_the_step_wrote(tmp_path):
     from src.api.app import _step_outputs
 
     for name in ("paper_plan.md", "econometric_spec.md", "estimation_results.json", "data_summary.md"):
-        (tmp_path / name).write_text("x")
+        (tmp_path / name).write_text("x", encoding="utf-8", newline="\n")
     events = [
         {"event_type": "specialist_end", "stage": None, "specialist": "data_analyst"},  # before the step
         {"event_type": "phase_start", "stage": "initial", "specialist": None},

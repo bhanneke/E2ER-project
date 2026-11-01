@@ -209,9 +209,9 @@ def test_push_file_accepts_bytes():
 
 
 def test_push_directory_pushes_all_files(tmp_path: Path):
-    (tmp_path / "main.tex").write_text("\\documentclass{article}")
-    (tmp_path / "refs.bib").write_text("@article{test,title={Test}}")
-    (tmp_path / "estimation.py").write_text("import pandas as pd")
+    (tmp_path / "main.tex").write_text("\\documentclass{article}", encoding="utf-8", newline="\n")
+    (tmp_path / "refs.bib").write_text("@article{test,title={Test}}", encoding="utf-8", newline="\n")
+    (tmp_path / "estimation.py").write_text("import pandas as pd", encoding="utf-8", newline="\n")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
     mock_repo.get_contents.side_effect = _not_found()
@@ -227,9 +227,9 @@ def test_push_directory_pushes_all_files(tmp_path: Path):
 
 
 def test_push_directory_respects_extension_filter(tmp_path: Path):
-    (tmp_path / "main.tex").write_text("content")
-    (tmp_path / "data.csv").write_text("a,b\n1,2")
-    (tmp_path / "ignored.json").write_text("{}")
+    (tmp_path / "main.tex").write_text("content", encoding="utf-8", newline="\n")
+    (tmp_path / "data.csv").write_text("a,b\n1,2", encoding="utf-8", newline="\n")
+    (tmp_path / "ignored.json").write_text("{}", encoding="utf-8", newline="\n")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
     mock_repo.get_contents.side_effect = _not_found()
@@ -244,7 +244,7 @@ def test_push_directory_respects_extension_filter(tmp_path: Path):
 
 
 def test_push_directory_with_remote_prefix(tmp_path: Path):
-    (tmp_path / "estimation.py").write_text("# code")
+    (tmp_path / "estimation.py").write_text("# code", encoding="utf-8", newline="\n")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
     mock_repo.get_contents.side_effect = _not_found()
@@ -261,9 +261,9 @@ def test_push_directory_with_remote_prefix(tmp_path: Path):
 
 def test_push_directory_continues_on_individual_file_error(tmp_path: Path):
     """A single file failing to push should not abort the whole directory push."""
-    (tmp_path / "file_a.tex").write_text("content a")
-    (tmp_path / "file_b.tex").write_text("content b")
-    (tmp_path / "file_c.tex").write_text("content c")
+    (tmp_path / "file_a.tex").write_text("content a", encoding="utf-8", newline="\n")
+    (tmp_path / "file_b.tex").write_text("content b", encoding="utf-8", newline="\n")
+    (tmp_path / "file_c.tex").write_text("content c", encoding="utf-8", newline="\n")
 
     mock_gh_cls, mock_user, mock_repo = _make_mock_github()
     mock_repo.get_contents.side_effect = _not_found()

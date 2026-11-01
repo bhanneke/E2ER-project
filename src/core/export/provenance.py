@@ -380,7 +380,7 @@ def write_provenance(
         ran_with=ran_with,
         left_out=left_out,
     )
-    out.write_text(dump(prov), encoding="utf-8")
+    out.write_text(dump(prov), encoding="utf-8", newline="\n")
     return out
 
 
@@ -453,5 +453,5 @@ def amend(bundle: Path, rel: str, reason: str, *, at: str) -> dict[str, Any] | N
     prov["files"][rel] = {"sha256": after, "bytes": len(data)}
     prov["files"] = dict(sorted(prov["files"].items()))
     prov.setdefault("amendments", []).append(entry)
-    path.write_text(dump(prov), encoding="utf-8")
+    path.write_text(dump(prov), encoding="utf-8", newline="\n")
     return entry

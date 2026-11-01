@@ -355,7 +355,7 @@ def test_folders_are_named_after_the_date_and_title(fx):
     root = fx.study / "workspaces"
     pid = "11111111-2222-4333-8444-555555555555"
     ws = new_workspace(root, "Do FOMC announcements move bank stocks?", pid)
-    (ws / "manifest.json").write_text(f'{{"paper_id": "{pid}"}}')
+    (ws / "manifest.json").write_text(f'{{"paper_id": "{pid}"}}', encoding="utf-8", newline="\n")
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-do-fomc-announcements-move-bank-stocks", ws.name)
     from src import home
 

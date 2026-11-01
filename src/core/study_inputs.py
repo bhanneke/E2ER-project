@@ -152,7 +152,7 @@ def _pdf_meta_cached(paths: list[Path]) -> dict[str, dict[str, Any]]:
         try:
             cache_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = cache_file.with_name(f".{cache_file.name}.{os.getpid()}.tmp")
-            tmp.write_text(json.dumps(cache), encoding="utf-8")
+            tmp.write_text(json.dumps(cache), encoding="utf-8", newline="\n")
             os.replace(tmp, cache_file)
         except OSError as e:
             logger.debug("PDF metadata cache not written: %s", e)
@@ -363,7 +363,7 @@ def section(record: dict[str, Any], name: str) -> dict[str, Any]:
 def write_record(workspace: Path, record: dict[str, Any]) -> None:
     path = Path(workspace) / INPUTS_FILE
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, path)
 
 

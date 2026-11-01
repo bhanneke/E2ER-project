@@ -158,7 +158,9 @@ def add_method_sources(workspace: Path, spec: Any) -> list[str]:
             added.append(key)
             entries.append(entry)
         if entries:
-            bib.write_text((text.rstrip() + "\n\n" if text.strip() else "") + "\n\n".join(entries) + "\n", "utf-8")
+            bib.write_text(
+                (text.rstrip() + "\n\n" if text.strip() else "") + "\n\n".join(entries) + "\n", "utf-8", newline="\n"
+            )
         return added
     except OSError as e:
         logger.warning("the template's method sources could not be added to literature.bib: %s", e)

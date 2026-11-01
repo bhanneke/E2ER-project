@@ -50,11 +50,39 @@ async def test_a_specialist_writes_the_files_the_recorded_run_wrote(tmp_path: Pa
 
     r = await _call(b, tmp_path, "econometrics_specialist", paper_id="paper-42")
     script = (tmp_path / "run_estimation.py").read_text(encoding="utf-8")
-    assert "@@" not in script and str(tmp_path.resolve()) in script
+    assert "@@" not in script, [line for line in script.splitlines() if "@@" in line]
+    assert tmp_path.resolve().as_posix() in script  # the recorded path, with forward slashes on every system
     assert json.loads((tmp_path / "estimation_results.json").read_text(encoding="utf-8"))
 
     r = await _call(b, tmp_path, "data_analyst")
     assert (tmp_path / "data.db").read_bytes() == (FIXTURES / "fomc/files/data_analyst/data.db").read_bytes()
+
+
+async def test_the_recorded_scripts_keep_their_order_when_the_clock_does_not_advance(tmp_path: Path, monkeypatch):
+    """The replay writes a call's files within a millisecond; Windows takes a file's time from a clock that advances
+    every ~16 ms, so files written in one tick had the same time. e2er's order by file times (no script log yet)
+    then left out revise_estimation.py, written in the tick of run_estimation.py, and the results check ran the
+    chain without it: 12 of 162 values differed (Windows CI, 2026-10-30). The replay now gives a call's files
+    increasing times in the order the recording lists them."""
+    from src.core.export.reproduce_recipe import chain_of
+
+    ReplayBackend._attempts.clear()
+    b = ReplayBackend("fomc")
+    write = ReplayBackend._write
+    tick = time.time_ns()
+
+    def one_tick(self, workspace, specialist, rel, paper_id, replace):  # a clock that did not advance
+        write(self, workspace, specialist, rel, paper_id, replace)
+        os.utime(workspace / rel, ns=(tick, tick))
+
+    monkeypatch.setattr(ReplayBackend, "_write", one_tick)
+    assert (await _call(b, tmp_path, "econometrics_specialist")).success
+    assert [p.name for p in chain_of(tmp_path).scripts] == [
+        "run_estimation.py",
+        "revise_estimation.py",
+        "compute_h2_final.py",
+        "compute_h2_v2.py",
+    ]
 
 
 async def test_a_call_without_a_recording_fails_visibly(tmp_path: Path):
@@ -85,7 +113,9 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
                     "attempts": [{"replace": {"event_design.json": [['"2020-03-16"', '"2020-03-15"']]}}, {"fail": "x"}]
                 }
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
     ws = tmp_path / "ws"
@@ -101,12 +131,12 @@ async def test_overrides_vary_one_attempt_and_then_replay_the_recording(tmp_path
 async def test_a_wait_override_makes_the_attempt_take_that_long(tmp_path: Path, monkeypatch):
     ReplayBackend._attempts.clear()
     over = tmp_path / "over.json"
-    over.write_text(json.dumps({"idea_developer": {"attempts": [{"wait": 0.3}]}}))
+    over.write_text(json.dumps({"idea_developer": {"attempts": [{"wait": 0.3}]}}), encoding="utf-8", newline="\n")
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
     b = ReplayBackend("fomc")
     t0 = time.monotonic()
     assert (await _call(b, tmp_path / "ws", "idea_developer")).success
-    assert time.monotonic() - t0 >= 0.3
+    assert time.monotonic() - t0 >= 0.3 - 0.02  # Windows' clock and asyncio's timers tick every ~16 ms
     t0 = time.monotonic()
     assert (await _call(b, tmp_path / "ws", "idea_developer")).success
     assert time.monotonic() - t0 < 0.3
@@ -153,7 +183,9 @@ async def test_overrides_under_backends_vary_only_that_backends_runs(tmp_path: P
                     }
                 },
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.setenv("E2ER_REPLAY_OVERRIDES", str(over))
     codex, claude = tmp_path / "codex", tmp_path / "claude"
@@ -212,7 +244,9 @@ def _fetched_replication(ws: Path) -> None:
                 "package_files": [{"path": p, **v} for p, v in tree.items()],
                 "files": [],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     shutil.copy(FIXTURES / "replication/files/replication_planner/replication_plan.json", ws / "replication_plan.json")
 
@@ -242,6 +276,10 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+#: The replay servers' log files, the latest last (a failing test shows the end of its server's log).
+_SERVER_LOGS: list[Path] = []
+
+
 @contextlib.contextmanager
 def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
     """`e2er serve` under the replay level for a study folder in tmp; yields (api, study folder).
@@ -257,6 +295,7 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
     env = {
         **os.environ,
         "HOME": str(home),
+        "USERPROFILE": str(home),
         "PYTHONPATH": str(ROOT),
         "E2ER_REPLAY_SCENARIO": scenario,
         "E2ER_REPLAY_NETLOG": str(tmp_path / "net.txt"),
@@ -286,13 +325,20 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
                     *settings,
                 ]
             )
-            + "\n"
+            + "\n",
+            encoding="utf-8",
+            newline="\n",
         )
+        # The server's output goes to a file: a pipe nobody reads while it runs fills up (4 KB on Windows),
+        # and the server then stops at its next log line and answers no request.
+        log_path = tmp_path / f"replay-server-{port}.log"
+        _SERVER_LOGS.append(log_path)
+        log = log_path.open("wb")
         server = subprocess.Popen(
             [sys.executable, "-m", "tests.replay.cli", "serve", "--no-browser", "--port", str(port)],
             cwd=study,
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=log,
             stderr=subprocess.STDOUT,
         )
         api = f"http://127.0.0.1:{port}"
@@ -302,12 +348,14 @@ def _replay_server(tmp_path: Path, scenario: str, settings: list[str]):
                 return
             if server.poll() is None:
                 raise AssertionError(f"the replay server on {api} did not answer within 60 s")
-            out = server.stdout.read().decode(errors="replace") if server.stdout else ""
+            log.flush()
+            out = log_path.read_bytes().decode(errors="replace")
             tried.append(f"port {port}: exited {server.returncode}: {out[-300:]}")
         finally:
             if server.poll() is None:
                 server.terminate()
                 server.wait(timeout=10)
+            log.close()
     raise AssertionError("the replay server did not start:\n" + "\n".join(tried))
 
 
@@ -332,9 +380,16 @@ def _approve_to_the_end(api: str, pid: str) -> tuple[dict, list[str]]:
         p = _wait(api, pid)
         if p["status"] == "completed":
             break
-        stage = httpx.get(
+        pending = httpx.get(
             f"{api}/api/papers/{pid}/review", headers={"x-e2er-token": "replay-session"}, timeout=10
-        ).json()["pending"]["stage"]
+        ).json()["pending"]
+        if pending is None:
+            tail = _SERVER_LOGS[-1].read_bytes().decode(errors="replace")[-4000:] if _SERVER_LOGS else ""
+            pytest.fail(
+                f"the run stopped with no review to approve: status {p['status']}, last_error {p.get('last_error')!r}, "
+                f"after {stops}\nserver log (end):\n{tail}"
+            )
+        stage = pending["stage"]
         stops.append(stage)
         r = httpx.post(
             f"{api}/api/papers/{pid}/review",
@@ -350,7 +405,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
     """`e2er serve` under the replay level: the event-study template from the question to a completed run."""
     study = tmp_path / "study"
     (study / "data").mkdir(parents=True)
-    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
     # As in the recorded run: a FRED key, and the researcher's own FOMC dates in the data
     # folder (the data architect may only plan tables from sources the study has).
     with _replay_server(tmp_path, "fomc", ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}"]) as (api, _):
@@ -376,7 +431,7 @@ def test_the_fomc_event_study_replays_to_the_end_through_the_server(tmp_path: Pa
             (FIXTURES / "fomc/files/econometrics_specialist/estimation_results.json").read_text(encoding="utf-8")
         )
         assert (ws / "preregistration.lock.json").is_file() and (ws / "review_aggregation.json").is_file()
-        blocked = (tmp_path / "net.txt").read_text() if (tmp_path / "net.txt").exists() else ""
+        blocked = (tmp_path / "net.txt").read_text(encoding="utf-8") if (tmp_path / "net.txt").exists() else ""
         assert "anthropic" not in blocked and "zenodo" not in blocked
 
 
@@ -522,7 +577,7 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
 
     study = tmp_path / "study"
     (study / "data").mkdir(parents=True)
-    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
     files = FIXTURES / "fomc-iterative" / "files"
     with _replay_server(
         tmp_path, "fomc-iterative", ["FRED_API_KEY=replay-key", f"LOCAL_DATA_DIR={study / 'data'}"]
@@ -667,7 +722,13 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
 
     # Published (offline: nothing is sent) and verified like any study: the dossier carries the rounds.
     bundle = next(x for x in (study / "exports").iterdir() if (x / "provenance.json").is_file())
-    env = {**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(ROOT), "E2ER_SKIP_SETUP_REDIRECT": "1"}
+    env = {
+        **os.environ,
+        "HOME": str(tmp_path / "home"),
+        "USERPROFILE": str(tmp_path / "home"),
+        "PYTHONPATH": str(ROOT),
+        "E2ER_SKIP_SETUP_REDIRECT": "1",
+    }
     cli = [sys.executable, "-m", "tests.replay.cli"]
     out = subprocess.run(
         [*cli, "publish", str(bundle), "--owner", "replay", "--project", "fomc-iterative", "--name", "Replay"]
@@ -675,14 +736,23 @@ def test_the_iterative_mode_replays_to_the_end_through_the_server(tmp_path: Path
         cwd=study,
         env=env,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
     assert out.returncode == 0, out.stdout + out.stderr
     doc = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["dossier"]["doc"]
     assert [r["ceiling_check"]["decision"] for r in doc["run"]["rounds"]] == ["another round", "a change of approach"]
     assert doc["run"]["mode"] == "iterative"
-    out = subprocess.run([*cli, "verify", str(bundle)], cwd=study, env=env, capture_output=True, text=True, timeout=300)
+    out = subprocess.run(
+        [*cli, "verify", str(bundle)],
+        cwd=study,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=300,
+    )
     assert out.returncode == 0, out.stdout + out.stderr
     assert "[PASS] numbers" in out.stdout
 

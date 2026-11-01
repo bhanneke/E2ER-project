@@ -274,7 +274,7 @@ def scan_scripts(scripts: list[Path], workspace: Path) -> list[str]:
         except OSError:
             continue
         try:
-            name = str(path.relative_to(workspace))
+            name = path.relative_to(workspace).as_posix()
         except ValueError:
             name = path.name
         problems += scan_source(source, name)

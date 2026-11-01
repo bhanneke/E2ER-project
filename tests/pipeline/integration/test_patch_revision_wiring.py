@@ -71,9 +71,11 @@ def _make_workspace(tmp_path: Path, paper_id: str) -> Path:
                 "methodology": "empirical",
                 "current_stage": "review",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
-    (ws / "paper_draft.tex").write_text(_DRAFT)
+    (ws / "paper_draft.tex").write_text(_DRAFT, encoding="utf-8", newline="\n")
     return ws
 
 
@@ -102,7 +104,9 @@ def _review_file(ws: Path, reviewer: str, score: float, recommendation: str) -> 
     }[reviewer]
     (ws / artifact).write_text(
         f"# Review from {reviewer}\n\nThe paper has issues.\n\n"
-        f"OVERALL SCORE: {score:.1f}/10\nRECOMMENDATION: {recommendation}\n"
+        f"OVERALL SCORE: {score:.1f}/10\nRECOMMENDATION: {recommendation}\n",
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -143,7 +147,9 @@ async def test_major_revision_dispatches_patch_revisor_not_legacy_revisor(tmp_pa
                             "replace": "The parallel-trends assumption is examined in Figure 2",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -171,7 +177,7 @@ async def test_major_revision_dispatches_patch_revisor_not_legacy_revisor(tmp_pa
         f"v0.6 must dispatch patch_revisor; saw {dispatched_specialists}"
     )
     # Patch was applied: draft now contains the new phrase and not the old one
-    patched = (ws / "paper_draft.tex").read_text()
+    patched = (ws / "paper_draft.tex").read_text(encoding="utf-8")
     assert "The parallel-trends assumption is examined in Figure 2" in patched
     assert "The parallel-trends assumption holds" not in patched
     # Diff side artifact emitted
@@ -198,7 +204,7 @@ async def test_findings_serialised_into_patch_revisor_focus(tmp_path, mock_llm):
     async def _capture_focus(work_order, *args, **kwargs):
         if work_order.specialist == "patch_revisor":
             captured_focus[0] = work_order.focus
-            (ws / "paper_draft.tex.edits.json").write_text("[]")
+            (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
         return Contribution(
             paper_id=runner._paper_id,
             specialist=work_order.specialist,
@@ -305,7 +311,9 @@ async def test_failed_edits_complete_the_run_and_record_why(tmp_path, mock_llm, 
                             "replace": "x",
                         }
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(
             paper_id=runner._paper_id,
@@ -383,7 +391,9 @@ async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mo
                             "replace": "0.50",
                         },
                     ]
-                )
+                ),
+                encoding="utf-8",
+                newline="\n",
             )
         return Contribution(paper_id=runner._paper_id, specialist=work_order.specialist, output="ok", success=True)
 
@@ -402,7 +412,7 @@ async def test_partial_application_with_out_of_scope_edit_completes(tmp_path, mo
 
     assert result == PaperStatus.COMPLETED
     # The in-scope edit landed; the out-of-scope one was dropped (draft unchanged there).
-    draft = (ws / "paper_draft.tex").read_text()
+    draft = (ws / "paper_draft.tex").read_text(encoding="utf-8")
     assert "parallel-trends assumption is tested" in draft
     assert "0.80" in draft  # the out-of-scope table edit was NOT applied
     assert not [s for s, _e in seen if s == "rejected"]
@@ -490,7 +500,9 @@ async def test_verify_numbers_findings_included_in_patch_revisor_focus(tmp_path,
                     }
                 ],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
     captured_focus = [""]
@@ -498,7 +510,7 @@ async def test_verify_numbers_findings_included_in_patch_revisor_focus(tmp_path,
     async def _capture(work_order, *args, **kwargs):
         if work_order.specialist == "patch_revisor":
             captured_focus[0] = work_order.focus
-            (ws / "paper_draft.tex.edits.json").write_text("[]")
+            (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
         return Contribution(
             paper_id=runner._paper_id,
             specialist=work_order.specialist,

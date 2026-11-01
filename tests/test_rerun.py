@@ -44,14 +44,16 @@ def _completed_replication() -> PipelineState:
 
 def test_a_rerun_withdraws_the_approvals_from_the_step_on_and_records_the_remark(tmp_path: Path):
     st = _completed_replication()
-    (tmp_path / INSTRUCTIONS_FILE).write_text("(at step review_plan) Use the package date.\n")
+    (tmp_path / INSTRUCTIONS_FILE).write_text(
+        "(at step review_plan) Use the package date.\n", encoding="utf-8", newline="\n"
+    )
     payload = apply_rerun(tmp_path, st, find_spec("replication"), "compare", REMARK)
     assert payload["action"] == "rerun" and payload["step"] == "compare" and payload["remark"] == REMARK
     assert payload["reruns"] == ["compare", "reproduction_gate", "review_report"]
     assert st.approved_stages == ["review_plan"]  # the plan the researcher approved stands
     assert st.metadata["rerun"] == [{"target": "compare", "remark": REMARK}]
     assert st.last_status == "in_progress" and "review" not in st.metadata
-    text = (tmp_path / INSTRUCTIONS_FILE).read_text()
+    text = (tmp_path / INSTRUCTIONS_FILE).read_text(encoding="utf-8")
     assert text.startswith("(at step review_plan)") and "(for compare, rerun of the study, " in text
     assert text.rstrip().endswith(REMARK)
 

@@ -44,13 +44,15 @@ def test_positional_rq_passes_through():
 
 def test_rq_file_reads_plain_text(tmp_path: Path):
     f = tmp_path / "q.txt"
-    f.write_text("  does X cause Y  \n")
+    f.write_text("  does X cause Y  \n", encoding="utf-8", newline="\n")
     assert resolve_rq_input(None, str(f)) == "does X cause Y"
 
 
 def test_rq_file_reads_rq_json(tmp_path: Path):
     f = tmp_path / "rq.json"
-    f.write_text(json.dumps({"research_question": "does X cause Y", "rationale": "..."}))
+    f.write_text(
+        json.dumps({"research_question": "does X cause Y", "rationale": "..."}), encoding="utf-8", newline="\n"
+    )
     assert resolve_rq_input(None, str(f)) == "does X cause Y"
 
 

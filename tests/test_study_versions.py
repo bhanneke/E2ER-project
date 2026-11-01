@@ -313,11 +313,11 @@ def test_bulk_archive_dry_run_changes_nothing_and_apply_takes_only_confirmed_ids
 def test_archiving_does_not_touch_files(db: Path, tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "paper.tex").write_text("x")
+    (ws / "paper.tex").write_text("x", encoding="utf-8", newline="\n")
     pid = _run(_add())
     _run(_client.execute("UPDATE papers SET workspace = %(w)s WHERE id = %(id)s", {"w": str(ws), "id": pid}))
     _run(st.archive_attempt(pid))
-    assert (ws / "paper.tex").read_text() == "x"
+    assert (ws / "paper.tex").read_text(encoding="utf-8") == "x"
 
 
 # ── the command line ─────────────────────────────────────────────────────────
@@ -453,9 +453,11 @@ def test_cancel_a_paused_attempt_records_who_and_when_and_keeps_files(db: Path, 
 
     ws = tmp_path / "ws-paused"
     ws.mkdir()
-    (ws / "event_design.json").write_text("{}")
+    (ws / "event_design.json").write_text("{}", encoding="utf-8", newline="\n")
     (ws / ".pipeline_state.json").write_text(
-        json.dumps({"paper_id": "x", "mode": "single_pass", "pending_review_stage": "g"})
+        json.dumps({"paper_id": "x", "mode": "single_pass", "pending_review_stage": "g"}),
+        encoding="utf-8",
+        newline="\n",
     )
     pid = _run(_add(status="paused"))
     _run(_client.execute("UPDATE papers SET workspace = %(w)s WHERE id = %(id)s", {"w": str(ws), "id": pid}))

@@ -177,7 +177,9 @@ async def test_the_runner_pauses_with_the_sentence(tmp_path, events):
     ws = tmp_path / paper_id
     ws.mkdir(parents=True)
     (ws / "manifest.json").write_text(
-        json.dumps({"paper_id": paper_id, "title": "T", "research_question": "Q?", "mode": "single_pass"})
+        json.dumps({"paper_id": paper_id, "title": "T", "research_question": "Q?", "mode": "single_pass"}),
+        encoding="utf-8",
+        newline="\n",
     )
     runner = PipelineRunner(
         paper_id=paper_id, workspace=ws, backend=MagicMock(), model="m", mode="single_pass", backend_name="claude_code"
@@ -202,5 +204,5 @@ async def test_the_runner_pauses_with_the_sentence(tmp_path, events):
     assert statuses[-1] == ("paused", sentence)
     kinds = [k for k, _sp, _p in events]
     assert "paused_timeout" in kinds and "failed" not in kinds
-    state = json.loads((ws / ".pipeline_state.json").read_text())
+    state = json.loads((ws / ".pipeline_state.json").read_text(encoding="utf-8"))
     assert "initial" not in state["completed_stages"]  # Resume runs the step (and the analyst) again

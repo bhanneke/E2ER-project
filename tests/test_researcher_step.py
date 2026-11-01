@@ -87,14 +87,14 @@ def _paused(tmp_path: Path, stage: str = "review_design", files=("paper_plan.md"
     st = PipelineState(paper_id=PID, mode="single_pass")
     st.pending_review_stage = stage
     st.metadata["review"] = {"kind": "researcher", "files": list(files)}
-    (tmp_path / "paper_plan.md").write_text("plan v1\n")
+    (tmp_path / "paper_plan.md").write_text("plan v1\n", encoding="utf-8", newline="\n")
     return st
 
 
 def test_edit_is_saved_with_fingerprints_before_and_after(tmp_path: Path):
     st = _paused(tmp_path)
     ev = apply_action(tmp_path, st, {"action": "edit", "file": "paper_plan.md", "content": "plan v2\n"})
-    assert (tmp_path / "paper_plan.md").read_text() == "plan v2\n"
+    assert (tmp_path / "paper_plan.md").read_text(encoding="utf-8") == "plan v2\n"
     assert ev["sha256_before"] == _sha(b"plan v1\n") and ev["sha256_after"] == _sha(b"plan v2\n")
     with pytest.raises(ResearcherActionError):
         apply_action(tmp_path, st, {"action": "edit", "file": "other.md", "content": "x"})  # not a step file
@@ -135,8 +135,8 @@ def test_approve_and_send_back(tmp_path: Path):
 def test_review_at_pause_offers_the_workspace_text_files(tmp_path: Path):
     st = PipelineState(paper_id=PID, mode="single_pass")
     st.pending_review_stage = "initial"
-    (tmp_path / "paper_draft.tex").write_text("x")
-    (tmp_path / ".hidden.md").write_text("x")
+    (tmp_path / "paper_draft.tex").write_text("x", encoding="utf-8", newline="\n")
+    (tmp_path / ".hidden.md").write_text("x", encoding="utf-8", newline="\n")
     p = pending_review(tmp_path, st)
     assert p is not None and p.kind == "review_at" and p.files == ("paper_draft.tex",)
 
@@ -211,8 +211,8 @@ async def test_resume_continues_with_the_saved_orders_and_stops_at_the_preregist
         {"kind": "preregister", "name": "preregister", "after": ["identification_strategist"]},
     ]
     r = _runner(tmp_path, steps)
-    (tmp_path / "paper_plan.md").write_text("# Plan\nH1: ETFs change co-movement.\n")
-    (tmp_path / "identification_spec.json").write_text('{"design": "did"}')
+    (tmp_path / "paper_plan.md").write_text("# Plan\nH1: ETFs change co-movement.\n", encoding="utf-8", newline="\n")
+    (tmp_path / "identification_spec.json").write_text('{"design": "did"}', encoding="utf-8", newline="\n")
     st = r._state
     st.metadata["done_specialists"] = ["identification_strategist"]
     st.metadata["pending_orders"] = [
@@ -230,10 +230,12 @@ async def test_resume_continues_with_the_saved_orders_and_stops_at_the_preregist
     with pytest.raises(HumanReviewRequestedError) as hr:
         await r._initial_phase_body()
     assert hr.value.stage == "preregister" and ran == []  # nothing ran before the pre-registration
-    assert (tmp_path / "preregistration.md").is_file() and "H1: ETFs" in (tmp_path / "preregistration.md").read_text()
+    assert (tmp_path / "preregistration.md").is_file() and "H1: ETFs" in (tmp_path / "preregistration.md").read_text(
+        encoding="utf-8"
+    )
     st.approve("preregister")
     await r._settle_researcher_decisions(st)  # the resumed run freezes it
-    lock = json.loads((tmp_path / prereg.LOCK_FILE).read_text())
+    lock = json.loads((tmp_path / prereg.LOCK_FILE).read_text(encoding="utf-8"))
     assert lock["sha256"] == _sha((tmp_path / "preregistration.md").read_bytes())
     assert any(k == "preregistration" for k, _s, _p in events)
     await r._initial_phase_body()
@@ -266,7 +268,9 @@ async def test_the_strategist_receives_the_instructions(tmp_path: Path):
     from src.core.strategist.engine import StrategistEngine
     from src.modules.llm.base import ToolLoopResult
 
-    (tmp_path / INSTRUCTIONS_FILE).write_text("(at step review_design) Use monthly data.\n")
+    (tmp_path / INSTRUCTIONS_FILE).write_text(
+        "(at step review_design) Use monthly data.\n", encoding="utf-8", newline="\n"
+    )
     seen: list[str] = []
 
     class _Backend:
@@ -283,21 +287,23 @@ async def test_the_strategist_receives_the_instructions(tmp_path: Path):
 
 
 def _design(ws: Path) -> None:
-    (ws / "paper_plan.md").write_text("# Plan\nQuestion and hypotheses.\n")
-    (ws / "identification_strategy.md").write_text("DiD around the approval.\n")
-    (ws / "identification_spec.json").write_text('{"design": "did", "treatment": "etf"}')
-    (ws / "econometric_spec.md").write_text("Fisher-z, coin and month fixed effects.\n")
+    (ws / "paper_plan.md").write_text("# Plan\nQuestion and hypotheses.\n", encoding="utf-8", newline="\n")
+    (ws / "identification_strategy.md").write_text("DiD around the approval.\n", encoding="utf-8", newline="\n")
+    (ws / "identification_spec.json").write_text(
+        '{"design": "did", "treatment": "etf"}', encoding="utf-8", newline="\n"
+    )
+    (ws / "econometric_spec.md").write_text("Fisher-z, coin and month fixed effects.\n", encoding="utf-8", newline="\n")
 
 
 def test_preregistration_is_assembled_frozen_and_compared(tmp_path: Path):
     _design(tmp_path)
     prereg.assemble(tmp_path)
-    text = (tmp_path / prereg.PREREG_FILE).read_text()
+    text = (tmp_path / prereg.PREREG_FILE).read_text(encoding="utf-8")
     assert "## Research question and hypotheses" in text and '"design": "did"' in text
     lock = prereg.freeze(tmp_path)
     assert set(lock["plan_files"]) == {"identification_spec.json", "econometric_spec.md"}
     assert prereg.deviations(tmp_path, lock) == []
-    (tmp_path / "identification_spec.json").write_text('{"design": "rdd"}')
+    (tmp_path / "identification_spec.json").write_text('{"design": "rdd"}', encoding="utf-8", newline="\n")
     assert prereg.deviations(tmp_path, lock) == ["identification_spec.json changed after the pre-registration"]
 
 
@@ -316,7 +322,7 @@ def test_verify_reports_the_preregistration(tmp_path: Path):
     b = _bundle_with_prereg(tmp_path)
     c = _check_preregistration(b)
     assert c is not None and c.status == "PASS" and "follows the pre-registered plan" in c.detail
-    (b / "design" / "econometric_spec.md").write_text("Something else.\n")
+    (b / "design" / "econometric_spec.md").write_text("Something else.\n", encoding="utf-8", newline="\n")
     c = _check_preregistration(b)
     assert c.status == "FAIL" and "econometric_spec.md changed" in c.detail
     assert _check_preregistration(tmp_path) is None  # no pre-registration: no extra check
@@ -327,19 +333,21 @@ def test_verify_passes_an_approved_deviation_and_reports_it(tmp_path: Path):
 
     b = _bundle_with_prereg(tmp_path)
     design = b / "design"
-    (design / "identification_spec.json").write_text('{"design": "did", "estimator": "wls"}')
+    (design / "identification_spec.json").write_text(
+        '{"design": "did", "estimator": "wls"}', encoding="utf-8", newline="\n"
+    )
     c = _check_preregistration(b)
     assert c.status == "FAIL" and "without the researcher's approval" in c.detail
     added = prereg.approve_deviations(design)
     assert [a["file"] for a in added] == ["identification_spec.json"]
-    lock = json.loads((design / prereg.LOCK_FILE).read_text())
+    lock = json.loads((design / prereg.LOCK_FILE).read_text(encoding="utf-8"))
     # The frozen fingerprints stay; the approval is an entry of its own.
     assert lock["plan_files"]["identification_spec.json"] == added[0]["sha256_frozen"]
     assert added[0]["sha256_approved"] == _sha((design / "identification_spec.json").read_bytes())
     c = _check_preregistration(b)
     assert c.status == "PASS" and "deviation approved by the researcher: identification_spec.json changed" in c.detail
     # A later change to the approved file is a new deviation.
-    (design / "identification_spec.json").write_text('{"design": "rdd"}')
+    (design / "identification_spec.json").write_text('{"design": "rdd"}', encoding="utf-8", newline="\n")
     c = _check_preregistration(b)
     assert c.status == "FAIL" and "identification_spec.json changed" in c.detail
 
@@ -354,7 +362,9 @@ async def test_a_change_to_the_plan_after_the_freeze_stops_the_run(tmp_path: Pat
     r._governance = "full"
     await r._check_preregistered_plan(tmp_path)  # unchanged: passes
     assert events[-1][0] == "preregistration_check" and events[-1][2]["passed"] is True
-    (tmp_path / "identification_spec.json").write_text('{"design": "did", "estimator": "wls"}')
+    (tmp_path / "identification_spec.json").write_text(
+        '{"design": "did", "estimator": "wls"}', encoding="utf-8", newline="\n"
+    )
     with pytest.raises(GateHaltError) as gh:
         await r._check_preregistered_plan(tmp_path)
     st = r._state
@@ -379,16 +389,16 @@ async def test_editing_the_plan_back_passes_without_a_deviation(tmp_path: Path, 
     _design(tmp_path)
     prereg.assemble(tmp_path)
     prereg.freeze(tmp_path)
-    original = (tmp_path / "econometric_spec.md").read_text()
+    original = (tmp_path / "econometric_spec.md").read_text(encoding="utf-8")
     r = _runner(tmp_path, [{"kind": "strategist", "name": "initial"}])
     r._governance = "full"
-    (tmp_path / "econometric_spec.md").write_text("Something else.\n")
+    (tmp_path / "econometric_spec.md").write_text("Something else.\n", encoding="utf-8", newline="\n")
     with pytest.raises(GateHaltError):
         await r._check_preregistered_plan(tmp_path)
     apply_action(tmp_path, r._state, {"action": "edit", "file": "econometric_spec.md", "content": original})
     await r._check_preregistered_plan(tmp_path)
     assert [e for e in events if e[0] == "preregistration_check"][-1][2]["passed"] is True
-    assert "approved_deviations" not in json.loads((tmp_path / prereg.LOCK_FILE).read_text())
+    assert "approved_deviations" not in json.loads((tmp_path / prereg.LOCK_FILE).read_text(encoding="utf-8"))
 
 
 def test_export_includes_the_preregistration_and_instructions(tmp_path: Path):
@@ -420,7 +430,7 @@ def test_zenodo_deposit_uses_the_researchers_token(tmp_path: Path):
     dep = prereg.deposit_zenodo(tmp_path, "tok", base_url=prereg.ZENODO_SANDBOX_URL, client=client)
     assert dep["doi"] == "10.5072/zenodo.7"
     assert ("PUT", "/api/files/b1/preregistration.md") in calls
-    assert json.loads((tmp_path / prereg.LOCK_FILE).read_text())["deposit"]["doi"] == "10.5072/zenodo.7"
+    assert json.loads((tmp_path / prereg.LOCK_FILE).read_text(encoding="utf-8"))["deposit"]["doi"] == "10.5072/zenodo.7"
 
 
 # ── the dossier ─────────────────────────────────────────────────────────────

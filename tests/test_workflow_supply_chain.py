@@ -92,5 +92,7 @@ def test_every_pinned_package_carries_a_hash(req):
 
 
 def test_the_ci_file_covers_the_dev_extra_and_the_build_tools():
-    names = {m.lower() for m in re.findall(r"^([A-Za-z0-9][\w.\-]*)==", CI_REQUIREMENTS.read_text(), re.M)}
+    names = {
+        m.lower() for m in re.findall(r"^([A-Za-z0-9][\w.\-]*)==", CI_REQUIREMENTS.read_text(encoding="utf-8"), re.M)
+    }
     assert {"pytest", "ruff", "mypy", "build", "setuptools", "fastapi"} <= names

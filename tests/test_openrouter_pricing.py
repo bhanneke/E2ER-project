@@ -84,9 +84,9 @@ def test_list_is_cached_and_read_back_without_network(monkeypatch, listed):
 
 
 def test_stale_cache_is_used_when_offline(monkeypatch, listed):
-    raw = json.loads(orm.cache_file().read_text())
+    raw = json.loads(orm.cache_file().read_text(encoding="utf-8"))
     raw["fetched_at"] = time.time() - 3 * 24 * 3600
-    orm.cache_file().write_text(json.dumps(raw))
+    orm.cache_file().write_text(json.dumps(raw), encoding="utf-8", newline="\n")
     orm._reset_for_tests()
     monkeypatch.setattr(orm, "_fetch", lambda: None)
     assert "deepseek/deepseek-v4-pro" in orm.load_models()
@@ -330,16 +330,16 @@ def test_markdown_answer_is_kept_as_the_missing_output(tmp_path):
 
     review = "# Mechanism review\n\n" + "The mechanism section argues ... " * 20
     assert _keep_answer_as_markdown_output(tmp_path, "mechanism_reviewer", "review_mechanism.md", review)
-    assert (tmp_path / "review_mechanism.md").read_text().startswith("# Mechanism review")
+    assert (tmp_path / "review_mechanism.md").read_text(encoding="utf-8").startswith("# Mechanism review")
 
 
 def test_answer_never_replaces_a_written_file_or_fills_json(tmp_path):
     from src.core.specialists.base import _keep_answer_as_markdown_output
 
     long = "x" * 1000
-    (tmp_path / "review_mechanism.md").write_text("written by the model")
+    (tmp_path / "review_mechanism.md").write_text("written by the model", encoding="utf-8", newline="\n")
     assert not _keep_answer_as_markdown_output(tmp_path, "mechanism_reviewer", "review_mechanism.md", long)
-    assert (tmp_path / "review_mechanism.md").read_text() == "written by the model"
+    assert (tmp_path / "review_mechanism.md").read_text(encoding="utf-8") == "written by the model"
     assert not _keep_answer_as_markdown_output(tmp_path, "econometrics_specialist", "estimation_results.json", long)
     assert not _keep_answer_as_markdown_output(tmp_path, "writing_reviewer", "review_writing.md", "Done.")
     assert not _keep_answer_as_markdown_output(tmp_path, "writing_reviewer", "../outside.md", long)
@@ -585,8 +585,12 @@ def test_html_comments_are_removed_before_latex_prints_them(tmp_path):
     from src.core.renderer.compiler import strip_html_comments
 
     tex = tmp_path / "paper_draft.tex"
-    tex.write_text("The spread fell 0.21 points <!-- src: estimation_results.json#a.b -->.\n% src: kept\n")
+    tex.write_text(
+        "The spread fell 0.21 points <!-- src: estimation_results.json#a.b -->.\n% src: kept\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     assert strip_html_comments(tex)
-    assert tex.read_text() == "The spread fell 0.21 points.\n% src: kept\n"
+    assert tex.read_text(encoding="utf-8") == "The spread fell 0.21 points.\n% src: kept\n"
     assert not strip_html_comments(tex)
     assert not strip_html_comments(tmp_path / "missing.tex")

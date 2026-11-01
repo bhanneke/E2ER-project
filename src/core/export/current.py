@@ -81,7 +81,7 @@ def _read_index(dest_root: Path) -> dict[str, Any]:
 def _write_index(dest_root: Path, data: dict[str, Any]) -> None:
     p = dest_root / INDEX
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, p)
 
 
@@ -153,17 +153,13 @@ def export_lock(dest_root: Path, paper_id: str) -> Iterator[None]:
         tlock = _THREAD_LOCKS.setdefault(key, threading.Lock())
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", paper_id)[:80] or "run"
     with tlock:
-        fh = open(Path(dest_root) / f".e2er-export-{safe}.lock", "a+")  # noqa: SIM115 - held for the block
-        try:
-            try:
-                import fcntl
-            except ImportError:  # Windows: the thread lock only
-                fcntl = None  # type: ignore[assignment]
-            if fcntl is not None:
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        from ..file_lock import exclusive
+
+        with (
+            open(Path(dest_root) / f".e2er-export-{safe}.lock", "a+", newline="\n", encoding="utf-8") as fh,
+            exclusive(fh),
+        ):
             yield
-        finally:
-            fh.close()  # closing releases the lock file
 
 
 def published_link(folder: Path) -> dict[str, Any] | None:

@@ -74,7 +74,7 @@ def make_run_db(
     con.commit()
     con.close()
     if env:
-        (folder / ".env").write_text(f"DATABASE_URL=sqlite:///{db}\n", encoding="utf-8")
+        (folder / ".env").write_text(f"DATABASE_URL=sqlite:///{db}\n", encoding="utf-8", newline="\n")
     return db
 
 

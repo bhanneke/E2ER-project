@@ -617,7 +617,7 @@ def render_tables(workspace: Path) -> RenderReport:
             logger.warning("render_tables: failed to render %s: %s", filename, e)
             report.errors.append(f"{filename}: {e!r}")
             continue
-        (tables_dir / filename).write_text(latex, encoding="utf-8")
+        (tables_dir / filename).write_text(latex, encoding="utf-8", newline="\n")
         report.rendered.append(filename)
         report.unresolved.extend(unresolved)
         report.normalized.extend(normalized)
@@ -684,7 +684,9 @@ def _set_aside_stale(workspace: Path, names: list[str]) -> list[str]:
 
 def _save_report(workspace: Path, report: RenderReport) -> None:
     try:
-        (workspace / "table_render_report.json").write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        (workspace / "table_render_report.json").write_text(
+            json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="\n"
+        )
     except OSError as e:
         logger.warning("render_tables: could not write table_render_report.json: %s", e)
 
@@ -718,8 +720,7 @@ def ensure_input_stubs(workspace: Path) -> list[str]:
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(
-                "% stub: no matching table_spec entry was rendered for this \\input\n",
-                encoding="utf-8",
+                "% stub: no matching table_spec entry was rendered for this \\input\n", encoding="utf-8", newline="\n"
             )
             created.append(rel_tex)
         except OSError as e:

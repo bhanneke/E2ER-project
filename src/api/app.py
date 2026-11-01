@@ -1040,7 +1040,7 @@ async def create_paper(req: CreatePaperRequest, background_tasks: BackgroundTask
         "pipeline": req.pipeline,
         **({"purpose": req.purpose} if req.purpose else {}),
     }
-    (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2), newline="\n", encoding="utf-8")
     try:
         await execute(
             """

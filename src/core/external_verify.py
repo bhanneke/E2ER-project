@@ -55,7 +55,7 @@ async def verify_paper(bib_path: str | Path, text_path: str | Path | None, tmp_d
             draft = Path(text_path)
     if draft is None:
         draft = tmp_dir / "synthetic.tex"
-        draft.write_text(synthesize_cites_tex(bib_path), encoding="utf-8")
+        draft.write_text(synthesize_cites_tex(bib_path), encoding="utf-8", newline="\n")
     return await verify_citations(draft, bib_path=bib_path)
 
 
@@ -122,10 +122,10 @@ async def audit_papers(papers: list[tuple[str, str, str | None]], out_dir: Path)
         for name, bib, text in papers:
             report = await verify_paper(bib, text, Path(td))
             (out_dir / f"{name}.citation_integrity.json").write_text(
-                json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8"
+                json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8", newline="\n"
             )
             named.append((name, report))
     aggregate = aggregate_reports(named)
-    (out_dir / "aggregate.json").write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
-    (out_dir / "summary.md").write_text(render_summary(aggregate), encoding="utf-8")
+    (out_dir / "aggregate.json").write_text(json.dumps(aggregate, indent=2), encoding="utf-8", newline="\n")
+    (out_dir / "summary.md").write_text(render_summary(aggregate), encoding="utf-8", newline="\n")
     return aggregate

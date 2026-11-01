@@ -62,7 +62,7 @@ skills:
 @pytest.fixture
 def catalogue(tmp_path: Path) -> Path:
     (tmp_path / "skills").mkdir()
-    (tmp_path / "skills" / "demo.yml").write_text(PACK_YML)
+    (tmp_path / "skills" / "demo.yml").write_text(PACK_YML, encoding="utf-8", newline="\n")
     return tmp_path
 
 
@@ -83,7 +83,7 @@ def test_a_pack_is_read_with_its_licence_and_authors(catalogue):
 
 
 def test_a_malformed_pack_does_not_hide_the_others(catalogue):
-    (catalogue / "skills" / "broken.yml").write_text("pack: [[[ not yaml")
+    (catalogue / "skills" / "broken.yml").write_text("pack: [[[ not yaml", encoding="utf-8", newline="\n")
 
     assert [p.slug for p in read_catalogue(catalogue)] == ["demo"]
 
@@ -172,10 +172,10 @@ async def test_installing_writes_the_skills_and_their_provenance(catalogue, tmp_
     report = await install_pack(find_pack("demo", catalogue), dest=dest)
 
     assert report["installed"] == 2
-    assert (dest / "demo" / "alpha.md").read_text() == "# a skill\n\nbody"
+    assert (dest / "demo" / "alpha.md").read_text(encoding="utf-8") == "# a skill\n\nbody"
 
     # Six months later, someone has to be able to ask whose file this is.
-    manifest = json.loads((dest / "demo" / "pack.json").read_text())
+    manifest = json.loads((dest / "demo" / "pack.json").read_text(encoding="utf-8"))
     assert manifest["pack"]["license"] == "MIT"
     assert manifest["pack"]["source_url"] == "https://github.com/someone/demo"
     assert manifest["pack"]["maintainers"] == ["A. Person"]
@@ -205,7 +205,7 @@ async def test_failures_are_recorded_not_just_counted(catalogue, tmp_path, monke
     dest = tmp_path / "installed"
 
     await install_pack(find_pack("demo", catalogue), dest=dest)
-    manifest = json.loads((dest / "demo" / "pack.json").read_text())
+    manifest = json.loads((dest / "demo" / "pack.json").read_text(encoding="utf-8"))
 
     assert len(manifest["failed"]) == 2
     assert "410" in manifest["failed"][0]["error"]

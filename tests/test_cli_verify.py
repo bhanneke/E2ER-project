@@ -30,14 +30,22 @@ def _clean_bundle(tmp_path: Path) -> Path:
 
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"title": "Verify Me", "paper_id": "p1", "governance": "full"}))
-    (ws / "paper_draft.tex").write_text(TABLE_TEX)
-    (ws / "literature.bib").write_text("@article{smith2021, title={X}, doi={10.1/x}, year={2021}}\n")
-    (ws / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {"treat": {"estimate": 12.5}}}}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Verify Me", "paper_id": "p1", "governance": "full"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(TABLE_TEX, encoding="utf-8", newline="\n")
+    (ws / "literature.bib").write_text(
+        "@article{smith2021, title={X}, doi={10.1/x}, year={2021}}\n", encoding="utf-8", newline="\n"
+    )
+    (ws / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"treat": {"estimate": 12.5}}}}), encoding="utf-8", newline="\n"
+    )
     # A spec that declares nothing checkable (no FE/controls/clustering) → the
     # contract passes trivially, keeping this fixture's focus on tamper cases.
     (ws / "identification_spec.json").write_text(
-        json.dumps({"primary": {"estimator": "ols", "outcome": "y", "treatment": "treat"}})
+        json.dumps({"primary": {"estimator": "ols", "outcome": "y", "treatment": "treat"}}),
+        encoding="utf-8",
+        newline="\n",
     )
     from tests.results_script import write_results_script
 
@@ -73,7 +81,7 @@ def test_tamper_edited_table_number_fails(tmp_path: Path):
     bundle = _clean_bundle(tmp_path)
     tex = bundle / "paper" / "paper.tex"
     # 12.5 → 20.0: close enough to be a critical mismatch, not an unrelated number.
-    tex.write_text(tex.read_text().replace("12.5", "20.0"))
+    tex.write_text(tex.read_text(encoding="utf-8").replace("12.5", "20.0"), encoding="utf-8", newline="\n")
     assert verify(str(bundle), online=False) == 1
     assert _status(bundle, "numbers") == FAIL
     assert _status(bundle, "integrity") == FAIL  # the tex hash also changed
@@ -82,14 +90,14 @@ def test_tamper_edited_table_number_fails(tmp_path: Path):
 def test_tamper_edited_results_json_fails(tmp_path: Path):
     bundle = _clean_bundle(tmp_path)
     res = bundle / "results" / "estimation_results.json"
-    res.write_text(res.read_text().replace("12.5", "20.0"))
+    res.write_text(res.read_text(encoding="utf-8").replace("12.5", "20.0"), encoding="utf-8", newline="\n")
     assert verify(str(bundle), online=False) == 1
     assert _status(bundle, "integrity") == FAIL
 
 
 def test_tamper_deleted_bib_entry_fails(tmp_path: Path):
     bundle = _clean_bundle(tmp_path)
-    (bundle / "paper" / "refs.bib").write_text("@article{other2020, title={Y}}\n")
+    (bundle / "paper" / "refs.bib").write_text("@article{other2020, title={Y}}\n", encoding="utf-8", newline="\n")
     assert verify(str(bundle), online=False) == 1
     assert _status(bundle, "citations") == FAIL
 
@@ -111,7 +119,7 @@ def _integrity_only_bundle(tmp_path: Path) -> Path:
 
     b = tmp_path / "partial"
     (b / "results").mkdir(parents=True)
-    (b / "results" / "notes.json").write_text("{}")
+    (b / "results" / "notes.json").write_text("{}", encoding="utf-8", newline="\n")
     write_provenance(b, {"paper_id": "p1", "governance": "off"}, exported_at="20260627")
     return b
 
@@ -139,8 +147,10 @@ def test_partial_verdict_names_the_skipped_checks(tmp_path: Path, capsys):
 
     b = tmp_path / "cites-only"
     (b / "paper").mkdir(parents=True)
-    (b / "paper" / "paper.tex").write_text("See \\cite{smith2021}.\n")
-    (b / "paper" / "refs.bib").write_text("@article{smith2021, title={X}, year={2021}}\n")
+    (b / "paper" / "paper.tex").write_text("See \\cite{smith2021}.\n", encoding="utf-8", newline="\n")
+    (b / "paper" / "refs.bib").write_text(
+        "@article{smith2021, title={X}, year={2021}}\n", encoding="utf-8", newline="\n"
+    )
     write_provenance(b, {"paper_id": "p1", "governance": "off"}, exported_at="20260627")
 
     checks = {c.name: c.status for c in _run_checks(b, online=False)}

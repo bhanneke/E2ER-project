@@ -102,7 +102,9 @@ class TestParsePatchFile:
                         "replace": "0.50",
                     }
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
         edits = parse_patch_file(path)
         assert len(edits) == 1
@@ -113,7 +115,11 @@ class TestParsePatchFile:
 
     def test_defaults_find_must_be_unique_true(self, tmp_path: Path):
         path = tmp_path / "edits.json"
-        path.write_text(json.dumps([{"target": "abstract", "edit_type": "replace_text", "find": "x", "replace": "y"}]))
+        path.write_text(
+            json.dumps([{"target": "abstract", "edit_type": "replace_text", "find": "x", "replace": "y"}]),
+            encoding="utf-8",
+            newline="\n",
+        )
         edits = parse_patch_file(path)
         assert edits[0].find_must_be_unique is True
 
@@ -125,7 +131,9 @@ class TestParsePatchFile:
                     {"target": "abstract", "edit_type": "replace_text", "find": "x", "replace": "y"},
                     {"target": "abstract", "edit_type": "replace_text", "find": "p", "replace": "q"},
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
         edits = parse_patch_file(path)
         # Index-based IDs e0, e1 — deterministic so the merger's
@@ -146,7 +154,9 @@ class TestParsePatchFile:
                         "replace": "y",
                     },
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
         edits = parse_patch_file(path)
         assert edits[0].edit_id == "fix_main_coef"
@@ -166,25 +176,27 @@ class TestParsePatchFile:
                         "future_field_v0_7": "annotation",
                     }
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
         edits = parse_patch_file(path)
         assert len(edits) == 1
 
     def test_empty_list_is_valid(self, tmp_path: Path):
         path = tmp_path / "edits.json"
-        path.write_text("[]")
+        path.write_text("[]", encoding="utf-8", newline="\n")
         assert parse_patch_file(path) == []
 
     def test_non_list_top_level_rejected(self, tmp_path: Path):
         path = tmp_path / "edits.json"
-        path.write_text('{"edits": []}')
+        path.write_text('{"edits": []}', encoding="utf-8", newline="\n")
         with pytest.raises(ValueError, match="top-level JSON list"):
             parse_patch_file(path)
 
     def test_non_object_entry_rejected(self, tmp_path: Path):
         path = tmp_path / "edits.json"
-        path.write_text('["not an object"]')
+        path.write_text('["not an object"]', encoding="utf-8", newline="\n")
         with pytest.raises(ValueError, match="must be an object"):
             parse_patch_file(path)
 
@@ -512,7 +524,7 @@ class TestMergePatchFile:
     def _setup(self, tmp_path: Path) -> Path:
         ws = tmp_path / "workspace"
         ws.mkdir()
-        (ws / "paper_draft.tex").write_text(_DRAFT)
+        (ws / "paper_draft.tex").write_text(_DRAFT, encoding="utf-8", newline="\n")
         return ws
 
     def test_persists_patched_draft_and_diff(self, tmp_path: Path):
@@ -527,21 +539,23 @@ class TestMergePatchFile:
                         "replace": "0.50",
                     }
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
         findings = [_finding("table:tab:main")]
         result = merge_patch_file(ws, findings)
         assert result.fully_applied
 
         # Draft was patched on disk
-        patched = (ws / "paper_draft.tex").read_text()
+        patched = (ws / "paper_draft.tex").read_text(encoding="utf-8")
         assert "log RV & 0.50" in patched
         assert "log RV & 0.80" not in patched
 
         # Diff side artifact written
         diff_path = ws / "paper_draft.tex.applied.diff"
         assert diff_path.is_file()
-        diff_text = diff_path.read_text()
+        diff_text = diff_path.read_text(encoding="utf-8")
         assert "-log RV & 0.80" in diff_text
         assert "+log RV & 0.50" in diff_text
 
@@ -557,7 +571,9 @@ class TestMergePatchFile:
                         "replace": "y",
                     }
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
         findings = [_finding("table:tab:main")]
         result = merge_patch_file(ws, findings, persist=False)
@@ -568,7 +584,7 @@ class TestMergePatchFile:
     def test_missing_draft_raises(self, tmp_path: Path):
         ws = tmp_path / "ws"
         ws.mkdir()
-        (ws / "paper_draft.tex.edits.json").write_text("[]")
+        (ws / "paper_draft.tex.edits.json").write_text("[]", encoding="utf-8", newline="\n")
         with pytest.raises(FileNotFoundError, match="draft not found"):
             merge_patch_file(ws, [])
 
@@ -589,13 +605,15 @@ class TestMergePatchFile:
                         "replace": "0.50",
                     }
                 ]
-            )
+            ),
+            encoding="utf-8",
+            newline="\n",
         )
-        original = (ws / "paper_draft.tex").read_text()
+        original = (ws / "paper_draft.tex").read_text(encoding="utf-8")
         result = merge_patch_file(ws, [_finding("table:tab:main")], persist=False)
         assert result.fully_applied
         # Draft is unchanged on disk
-        assert (ws / "paper_draft.tex").read_text() == original
+        assert (ws / "paper_draft.tex").read_text(encoding="utf-8") == original
         # No diff file emitted
         assert not (ws / "paper_draft.tex.applied.diff").exists()
 

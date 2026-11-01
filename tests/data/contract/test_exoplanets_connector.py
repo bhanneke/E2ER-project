@@ -91,7 +91,7 @@ def test_planets_load_a_table_and_record_adql_doi_hash_terms_and_citation(
         assert db.execute("SELECT COUNT(*) FROM imaged").fetchone()[0] == out["row_count"]
     assert (ws / "data" / "imaged.csv").is_file()
 
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "exoplanets" and load["table"] == "imaged"
     assert load["terms"] == "https://exoplanetarchive.ipac.caltech.edu/docs/acknowledge.html"
     assert "states no licence" in load["terms_summary"]
@@ -106,16 +106,16 @@ def test_planets_load_a_table_and_record_adql_doi_hash_terms_and_citation(
     [f] = load["files"]
     assert f["sha256"] == hashlib.sha256(_recorded(PLANETS, "/TAP/sync")).hexdigest()
 
-    [entry] = json.loads((ws / "data_dictionary.json").read_text())["tables"]
+    [entry] = json.loads((ws / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
     assert entry["source"] == "exoplanets" and entry["cite_key"] == CITE_KEY
 
-    bib = (ws / "literature.bib").read_text()
+    bib = (ws / "literature.bib").read_text(encoding="utf-8")
     for key in (CITE_KEY, "NEA_PSCompPars", "NEA_PS"):
         assert bib.count(f"{{{key},") == 1
     with use_cassette(PLANETS):
         code, out = _run([*ARGS, "--table", "imaged2"], capsys)
     assert code == 0 and out["citation_added"] is False
-    assert (ws / "literature.bib").read_text().count(f"{{{CITE_KEY},") == 1
+    assert (ws / "literature.bib").read_text(encoding="utf-8").count(f"{{{CITE_KEY},") == 1
 
 
 @respx.mock
@@ -142,7 +142,7 @@ def test_query_runs_one_adql_select(ws: Path, capsys: pytest.CaptureFixture[str]
     assert code == 0, out
     assert out["items"] == [{"n": 6445}]
     assert route.calls[0].request.url.params["MAXREC"] == "100001"
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["adql"] == "select count(*) as n from pscomppars" and load["table_doi"] == "10.26133/NEA13"
 
 
@@ -215,8 +215,8 @@ async def test_fetch_data_records_the_same_load(ws: Path) -> None:
     # The same records as e2er-data: the load, the table's dictionary entry and the citation.
     assert out["error"] is None and out["items"]
     assert out["recorded_in"] == ["data_sources.json", "data_dictionary.json"]
-    assert out["cite_key"] in (ws / "literature.bib").read_text()
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    assert out["cite_key"] in (ws / "literature.bib").read_text(encoding="utf-8")
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "exoplanets" and load["table"] == "imaged" and load["files"]
 
 

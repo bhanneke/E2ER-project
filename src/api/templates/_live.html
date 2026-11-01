@@ -179,20 +179,21 @@
     {% endfor %}
 
     {% if failure.raw and failure.raw != failure.headline %}
-      <details class="tech">
+      <details class="tech" id="live-failure-details">
         <summary>Technical details</summary>
         <pre>{{ failure.raw }}</pre>
       </details>
     {% endif %}
   </section>
 {% elif paper.last_error and not awaiting_review and not failure.failed %}
-  <details class="tech">
+  <details class="tech" id="live-error-details">
     <summary>Technical details</summary>
     <pre>{{ paper.last_error }}</pre>
   </details>
 {% endif %}
 
-<details class="events">
+{# Stable ids: e2er.js keeps a panel the researcher opened open when the poll swaps this in again. #}
+<details class="events" id="live-events">
 <summary>What happened ({{ events | length }} most recent entries)</summary>
 {% if not events %}
   <p class="muted">Nothing yet.</p>

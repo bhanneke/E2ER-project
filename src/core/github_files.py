@@ -135,7 +135,11 @@ def _run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None 
             check_github()
         except RefusedInTestError as e:
             raise GitHubError(str(e)) from e
-    return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=600)
+    # By its full path: on Windows a program found through PATHEXT (gh.exe, a .cmd shim) is started only that way.
+    exe = shutil.which(cmd[0], path=(env or os.environ).get("PATH")) or cmd[0]
+    return subprocess.run(
+        [exe, *cmd[1:]], cwd=cwd, env=env, capture_output=True, encoding="utf-8", errors="replace", timeout=600
+    )
 
 
 def _last_line(proc: subprocess.CompletedProcess) -> str:
@@ -216,7 +220,7 @@ class Staged:
     manifest: dict[str, Any] = field(default_factory=dict)
 
 
-def stage(bundle: Path, dest: Path) -> Staged:
+def stage(bundle: Path, dest: Path, keep: Path | None = None) -> Staged:
     """Pack the study (package.build) and open the package into the new folder ``dest``: what goes up.
 
     Data a source's terms keep out (and data built from them) are not in the package, so they are not
@@ -224,12 +228,18 @@ def stage(bundle: Path, dest: Path) -> Staged:
     again (one that nothing gets back raises package.TooLargeError). The package's own e2er-package.json
     is: it names what was left out and how a rerun loads and builds it again, which `e2er verify` and
     `e2er reproduce` read in a clone of the repository.
+
+    ``keep``: the package itself is copied there too (the study package a release of the repository carries,
+    study_package.py): the folder that goes up is exactly that package, opened.
     """
     from .export import package as pkg
 
     with tempfile.TemporaryDirectory(prefix="e2er-github-pack-") as td:
         packed = pkg.build(bundle, Path(td) / f"study{pkg.SUFFIX}", host=HOST, max_file_bytes=GITHUB_FILE_LIMIT)
         opened = pkg.open_package(packed.path, dest)
+        if keep is not None:
+            keep.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(packed.path, keep)
     files = sorted(p.relative_to(opened.root).as_posix() for p in opened.root.rglob("*") if p.is_file())
     return Staged(
         root=opened.root, files=files, left_out=list(packed.manifest.get("left_out") or []), manifest=packed.manifest
@@ -287,7 +297,12 @@ def _git_env() -> dict[str, str]:
 
 def _git(args: list[str], cwd: Path | None = None, *, check: bool = True) -> subprocess.CompletedProcess:
     # The researcher's own gh login answers git's request for credentials; nothing is stored.
-    cmd = ["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", *args]
+    # core.autocrlf=false: the files go up and come back byte for byte (their SHA-256s are the study's record),
+    # whatever line-ending conversion this computer's Git is set to (Git for Windows: autocrlf=true).
+    cmd = [
+        "git", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
+        "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential", *args,
+    ]  # fmt: skip
     proc = _run(cmd, cwd=cwd, env=_git_env())
     if check and proc.returncode != 0:
         raise GitHubError(f"git {args[0]} failed: {_last_line(proc)}")
@@ -464,5 +479,5 @@ def save_record(bundle: Path, record: dict[str, Any]) -> Path:
     """``.e2er/github.json``: where the files went, at which commit (a local record, never published)."""
     p = bundle / RECORD
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    p.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8", newline="\n")
     return p

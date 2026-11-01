@@ -181,7 +181,7 @@ def retrieve_boundaries(
                     **OPENALEX_SOURCE,
                     "series": f"boundary {b['name']}: {data['papers_retrieved']} works",
                     "query": data["filter"],
-                    "saved_to": str(path.relative_to(ws)),
+                    "saved_to": path.relative_to(ws).as_posix(),
                     "retrieved_at": data["retrieved_at"],
                 },
             )
@@ -580,7 +580,8 @@ def map_step(ws: Path, *, require_lanes: bool = True) -> Verdict:
     exports.write_json(ws / "reading_list.json", rows)
     exports.write_text(ws / "exports/field_network.net", exports.pajek(papers, arcs))
     exports.write_text(
-        ws / "exports/field_network.gexf", exports.gexf(papers, arcs, set(main_arcs), set(key_arcs), lane_of)
+        ws / "exports/field_network.gexf",
+        exports.gexf(papers, arcs, set(main_arcs), set(key_arcs), lane_of),
     )
     vmap, vnet = exports.vosviewer(papers, arcs)
     exports.write_text(ws / "exports/vosviewer_map.txt", vmap)
@@ -688,7 +689,7 @@ def add_method_references(ws: Path) -> int:
     from .credit import bibtex
 
     add = "\n".join(bibtex(k, METHOD_REFERENCES[k]) for k in missing)
-    bib.write_text((text.rstrip() + "\n\n" if text.strip() else "") + add, encoding="utf-8")
+    bib.write_text((text.rstrip() + "\n\n" if text.strip() else "") + add, encoding="utf-8", newline="\n")
     return len(missing)
 
 

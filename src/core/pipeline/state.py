@@ -56,7 +56,7 @@ class PipelineState:
         tmp = workspace / _TMP_FILENAME
         bak = workspace / _BACKUP_FILENAME
 
-        tmp.write_text(json.dumps(self.__dict__, indent=2))
+        tmp.write_text(json.dumps(self.__dict__, indent=2), newline="\n", encoding="utf-8")
         if path.exists():
             path.replace(bak)
         tmp.replace(path)
@@ -68,7 +68,7 @@ class PipelineState:
             p = workspace / name
             if p.exists():
                 try:
-                    data = json.loads(p.read_text())
+                    data = json.loads(p.read_text(encoding="utf-8"))
                     return cls(**data)
                 except Exception:
                     continue

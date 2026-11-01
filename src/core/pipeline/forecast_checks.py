@@ -407,7 +407,7 @@ def check_forecast_design(workspace: Path, *, min_train_periods: int = DEFAULT_M
             {"from_design_sha256": previous.get("design_sha256"), "frozen_at": previous.get("frozen_at")}
         )
         notes.append("the setup changed before any model was fitted and was frozen again")
-    freeze_path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    freeze_path.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     return CheckResult(True, (), tuple(notes), {**stats, "design_sha256": design_sha[:12]})
 
 
@@ -633,6 +633,7 @@ def check_forecast_evaluation(workspace: Path, *, error_tolerance: float = DEFAU
         )
         + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     stats = {"evaluations": len(recomputed), "hold_out": f"{hold_start} to {hold_end}"}
     return CheckResult(not reasons, tuple(reasons), tuple(notes), stats)

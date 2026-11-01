@@ -12,8 +12,10 @@ e2er runs its specialists through one of five backends, chosen with
 | `openrouter` | OpenRouter | per use |
 
 Full runs are tested on Claude (Claude Code) and OpenAI (Codex CLI with a
-ChatGPT plan). Google ended Gemini CLI sign-in for individual accounts in
-October 2026, so the Gemini backend needs a Gemini API key and is not tested.
+ChatGPT plan). On 18 June 2026 Google ended the Gemini CLI for AI Pro/Ultra
+plans and free individual accounts (replaced by its Antigravity CLI, `agy`,
+which e2er does not support), so the Gemini backend works only with a paid
+Gemini API key and is not tested.
 
 The three CLI backends hand the CLI the specialist's whole prompt and let it
 work in the study's workspace folder with its own tools. They differ in what
@@ -70,10 +72,10 @@ command. What does hold:
 macOS's `sandbox-exec`). Its shell tool runs commands without asking only with
 `GEMINI_YOLO=true` (`--approval-mode yolo`, with a warning); otherwise it runs
 with `--approval-mode auto_edit`, in which it may edit files but not run the
-e2er commands. The Gemini backend is not tested. Since October 2026 the Gemini CLI refuses sign-in for
-individual accounts (version 0.63.0 answers "This client is no longer
+e2er commands. The Gemini backend is not tested. Since 18 June 2026 the Gemini CLI refuses sign-in with
+AI Pro/Ultra plans and free individual accounts (version 0.63.0 answers "This client is no longer
 supported for Gemini Code Assist for individuals"), so the backend runs only
-with `GEMINI_API_KEY`, and no study has run that way. Its command line and
+with a paid `GEMINI_API_KEY`, and no study has run that way. Its command line and
 output reading follow the CLI's documentation and are covered by tests with a
 simulated CLI only. Google bills the key; e2er records the cost of a Gemini
 study as $0, so its spending limit does not apply.
@@ -99,6 +101,35 @@ paper against the results, on every backend.
 
 `e2er doctor` shows where it found the CLI, and the setup page lists the models
 your ChatGPT plan offers (read from `~/.codex/models_cache.json`).
+
+### Codex on Linux and Windows
+
+e2er's Codex runs were validated on macOS, where Codex sandboxes with Seatbelt.
+A specialist writes its files with Codex's `apply_patch` inside the
+`workspace-write` sandbox, and e2er makes one more folder writable with
+`--add-dir`: the run database's folder (`~/.e2er`), because `e2er-data` and
+`e2er-lit` record what they fetched there. When the sandbox refuses the writes,
+Codex still ends without an error and the step fails with
+"contract violation: …: file not written"; e2er now adds what Codex's sandbox
+refused and the remedy for your system to that message.
+
+- **Linux.** Codex's sandbox uses bubblewrap, which needs unprivileged user
+  namespaces. Install it (`sudo apt install bubblewrap`). Ubuntu 23.10 and later
+  restrict the namespaces with AppArmor (`sysctl
+  kernel.apparmor_restrict_unprivileged_userns` prints 1): allow them for
+  `bwrap` with an AppArmor profile, or for the whole system with
+  `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
+- **Windows.** Codex's sandbox refuses `apply_patch` under `workspace-write`
+  when extra writable folders are given (openai/codex issue #30009), which
+  e2er does whenever the run database lies outside the study's folder (by
+  default it does). Run e2er inside WSL2, where Codex uses its Linux sandbox.
+- **Without a sandbox.** `CODEX_SANDBOX=danger-full-access` together with
+  `CODEX_ALLOW_FULL_ACCESS=true`, in your studies folder's `.env`, runs Codex
+  without any sandbox: every shell command the model chooses then runs as you,
+  with your files. e2er warns at every call. Use it only on a machine or account
+  set aside for it.
+
+On macOS nothing changes.
 
 Each run records which backend, model, reasoning effort and CLI version
 answered its calls (the `backend_identity` event, kept with the study).

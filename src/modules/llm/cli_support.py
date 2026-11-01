@@ -12,7 +12,6 @@ import asyncio
 import os
 import re
 import shutil
-import signal
 import subprocess
 import sysconfig
 from contextvars import ContextVar
@@ -147,17 +146,9 @@ def kill_process_group(proc: Any) -> None:
     running after a timeout; the subprocess is started in its own session so
     its process group can be killed whole.
     """
-    pid = getattr(proc, "pid", None)
-    if isinstance(pid, int) and pid > 0:
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-            return
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-    try:
-        proc.kill()
-    except (ProcessLookupError, OSError):
-        pass
+    from ...core.child_env import kill_tree
+
+    kill_tree(proc)  # POSIX: the process group; Windows: taskkill /T (os.killpg does not exist there)
 
 
 async def stop_on_cancel(proc: Any) -> None:
@@ -178,7 +169,9 @@ async def stop_on_cancel(proc: Any) -> None:
 def cli_version(cli_path: str) -> str | None:
     """`<cli> --version`, first line; None when it cannot be read."""
     try:
-        out = subprocess.run([cli_path, "--version"], capture_output=True, text=True, timeout=20, check=False)
+        out = subprocess.run(
+            [cli_path, "--version"], capture_output=True, encoding="utf-8", errors="replace", timeout=20, check=False
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     line = (out.stdout or out.stderr or "").strip().splitlines()

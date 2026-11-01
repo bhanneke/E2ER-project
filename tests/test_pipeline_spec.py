@@ -150,7 +150,11 @@ def test_a_top_level_setting_written_inside_a_step_says_so(tmp_path):
     so the error names the cause and the fix.
     """
     bad = tmp_path / "p.toml"
-    bad.write_text('name = "p"\n\n[[steps]]\nkind = "strategist"\nname = "initial"\n\nfinalize = ["compile"]\n')
+    bad.write_text(
+        'name = "p"\n\n[[steps]]\nkind = "strategist"\nname = "initial"\n\nfinalize = ["compile"]\n',
+        encoding="utf-8",
+        newline="\n",
+    )
 
     with pytest.raises(PipelineError, match="top-level setting"):
         load_spec(bad)
@@ -191,7 +195,7 @@ def test_an_unknown_finalize_action_is_rejected():
 
 def test_malformed_toml_names_the_file(tmp_path):
     bad = tmp_path / "broken.toml"
-    bad.write_text('name = "x"\nsteps = [[[\n')
+    bad.write_text('name = "x"\nsteps = [[[\n', encoding="utf-8", newline="\n")
 
     with pytest.raises(PipelineError, match="broken.toml"):
         load_spec(bad)
@@ -259,7 +263,9 @@ def test_the_builtin_is_findable_by_name():
 def test_project_local_beats_the_builtin(tmp_path):
     local = tmp_path / "pipelines"
     local.mkdir()
-    (local / "empirical.toml").write_text('name = "empirical"\n[[steps]]\nkind = "strategist"\nname = "mine"\n')
+    (local / "empirical.toml").write_text(
+        'name = "empirical"\n[[steps]]\nkind = "strategist"\nname = "mine"\n', encoding="utf-8", newline="\n"
+    )
 
     spec = find_spec("empirical", project=tmp_path)
 

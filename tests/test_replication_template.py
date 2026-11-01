@@ -155,7 +155,9 @@ def workspace(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "manifest.json").write_text(
-        json.dumps({"research_question": "Computational reproduction of A study (10.5281/zenodo.424242)"})
+        json.dumps({"research_question": "Computational reproduction of A study (10.5281/zenodo.424242)"}),
+        encoding="utf-8",
+        newline="\n",
     )
     yield ws
     for d in ("package", "package_archive"):
@@ -253,14 +255,14 @@ def test_description_dois_count_as_publications():
 
 def test_fetch_unpacks_hashes_and_freezes_the_package(workspace: Path):
     package = _fetched(workspace)
-    manifest = json.loads((workspace / "package_manifest.json").read_text())
+    manifest = json.loads((workspace / "package_manifest.json").read_text(encoding="utf-8"))
     assert manifest["record_id"] == "424242" and manifest["package_root"] == "study"
     paths = {f["path"]: f["sha256"] for f in manifest["package_files"]}
     assert paths["study/code/main.R"] == hashlib.sha256(PACKAGE["study/code/main.R"]).hexdigest()
     assert manifest["files"][0]["verified"] is True
     target = package / "study" / "code" / "main.R"
     with pytest.raises(PermissionError):
-        target.write_text("changed")
+        target.write_text("changed", encoding="utf-8", newline="\n")
 
 
 def test_fetch_on_resume_rehashes_and_catches_a_changed_byte(workspace: Path):
@@ -269,7 +271,7 @@ def test_fetch_on_resume_rehashes_and_catches_a_changed_byte(workspace: Path):
     assert again.passed and "unchanged" in again.detail()
     f = package / "study" / "data" / "panel.csv"
     f.chmod(0o644)
-    f.write_text("id,y\n1,3\n")
+    f.write_text("id,y\n1,3\n", encoding="utf-8", newline="\n")
     bad = repl.fetch_package(workspace)
     assert not bad.passed and "study/data/panel.csv changed" in bad.reasons[0]
 
@@ -283,7 +285,9 @@ def test_fetch_skips_members_that_escape_the_package(workspace: Path):
 
 
 def test_fetch_without_a_zenodo_record_in_the_question_fails(workspace: Path):
-    (workspace / "manifest.json").write_text(json.dumps({"research_question": "Reproduce something"}))
+    (workspace / "manifest.json").write_text(
+        json.dumps({"research_question": "Reproduce something"}), encoding="utf-8", newline="\n"
+    )
     r = repl.fetch_package(workspace)
     assert not r.passed and "names no Zenodo record" in r.reasons[0]
 
@@ -363,7 +367,7 @@ def test_an_unsafe_or_broken_plan_is_refused(workspace: Path, over, match):
 
 
 def test_the_plan_schema_accepts_the_documented_example():
-    schema = json.loads((ROOT / "docs" / "schemas" / "replication_plan.schema.json").read_text())
+    schema = json.loads((ROOT / "docs" / "schemas" / "replication_plan.schema.json").read_text(encoding="utf-8"))
     jsonschema.validators.validator_for(schema)(schema).validate(_plan())
 
 
@@ -372,11 +376,13 @@ def test_the_planner_contract_includes_the_plan_structure(workspace: Path):
 
     _supply_paper(workspace)
     _fetched(workspace)
-    (workspace / "replication_plan.md").write_text("# Plan\n" + "x" * 200)
-    (workspace / "replication_plan.json").write_text(json.dumps(_plan(language="Stata")))
+    (workspace / "replication_plan.md").write_text("# Plan\n" + "x" * 200, encoding="utf-8", newline="\n")
+    (workspace / "replication_plan.json").write_text(
+        json.dumps(_plan(language="Stata")), encoding="utf-8", newline="\n"
+    )
     bad = [c for c in check_specialist_artifacts(workspace, "replication_planner") if not c.ok]
     assert bad and "language" in bad[0].reason
-    (workspace / "replication_plan.json").write_text(json.dumps(_plan()))
+    (workspace / "replication_plan.json").write_text(json.dumps(_plan()), encoding="utf-8", newline="\n")
     assert all(c.ok for c in check_specialist_artifacts(workspace, "replication_planner"))
 
 
@@ -484,8 +490,10 @@ class FakeDocker:
                 return subprocess.CompletedProcess(argv, 1, b"", b"Error: object 'x' not found")
             out = self.ws / "sandbox" / "run" / "study" / "output"
             out.mkdir(parents=True, exist_ok=True)
-            (out / "table1.csv").write_text("term,estimate,se\natt,-0.01214,0.004\n")
-            (out / "shipped.csv").write_text("term,estimate\natt,-0.0131\n")  # the rebuilt shipped file
+            (out / "table1.csv").write_text("term,estimate,se\natt,-0.01214,0.004\n", encoding="utf-8", newline="\n")
+            (out / "shipped.csv").write_text(
+                "term,estimate\natt,-0.0131\n", encoding="utf-8", newline="\n"
+            )  # the rebuilt shipped file
             return ok
         raise AssertionError(f"unexpected docker call {argv}")
 
@@ -499,7 +507,7 @@ def _supply_paper(ws: Path, pdf: bytes = PAPER) -> Path:
 def _ready(ws: Path, plan: dict | None = None) -> None:
     _supply_paper(ws)
     _fetched(ws)
-    (ws / "replication_plan.json").write_text(json.dumps(plan or _plan()))
+    (ws / "replication_plan.json").write_text(json.dumps(plan or _plan()), encoding="utf-8", newline="\n")
 
 
 def test_the_sandbox_runs_logs_and_hashes_through_docker_only(workspace: Path):
@@ -507,7 +515,7 @@ def test_the_sandbox_runs_logs_and_hashes_through_docker_only(workspace: Path):
     fake = FakeDocker(workspace)
     r = run_sandbox(workspace, runner=fake, docker="docker", memory_gb=6)
     assert r.passed, r.reasons
-    log = json.loads((workspace / LOG_FILE).read_text())
+    log = json.loads((workspace / LOG_FILE).read_text(encoding="utf-8"))
     run = log["runs"][0]
     assert run["status"] == "ok" and run["exit_code"] == 0 and "--network" in run["argv"]
     assert log["image_digest"] == "rocker/r-ver@sha256:abc" and log["install"]["installed"] == {
@@ -531,7 +539,7 @@ def test_a_failing_script_is_a_result_not_a_failed_step(workspace: Path):
     _ready(workspace)
     r = run_sandbox(workspace, runner=FakeDocker(workspace, fail={"code/main.R"}), docker="docker")
     assert r.passed and "main: failed" in r.notes
-    run = json.loads((workspace / LOG_FILE).read_text())["runs"][0]
+    run = json.loads((workspace / LOG_FILE).read_text(encoding="utf-8"))["runs"][0]
     assert run["exit_code"] == 1 and "not found" in run["stderr_tail"]
 
 
@@ -539,7 +547,9 @@ def test_a_script_past_its_time_limit_is_killed(workspace: Path):
     _ready(workspace)
     fake = FakeDocker(workspace, hang={"code/main.R"})
     r = run_sandbox(workspace, runner=fake, docker="docker", timeout_minutes=1)
-    assert r.passed and json.loads((workspace / LOG_FILE).read_text())["runs"][0]["status"] == "timed_out"
+    assert (
+        r.passed and json.loads((workspace / LOG_FILE).read_text(encoding="utf-8"))["runs"][0]["status"] == "timed_out"
+    )
     assert fake.calls[-1][1:3] == ["rm", "-f"] and fake.calls[-1][3].startswith("e2er-run-")
 
 
@@ -615,7 +625,7 @@ def _report(level: str = "reproduced", reproduced: Any = -0.01214, l1: dict | No
 
 
 def _env(ws: Path) -> dict:
-    log = json.loads((ws / LOG_FILE).read_text())
+    log = json.loads((ws / LOG_FILE).read_text(encoding="utf-8"))
     return {
         "snapshot": {"date": log["snapshot"]["date"], "url": log["snapshot"]["url"]},
         "platform": log["install"]["platform"],
@@ -626,10 +636,12 @@ def _env(ws: Path) -> dict:
 def _write(ws: Path, report: dict) -> None:
     if "environment" not in report and (ws / LOG_FILE).is_file():
         report = {**report, "environment": _env(ws)}
-    (ws / "reproduction_report.json").write_text(json.dumps(report))
+    (ws / "reproduction_report.json").write_text(json.dumps(report), encoding="utf-8", newline="\n")
     if not (ws / "reproduction_report.md").is_file():
         # the written report, stating nothing the check could contradict
-        (ws / "reproduction_report.md").write_text("# Reproduction report\n\n## Level 1\n\nSee the tables below.\n")
+        (ws / "reproduction_report.md").write_text(
+            "# Reproduction report\n\n## Level 1\n\nSee the tables below.\n", encoding="utf-8", newline="\n"
+        )
 
 
 def test_a_truthful_report_passes_and_every_number_is_recomputed(workspace: Path):
@@ -637,7 +649,7 @@ def test_a_truthful_report_passes_and_every_number_is_recomputed(workspace: Path
     _write(workspace, _report())
     r = check_reproduction(workspace)
     assert r.passed, r.reasons
-    checked = json.loads((workspace / CHECK_FILE).read_text())["checked"][0]
+    checked = json.loads((workspace / CHECK_FILE).read_text(encoding="utf-8"))["checked"][0]
     assert checked["recomputed"] == -0.01214 and checked["equal_to_target"] is True
 
 
@@ -679,7 +691,7 @@ def test_a_report_that_claims_what_the_outputs_do_not_hold_fails(workspace: Path
 def test_a_level_that_contradicts_the_numbers_fails(workspace: Path):
     _ran(workspace)
     table = workspace / "sandbox/run/study/output/table1.csv"
-    table.write_text("term,estimate,se\natt,-0.0150,0.004\n")
+    table.write_text("term,estimate,se\natt,-0.0150,0.004\n", encoding="utf-8", newline="\n")
     _write(workspace, _report(level="reproduced_minor", reproduced=-0.015))
     r = check_reproduction(workspace)
     assert not r.passed and any("exceeds the minor tolerance" in x for x in r.reasons)
@@ -699,13 +711,15 @@ def test_an_unassessed_target_with_a_reason_is_accounted_for(workspace: Path):
 
 
 def test_the_report_schema_accepts_what_the_check_accepts():
-    schema = json.loads((ROOT / "docs" / "schemas" / "reproduction_report.schema.json").read_text())
+    schema = json.loads((ROOT / "docs" / "schemas" / "reproduction_report.schema.json").read_text(encoding="utf-8"))
     env = {"snapshot": {"date": "2026-08-30", "url": "https://p3m.dev/cran/2026-08-30"}, "installed": {"did": "2.5.1"}}
     jsonschema.validators.validator_for(schema)(schema).validate({**_report(), "environment": env})
 
 
 def test_the_comparer_contract_needs_levels_and_reasons(tmp_path: Path):
-    (tmp_path / "reproduction_report.json").write_text(json.dumps({"results": [{"level": "great"}]}))
+    (tmp_path / "reproduction_report.json").write_text(
+        json.dumps({"results": [{"level": "great"}]}), encoding="utf-8", newline="\n"
+    )
     assert "level must be one of" in check_report(tmp_path)[0]
 
 
@@ -736,7 +750,7 @@ def test_the_template_loads_in_the_order_of_a_reproduction():
     assert spec.step("sandbox_run").settings["memory_gb"] == 6
     kinds = {s.kind for s in spec.steps}
     assert "strategist" not in kinds and "aggregate" not in kinds  # no drafting, no review panel
-    assert "e2er authors" in TEMPLATE.read_text()
+    assert "e2er authors" in TEMPLATE.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -808,7 +822,9 @@ async def test_a_failed_check_step_halts_with_its_reasons_and_runs_again(workspa
 
 
 async def test_a_reliability_check_blocks_even_with_governance_off(workspace: Path, events):
-    (workspace / "manifest.json").write_text(json.dumps({"research_question": "no record"}))
+    (workspace / "manifest.json").write_text(
+        json.dumps({"research_question": "no record"}), encoding="utf-8", newline="\n"
+    )
     r = _runner(workspace, governance="off")
     with pytest.raises(GateHaltError):
         await r._run_check_step(r._spec.step("fetch"), r._state)
@@ -848,8 +864,8 @@ async def test_the_run_stops_at_the_plan_review_after_fetch_and_plan(workspace: 
     monkeypatch.setattr("src.modules.data.zenodo.ZenodoClient", lambda: client)
 
     async def _exec(orders, *a, **k):
-        (workspace / "replication_plan.json").write_text(json.dumps(_plan()))
-        (workspace / "replication_plan.md").write_text("# Plan\n" + "x" * 200)
+        (workspace / "replication_plan.json").write_text(json.dumps(_plan()), encoding="utf-8", newline="\n")
+        (workspace / "replication_plan.md").write_text("# Plan\n" + "x" * 200, encoding="utf-8", newline="\n")
         return [Contribution(paper_id=PID, specialist=o.specialist, output="", success=True) for o in orders]
 
     monkeypatch.setattr("src.core.strategist.runner.execute_with_dependencies", _exec)
@@ -956,7 +972,7 @@ def test_a_level_2_target_needs_the_paper(workspace: Path):
 
 
 def test_the_plan_schema_encodes_the_level_rules():
-    schema = json.loads((ROOT / "docs" / "schemas" / "replication_plan.schema.json").read_text())
+    schema = json.loads((ROOT / "docs" / "schemas" / "replication_plan.schema.json").read_text(encoding="utf-8"))
     v = jsonschema.validators.validator_for(schema)(schema)
     v.validate(_plan())
     bad = _plan()
@@ -979,7 +995,7 @@ def test_a_report_with_levels_separately_passes_and_counts_each_level(workspace:
     _ran(workspace)
     _write(workspace, _report())
     assert check_reproduction(workspace).passed
-    stats = json.loads((workspace / CHECK_FILE).read_text())["stats"]
+    stats = json.loads((workspace / CHECK_FILE).read_text(encoding="utf-8"))["stats"]
     assert stats["level_1"] == {
         "targets": 1,
         "numbers_checked": 1,
@@ -991,7 +1007,7 @@ def test_a_report_with_levels_separately_passes_and_counts_each_level(workspace:
 
 def test_the_comparer_contract_needs_the_target_level(tmp_path: Path):
     (tmp_path / "reproduction_report.json").write_text(
-        json.dumps({"results": [{"level": "reproduced", "reason": "r"}]})
+        json.dumps({"results": [{"level": "reproduced", "reason": "r"}]}), encoding="utf-8", newline="\n"
     )
     assert "target_level" in check_report(tmp_path)[0]
 
@@ -1008,9 +1024,9 @@ def test_the_paper_is_staged_fingerprinted_and_its_text_extracted(workspace: Pat
     assert rec["supplied_by"] == "researcher" and rec["file"] == "paper/paper.pdf"
     assert rec["sha256"] == hashlib.sha256(PAPER).hexdigest() and rec["pages"] == 2
     assert rec["original_path"] == str(src)
-    manifest = json.loads((workspace / "package_manifest.json").read_text())
+    manifest = json.loads((workspace / "package_manifest.json").read_text(encoding="utf-8"))
     assert manifest["paper"]["sha256"] == rec["sha256"] and "new" not in manifest["paper"]
-    text = (workspace / "paper_text" / "paper.pdf.txt").read_text()
+    text = (workspace / "paper_text" / "paper.pdf.txt").read_text(encoding="utf-8")
     assert "=== page 2 ===" in text and "-0.012" in text.split("=== page 2 ===")[1]
     assert (workspace / "paper" / "paper.pdf").read_bytes() == PAPER
     # the paper is researcher input, never part of the package
@@ -1046,7 +1062,7 @@ def test_the_paper_can_come_from_the_paper_pdf_setting(workspace: Path, tmp_path
 
 def test_something_that_is_not_a_pdf_is_refused(workspace: Path):
     (workspace / "data").mkdir()
-    (workspace / "data" / "paper.pdf").write_text("<html>403 Forbidden</html>")
+    (workspace / "data" / "paper.pdf").write_text("<html>403 Forbidden</html>", encoding="utf-8", newline="\n")
     r = repl.fetch_package(workspace, client=_client(*_pkg()))
     assert not r.passed and "is not a PDF" in r.reasons[0]
 
@@ -1189,7 +1205,7 @@ def test_the_sandbox_log_records_snapshot_platform_all_versions_and_declared_pin
     _ready(workspace, plan)
     fake = FakeDocker(workspace)
     assert run_sandbox(workspace, runner=fake, docker="docker").passed
-    log = json.loads((workspace / LOG_FILE).read_text())
+    log = json.loads((workspace / LOG_FILE).read_text(encoding="utf-8"))
     assert log["snapshot"]["date"] == "2026-08-30" and log["snapshot"]["setting"] == "package-date"
     assert log["snapshot"]["url"] == "https://p3m.dev/cran/__linux__/noble/2026-08-30"
     assert "publication date" in log["snapshot"]["basis"]
@@ -1200,7 +1216,7 @@ def test_the_sandbox_log_records_snapshot_platform_all_versions_and_declared_pin
     assert "2026-08-30" in install[-1]
     # a reused environment is still probed, so the versions are always recorded
     assert run_sandbox(workspace, runner=fake, docker="docker").passed
-    again = json.loads((workspace / LOG_FILE).read_text())
+    again = json.loads((workspace / LOG_FILE).read_text(encoding="utf-8"))
     assert "reused" in again["install"] and again["install"]["installed"]["DRDID"] == "1.3.0"
 
 
@@ -1219,7 +1235,7 @@ def test_labels_follow_the_protocol_thresholds():
 
 
 def test_the_protocol_states_the_thresholds_the_check_enforces():
-    text = (ROOT / "skills/files/replication/reproduction-protocol.md").read_text()
+    text = (ROOT / "skills/files/replication/reproduction-protocol.md").read_text(encoding="utf-8")
     assert "1e-9" in text and "10 %" in text and "minor_rel_tolerance" in text
     assert find_spec("replication").step("reproduction_gate").settings["minor_rel_tolerance"] == 0.10
 
@@ -1227,7 +1243,9 @@ def test_the_protocol_states_the_thresholds_the_check_enforces():
 def test_the_case_that_stopped_the_first_run_is_caught(workspace: Path):
     """A 0.09 % level-1 difference labelled 'reproduced', with 'equals at full precision' in its reason."""
     _ran(workspace)
-    (workspace / "sandbox/run/study/output/shipped.csv").write_text("term,estimate\natt,-0.0120108\n")
+    (workspace / "sandbox/run/study/output/shipped.csv").write_text(
+        "term,estimate\natt,-0.0120108\n", encoding="utf-8", newline="\n"
+    )
     l1 = _l1(level="reproduced", reproduced=-0.0120108)
     l1["reason"] = "ATT equals at full precision; SE differs by 0.09%."
     _write(workspace, _report(l1=l1))
@@ -1280,7 +1298,7 @@ def test_the_report_must_carry_the_sandbox_environment(workspace: Path):
     rep = {**_report(), "environment": {**_env(workspace), "installed": {"DRDID": "1.3.0"}}}
     _write(workspace, rep)
     assert check_reproduction(workspace).passed
-    full = json.loads((workspace / CHECK_FILE).read_text())["environment"]
+    full = json.loads((workspace / CHECK_FILE).read_text(encoding="utf-8"))["environment"]
     assert full["installed"] == {"fixest": "0.12.1", "DRDID": "1.3.0"} and full["snapshot"]["date"] == "2026-08-30"
     rep = {**_report(), "environment": {**_env(workspace), "installed": {"fixest": "0.12.1", "DRDID": "1.2.0"}}}
     _write(workspace, rep)
@@ -1293,7 +1311,7 @@ def test_the_report_must_carry_the_sandbox_environment(workspace: Path):
     _write(workspace, rep)
     assert any("environment.snapshot.date" in x for x in check_reproduction(workspace).reasons)
     bare = _report()
-    (workspace / "reproduction_report.json").write_text(json.dumps(bare))
+    (workspace / "reproduction_report.json").write_text(json.dumps(bare), encoding="utf-8", newline="\n")
     assert any("no environment block" in x for x in check_reproduction(workspace).reasons)
 
 
@@ -1302,7 +1320,7 @@ def test_the_comparer_contract_catches_labels_causes_and_environment(workspace: 
     rep = _report()
     rep["results"][0]["reason"] = "Differs due to DRDID."
     del rep["results"][1]["comparisons"][0]["label"]
-    (workspace / "reproduction_report.json").write_text(json.dumps(rep))
+    (workspace / "reproduction_report.json").write_text(json.dumps(rep), encoding="utf-8", newline="\n")
     errs = check_report(workspace)
     assert any("states a cause as established" in e for e in errs)
     assert any("label must be one of" in e for e in errs)
@@ -1316,8 +1334,8 @@ def test_a_rewriting_specialists_earlier_output_is_set_aside(tmp_path: Path):
     from src.core.specialists.base import set_aside_previous_outputs
     from src.core.specialists.contracts import WorkOrder
 
-    (tmp_path / "reproduction_report.md").write_text("old")
-    (tmp_path / "reproduction_report.json").write_text("{}")
+    (tmp_path / "reproduction_report.md").write_text("old", encoding="utf-8", newline="\n")
+    (tmp_path / "reproduction_report.json").write_text("{}", encoding="utf-8", newline="\n")
     order = WorkOrder(
         paper_id=PID,
         specialist="reproduction_comparer",
@@ -1331,17 +1349,17 @@ def test_a_rewriting_specialists_earlier_output_is_set_aside(tmp_path: Path):
         ("reproduction_report.json", ".history/reproduction_report.json.1"),
     ]
     assert not (tmp_path / "reproduction_report.json").exists()
-    assert (tmp_path / ".history" / "reproduction_report.json.1").read_text() == "{}"
+    assert (tmp_path / ".history" / "reproduction_report.json.1").read_text(encoding="utf-8") == "{}"
 
 
 def test_other_specialists_keep_their_files_and_are_told_to_read_them_first(tmp_path: Path):
     from src.core.specialists.base import set_aside_previous_outputs
     from src.core.specialists.contracts import WorkOrder
 
-    (tmp_path / "paper_draft.tex").write_text("draft")
+    (tmp_path / "paper_draft.tex").write_text("draft", encoding="utf-8", newline="\n")
     order = WorkOrder(paper_id=PID, specialist="section_writer", focus="x", output_file="paper_draft.tex")
     assert set_aside_previous_outputs(tmp_path, order) == []
-    assert (tmp_path / "paper_draft.tex").read_text() == "draft"
+    assert (tmp_path / "paper_draft.tex").read_text(encoding="utf-8") == "draft"
 
 
 async def test_the_retry_prompt_names_the_set_aside_or_existing_files(tmp_path: Path, monkeypatch):
@@ -1360,8 +1378,8 @@ async def test_the_retry_prompt_names_the_set_aside_or_existing_files(tmp_path: 
         return None
 
     monkeypatch.setattr(base, "save_usage", _noop)
-    (tmp_path / "reproduction_report.json").write_text("{}")
-    (tmp_path / "paper_draft.tex").write_text("draft")
+    (tmp_path / "reproduction_report.json").write_text("{}", encoding="utf-8", newline="\n")
+    (tmp_path / "paper_draft.tex").write_text("draft", encoding="utf-8", newline="\n")
     for spec, out, side in (
         ("reproduction_comparer", "reproduction_report.md", ["reproduction_report.json"]),
         ("section_writer", "paper_draft.tex", []),

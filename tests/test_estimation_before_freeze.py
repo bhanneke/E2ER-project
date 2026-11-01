@@ -37,12 +37,16 @@ def _db(ws: Path, tables: dict[str, int]) -> None:
 
 def _dictionary(ws: Path, names: list[str]) -> None:
     (ws / "data_dictionary.json").write_text(
-        json.dumps({"tables": [{"name": n, "source": "yfinance"} for n in names], "fields": []})
+        json.dumps({"tables": [{"name": n, "source": "yfinance"} for n in names], "fields": []}),
+        encoding="utf-8",
+        newline="\n",
     )
 
 
 def _summary(ws: Path, text: str) -> None:
-    (ws / "data_summary.md").write_text("# Data summary\n\n" + text + "\n" + "Sample description. " * 10)
+    (ws / "data_summary.md").write_text(
+        "# Data summary\n\n" + text + "\n" + "Sample description. " * 10, encoding="utf-8", newline="\n"
+    )
 
 
 # ── 1. the data analyst loads the declared tables and counts them truthfully ──
@@ -78,13 +82,13 @@ def test_speculative_row_counts_fail(tmp_path: Path):
 def test_the_data_analyst_contract_includes_the_tables(tmp_path: Path):
     _dictionary(tmp_path, ["spy_prices"])
     _summary(tmp_path, "spy_prices: 5 rows")
-    (tmp_path / "summary_statistics.json").write_text('{"n": 1}')
+    (tmp_path / "summary_statistics.json").write_text('{"n": 1}', encoding="utf-8", newline="\n")
     failed = [c for c in check_specialist_artifacts(tmp_path, "data_analyst") if not c.ok]
     assert [c.artifact for c in failed] == ["data.db"]
 
 
 def test_without_declared_tables_nothing_changes(tmp_path: Path):
-    (tmp_path / "data_dictionary.json").write_text('{"fields": []}')
+    (tmp_path / "data_dictionary.json").write_text('{"fields": []}', encoding="utf-8", newline="\n")
     assert check_declared_tables(tmp_path) == []
 
 
@@ -106,10 +110,12 @@ def test_the_data_cli_writes_the_table_into_data_db(tmp_path: Path, monkeypatch)
 def test_the_runner_never_runs_the_estimation_script_for_the_data_analyst(tmp_path: Path):
     from src.core.specialists.post_execution import EXECUTION_CONVENTIONS, _discover_script
 
-    (tmp_path / "run_estimation.py").write_text("# writes summary_statistics.json and CARs\n")
+    (tmp_path / "run_estimation.py").write_text(
+        "# writes summary_statistics.json and CARs\n", encoding="utf-8", newline="\n"
+    )
     script, _ = _discover_script(tmp_path, EXECUTION_CONVENTIONS["data_analyst"])
     assert script is None
-    (tmp_path / "build_panel.py").write_text("# writes summary_statistics.json\n")
+    (tmp_path / "build_panel.py").write_text("# writes summary_statistics.json\n", encoding="utf-8", newline="\n")
     script, _ = _discover_script(tmp_path, EXECUTION_CONVENTIONS["data_analyst"])
     assert script is not None and script.name == "build_panel.py"
 
@@ -128,18 +134,20 @@ def test_the_data_skill_is_loaded_and_says_never_estimate():
 
 def _old_study(ws: Path) -> None:
     """What the 9e1c7f09 workspace held when the pre-registration came up."""
-    (ws / "run_estimation.py").write_text("import statsmodels.api as sm\n# market model, CARs\n")
+    (ws / "run_estimation.py").write_text(
+        "import statsmodels.api as sm\n# market model, CARs\n", encoding="utf-8", newline="\n"
+    )
     (ws / "fig_car_by_direction.pdf").write_bytes(b"%PDF-1.4")
     (ws / "fig_sample_by_year.pdf").write_bytes(b"%PDF-1.4")  # descriptive: not a result
-    (ws / "build_panel.py").write_text("import pandas as pd\n# clean prices\n")
+    (ws / "build_panel.py").write_text("import pandas as pd\n# clean prices\n", encoding="utf-8", newline="\n")
     _db(ws, {"event_study_results": 31, "fomc_announcement_dates": 31, "spy_prices": 3018})
 
 
 def test_estimation_outputs_are_found(tmp_path: Path):
     _old_study(tmp_path)
-    (tmp_path / "estimation_results.json").write_text('{"main": {}}')
+    (tmp_path / "estimation_results.json").write_text('{"main": {}}', encoding="utf-8", newline="\n")
     (tmp_path / "tables").mkdir()
-    (tmp_path / "tables" / "main.tex").write_text("x")
+    (tmp_path / "tables" / "main.tex").write_text("x", encoding="utf-8", newline="\n")
     assert prereg.estimation_outputs(tmp_path) == [
         "data.db:event_study_results",
         "estimation_results.json",
@@ -151,7 +159,7 @@ def test_estimation_outputs_are_found(tmp_path: Path):
 
 def test_a_clean_workspace_has_none(tmp_path: Path):
     _db(tmp_path, {"spy_prices": 3, "fomc_announcement_dates": 31})
-    (tmp_path / "build_panel.py").write_text("import pandas as pd\n")
+    (tmp_path / "build_panel.py").write_text("import pandas as pd\n", encoding="utf-8", newline="\n")
     assert prereg.estimation_outputs(tmp_path) == []
 
 
@@ -167,7 +175,7 @@ def test_set_aside_moves_and_records_never_deletes(tmp_path: Path):
     con.close()
     items = {i.get("file") or i.get("table"): i for i in manifest["items"]}
     assert items["event_study_results"]["rows"] == 31 and len(items["run_estimation.py"]["sha256"]) == 64
-    assert json.loads((folder / "manifest.json").read_text()) == manifest
+    assert json.loads((folder / "manifest.json").read_text(encoding="utf-8")) == manifest
     # Data stay.
     con = sqlite3.connect(tmp_path / "data.db")
     assert {r[0] for r in con.execute("SELECT name FROM sqlite_master")} == {"fomc_announcement_dates", "spy_prices"}
@@ -213,7 +221,7 @@ def _runner(tmp_path: Path, governance: str = "full"):
 
 async def test_the_preregistration_halts_on_estimates_and_lists_them(tmp_path: Path, events):
     _old_study(tmp_path)
-    (tmp_path / "paper_plan.md").write_text("H1\n")
+    (tmp_path / "paper_plan.md").write_text("H1\n", encoding="utf-8", newline="\n")
     r = _runner(tmp_path)
     with pytest.raises(GateHaltError) as halt:
         await r._between_groups({"data_analyst"}, [])
@@ -260,7 +268,7 @@ async def test_the_preregistration_halts_on_estimates_and_lists_them(tmp_path: P
 
 
 async def test_a_clean_workspace_reaches_the_preregistration(tmp_path: Path, events):
-    (tmp_path / "paper_plan.md").write_text("H1\n")
+    (tmp_path / "paper_plan.md").write_text("H1\n", encoding="utf-8", newline="\n")
     _db(tmp_path, {"spy_prices": 3})
     r = _runner(tmp_path)
     with pytest.raises(HumanReviewRequestedError) as stop:
@@ -269,7 +277,7 @@ async def test_a_clean_workspace_reaches_the_preregistration(tmp_path: Path, eve
 
 
 async def test_estimates_after_the_freeze_are_fine(tmp_path: Path, events):
-    (tmp_path / "paper_plan.md").write_text("H1\n")
+    (tmp_path / "paper_plan.md").write_text("H1\n", encoding="utf-8", newline="\n")
     r = _runner(tmp_path)
     with pytest.raises(HumanReviewRequestedError):
         await r._between_groups({"data_analyst"}, [])
@@ -323,13 +331,13 @@ def test_the_calendar_must_be_a_declared_loaded_table_and_the_failure_names_the_
         "calendar": {"table": "spy_prices", "date_column": "date"},
         "events": [{"id": "e", "date": "2020-01-02", "asset": "KBE"}],
     }
-    (tmp_path / "event_design.json").write_text(json.dumps(design))
+    (tmp_path / "event_design.json").write_text(json.dumps(design), encoding="utf-8", newline="\n")
     r = check_event_window(tmp_path)
     reason = next(x for x in r.reasons if "no such table: spy_prices" in x)
     assert "Tables in data.db: fomc_announcement_dates (31 rows), kbe_prices (5 rows)" in reason
 
     design["calendar"]["table"] = "fomc_announcement_dates"
-    (tmp_path / "event_design.json").write_text(json.dumps(design))
+    (tmp_path / "event_design.json").write_text(json.dumps(design), encoding="utf-8", newline="\n")
     r = check_event_window(tmp_path)
     assert any("is not one of the tables data_dictionary.json declares" in x for x in r.reasons)
 
@@ -343,8 +351,12 @@ HEADER = (
 
 
 def test_the_9a623c39_results_csv_is_found(tmp_path: Path):
-    (tmp_path / "event_study_results.csv").write_text(HEADER + "\n1,2015-12-16,2015-12-16,increase,0.25\n")
-    (tmp_path / "bank_returns.csv").write_text(HEADER + "\n")  # found by its columns alone
+    (tmp_path / "event_study_results.csv").write_text(
+        HEADER + "\n1,2015-12-16,2015-12-16,increase,0.25\n", encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "bank_returns.csv").write_text(
+        HEADER + "\n", encoding="utf-8", newline="\n"
+    )  # found by its columns alone
     assert prereg.estimation_outputs(tmp_path) == ["bank_returns.csv", "event_study_results.csv"]
 
 
@@ -370,26 +382,30 @@ def test_result_files_by_name_or_columns(tmp_path: Path, name: str, content: byt
 def test_data_and_plan_files_are_not_results(tmp_path: Path):
     _dictionary(tmp_path, ["kbe_prices", "car_registrations"])
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "event_study_results.csv").write_text(HEADER)  # inputs live in data/
-    (tmp_path / "kbe_prices.csv").write_text("date,close\n")
-    (tmp_path / "car_registrations.csv").write_text("date,car\n")  # a declared data table
-    (tmp_path / "year_summary.csv").write_text("year,n\n")
+    (tmp_path / "data" / "event_study_results.csv").write_text(
+        HEADER, encoding="utf-8", newline="\n"
+    )  # inputs live in data/
+    (tmp_path / "kbe_prices.csv").write_text("date,close\n", encoding="utf-8", newline="\n")
+    (tmp_path / "car_registrations.csv").write_text(
+        "date,car\n", encoding="utf-8", newline="\n"
+    )  # a declared data table
+    (tmp_path / "year_summary.csv").write_text("year,n\n", encoding="utf-8", newline="\n")
     for name, body in {
         "summary_statistics.json": '{"car_mean": 1}',
         "figure_spec.json": '{"figures": [{"y": "car"}]}',
         "identification_spec.json": '{"primary": {"outcome": "car"}}',
         "event_design.json": '{"estimation_window": {"start": -250, "end": -12}}',
     }.items():
-        (tmp_path / name).write_text(body)
+        (tmp_path / name).write_text(body, encoding="utf-8", newline="\n")
     assert prereg.estimation_outputs(tmp_path) == []
 
 
 async def test_a_send_back_from_a_blocked_preregistration_sets_result_files_aside(tmp_path: Path, events, monkeypatch):
     import hashlib
 
-    (tmp_path / "paper_plan.md").write_text("H1\n")
+    (tmp_path / "paper_plan.md").write_text("H1\n", encoding="utf-8", newline="\n")
     csv = tmp_path / "event_study_results.csv"
-    csv.write_text(HEADER + "\n")
+    csv.write_text(HEADER + "\n", encoding="utf-8", newline="\n")
     digest = hashlib.sha256(csv.read_bytes()).hexdigest()
     design = tmp_path / "event_design.json"
     design.write_bytes(b'{"researcher": "edit"}\n')
@@ -413,7 +429,9 @@ async def test_a_send_back_from_a_blocked_preregistration_sets_result_files_asid
     async def _exec(orders):
         sent.extend(orders)
         design.write_bytes(b'{"specialist": "rewrote it"}\n')  # ignores the remark
-        (tmp_path / "identification_spec.json").write_text('{"primary": {"treatment": "dgs2_change"}}')
+        (tmp_path / "identification_spec.json").write_text(
+            '{"primary": {"treatment": "dgs2_change"}}', encoding="utf-8", newline="\n"
+        )
         return [Contribution(paper_id=PID, specialist=o.specialist, output="") for o in orders]
 
     r._execute_orders = _exec

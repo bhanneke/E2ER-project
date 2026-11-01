@@ -125,11 +125,11 @@ async def test_arxiv_fetch_returns_none_no_doi_lookup():
 
 def test_local_bib_library_reads_both_sources(tmp_path: Path):
     curated = tmp_path / "curated.bib"
-    curated.write_text(_bib("Alpha"))
+    curated.write_text(_bib("Alpha"), encoding="utf-8", newline="\n")
     corpus = tmp_path / "corpus"
     corpus.mkdir()
-    (corpus / "zotero.bib").write_text(_bib("Beta"))
-    (corpus / "ignore.csv").write_text("a,b\n1,2\n")  # non-.bib ignored
+    (corpus / "zotero.bib").write_text(_bib("Beta"), encoding="utf-8", newline="\n")
+    (corpus / "ignore.csv").write_text("a,b\n1,2\n", encoding="utf-8", newline="\n")  # non-.bib ignored
 
     lib = LocalBibLibrary(str(curated), str(corpus))
     titles = {p.title for p in lib.entries()}
@@ -143,7 +143,7 @@ def test_local_bib_library_path_dedups_same_file(tmp_path: Path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
     shared = corpus / "shared.bib"
-    shared.write_text(_bib("Alpha") + _bib("Beta"))
+    shared.write_text(_bib("Alpha") + _bib("Beta"), encoding="utf-8", newline="\n")
 
     lib = LocalBibLibrary(str(shared), str(corpus))
     entries = lib.entries()
@@ -153,8 +153,8 @@ def test_local_bib_library_path_dedups_same_file(tmp_path: Path):
 def test_local_bib_library_never_raises_on_bad_file(tmp_path: Path):
     corpus = tmp_path / "corpus"
     corpus.mkdir()
-    (corpus / "good.bib").write_text(_bib("Survivor"))
-    (corpus / "broken.bib").write_text("this is not bibtex at all")
+    (corpus / "good.bib").write_text(_bib("Survivor"), encoding="utf-8", newline="\n")
+    (corpus / "broken.bib").write_text("this is not bibtex at all", encoding="utf-8", newline="\n")
 
     titles = {p.title for p in LocalBibLibrary(None, str(corpus)).entries()}
     assert "Survivor" in titles

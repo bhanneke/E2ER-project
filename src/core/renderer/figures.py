@@ -398,7 +398,9 @@ def render_figures(workspace: Path) -> FigureRenderReport:
 
 def _save_report(workspace: Path, report: FigureRenderReport) -> None:
     try:
-        (workspace / "figure_render_report.json").write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        (workspace / "figure_render_report.json").write_text(
+            json.dumps(report.to_dict(), indent=2), encoding="utf-8", newline="\n"
+        )
     except OSError as e:
         logger.warning("render_figures: could not write figure_render_report.json: %s", e)
 

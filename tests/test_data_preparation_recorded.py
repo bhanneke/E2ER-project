@@ -30,6 +30,7 @@ from src.core.export import package as pkg
 from src.core.export import reproduce_recipe as rr
 from src.core.export.structured import export_paper
 from src.core.specialists.post_execution import _run_recorded
+from tests.platform_help import fake_program
 
 TEXTS = {"texts_c1": [(1, "Rain fell. Fog rose."), (2, "Wind and storm.")], "texts_c2": [(3, "Snow, sun, cloud.")]}
 
@@ -110,7 +111,9 @@ def _workspace(tmp_path: Path) -> Path:
     """A finished text study: Gutenberg texts and a catalogue loaded, a seeded draw, the corpus built, estimated."""
     ws = tmp_path / "workspaces" / "2026-10-14-weather"
     (ws / "data").mkdir(parents=True)
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": "p-weather", "title": "Weather words"}), "utf-8")
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": "p-weather", "title": "Weather words"}), "utf-8", newline="\n"
+    )
     con = sqlite3.connect(ws / "data.db")
     for table, rows in TEXTS.items():
         con.execute(f"CREATE TABLE {table} (id INTEGER, text TEXT)")
@@ -124,9 +127,9 @@ def _workspace(tmp_path: Path) -> Path:
         _load("gutenberg", "texts_c1", {"command": "text", "ids": ["1", "2"]}, "2026-10-14T18:47:53Z"),
         _load("gutenberg", "texts_c2", {"command": "text", "ids": ["3"]}, "2026-10-14T18:48:22Z"),
     ]
-    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     for name, text in (("draw_sample.py", DRAW), ("build_data.py", BUILD), ("run_estimation.py", ESTIMATE)):
-        (ws / name).write_text(text, encoding="utf-8")
+        (ws / name).write_text(text, encoding="utf-8", newline="\n")
         assert _run_recorded(ws, ws / name, 120, by="e2er-run") == 0
     return ws
 
@@ -135,8 +138,7 @@ def _workspace(tmp_path: Path) -> Path:
 def rerun_offline(monkeypatch, tmp_path):
     """`e2er reproduce` with the tests' interpreter and an e2er-data that loads the texts offline."""
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FAKE_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FAKE_E2ER_DATA)
     calls = tmp_path / "e2er-data-calls.jsonl"
 
     def make_environment(run_dir, recipe, folder, logs):
@@ -168,6 +170,7 @@ def test_the_script_log_records_the_tables_a_run_writes_also_under_a_computed_na
         "import sqlite3\ncon = sqlite3.connect('data.db')\nname = 'books'\ncon.execute('DROP TABLE ' + name)\n"
         "con.commit()\n",
         encoding="utf-8",
+        newline="\n",
     )
     assert _run_recorded(ws, ws / "drop.py", 60, by="e2er-run") == 0
     assert sl.read_script_runs(ws)[-1]["tables"] == {"written": [], "dropped": ["books"]}
@@ -208,7 +211,9 @@ def test_every_table_is_traced_to_its_load_or_its_script_and_the_code_answers_fo
     # string of the script).
     log = ws / sl.SCRIPT_RUNS
     rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    log.write_text("".join(json.dumps({k: v for k, v in r.items() if k != "tables"}) + "\n" for r in rows), "utf-8")
+    log.write_text(
+        "".join(json.dumps({k: v for k, v in r.items() if k != "tables"}) + "\n" for r in rows), "utf-8", newline="\n"
+    )
     writers = rr.table_writers(ws, loads, {"run_estimation.py"})
     assert writers["corpus"] == {"how": "built", "by": "build_data.py", "evidence": "the scripts' code"}
     assert rr.preparation_scripts(ws, chain, loads) == ([ws / "build_data.py"], ["corpus", "corpus_counts"])
@@ -346,14 +351,13 @@ def test_get_data_asks_a_slow_source_again_and_says_when_a_load_has_too_few_rows
     loads = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     for e in loads:
         e["table_rows"] = len(TEXTS.get(e["table"], [])) or 3
-    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8")
+    (ws / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
     folder = export_paper(ws, tmp_path / "exports", date_str="20261021")
     run = tmp_path / "runs" / "p-weather"
     run.mkdir(parents=True)
     script = folder / "code" / "get_data.py"
     fake = tmp_path / "e2er-data"
-    fake.write_text(f"#!{sys.executable}\n" + FLAKY_E2ER_DATA, encoding="utf-8")
-    fake.chmod(0o755)
+    fake = fake_program(fake, FLAKY_E2ER_DATA)
     (tmp_path / "seen").mkdir()
     monkeypatch.setenv("E2ER_DATA", str(fake))
     monkeypatch.setenv("FAKE_SEEN", str(tmp_path / "seen"))

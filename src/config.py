@@ -354,7 +354,8 @@ class Settings(BaseSettings):
     # ── Gemini CLI backend (not tested) ───────────────────────────────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
     # the Gemini CLI (`npm install -g @google/gemini-cli`) and GEMINI_API_KEY:
-    # Google ended Gemini CLI sign-in for individual accounts in October 2026.
+    # Google ended the Gemini CLI for AI Pro/Ultra plans and free individual
+    # accounts on 18 June 2026; only a paid Gemini API key works.
     # No full study has run on it; full runs are tested on Claude Code and Codex.
     gemini_path: str = "gemini"
     gemini_timeout: int = 1800

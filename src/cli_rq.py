@@ -153,6 +153,6 @@ def rq(draft: str, use_data: bool = True, use_literature: bool = True, out: str 
         file=sys.stderr,
     )
     if out:
-        Path(out).expanduser().write_text(json.dumps(data, indent=2), encoding="utf-8")
+        Path(out).expanduser().write_text(json.dumps(data, indent=2), encoding="utf-8", newline="\n")
         print(f"Wrote {out}", file=sys.stderr)
     return 0

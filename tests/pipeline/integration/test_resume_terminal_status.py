@@ -31,7 +31,9 @@ def _make_workspace_fully_complete(tmp_path: Path, paper_id: str) -> Path:
     ws = tmp_path / paper_id
     ws.mkdir(parents=True)
     (ws / "manifest.json").write_text(
-        json.dumps({"paper_id": paper_id, "title": "T", "research_question": "Q", "mode": "iterative"})
+        json.dumps({"paper_id": paper_id, "title": "T", "research_question": "Q", "mode": "iterative"}),
+        encoding="utf-8",
+        newline="\n",
     )
     # PipelineState with every stage marked done
     state = PipelineState(paper_id=paper_id, mode="iterative")

@@ -24,6 +24,7 @@ Every change is test-only and named here:
 
 from __future__ import annotations
 
+import csv
 import functools
 import json
 import os
@@ -40,7 +41,7 @@ _LOCAL = {"127.0.0.1", "::1", "localhost", "0.0.0.0", ""}
 def _note_blocked(host: str) -> None:
     path = os.environ.get(ENV_NETLOG)
     if path:
-        with open(path, "a", encoding="utf-8") as fh:
+        with open(path, "a", encoding="utf-8", newline="\n") as fh:
             fh.write(f"{os.getpid()} {host}\n")
 
 
@@ -163,11 +164,15 @@ class RecordedDocker:
         for i, a in enumerate(argv):
             if a in ("-v", "--mount") and i + 1 < len(argv):
                 spec = argv[i + 1]
-                for part in spec.split(","):
-                    if part.startswith(("source=", "src=")) and part.rstrip("/").endswith("sandbox/run"):
+                # --mount is one CSV line (a quoted field holds a path with a comma); the path is this system's.
+                for part in next(csv.reader([spec])):
+                    if part.startswith(("source=", "src=")) and Path(part.split("=", 1)[1]).parts[-2:] == (
+                        "sandbox",
+                        "run",
+                    ):
                         run_dir = Path(part.split("=", 1)[1])
-                if ":" in spec and spec.split(":", 1)[0].rstrip("/").endswith("sandbox/run"):
-                    run_dir = Path(spec.split(":", 1)[0])
+                if a == "-v" and Path(spec.rsplit(":", 1)[0]).parts[-2:] == ("sandbox", "run"):
+                    run_dir = Path(spec.rsplit(":", 1)[0])
         if run_dir is None:
             raise AssertionError(f"replay sandbox: cannot find the run folder in {argv}")
         produced = 0

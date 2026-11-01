@@ -62,9 +62,9 @@ def test_without_a_database_a_workspace_folder_prefix_works(tmp_path, monkeypatc
 
 def test_exported_studies_in_the_data_folder_are_not_staged(tmp_path):
     (tmp_path / "e2er_papers" / "old-study" / "data").mkdir(parents=True)
-    (tmp_path / "e2er_papers" / "old-study" / "data" / "x.csv").write_text("a\n1\n")
+    (tmp_path / "e2er_papers" / "old-study" / "data" / "x.csv").write_text("a\n1\n", encoding="utf-8", newline="\n")
     (tmp_path / "raw").mkdir()
-    (tmp_path / "raw" / "y.csv").write_text("a\n1\n")
+    (tmp_path / "raw" / "y.csv").write_text("a\n1\n", encoding="utf-8", newline="\n")
     found = [p.relative_to(tmp_path).as_posix() for _, p in iter_corpus_files([tmp_path], frozenset({".csv"}), True)]
     assert found == ["raw/y.csv"]
 
@@ -73,7 +73,7 @@ def test_staging_copies_when_links_are_not_allowed(tmp_path, monkeypatch, capsys
     from src.modules import local_corpus
 
     src_file = tmp_path / "a.csv"
-    src_file.write_text("x\n1\n")
+    src_file.write_text("x\n1\n", encoding="utf-8", newline="\n")
 
     def no_links(self, *_a, **_k):
         raise OSError("A required privilege is not held by the client")
@@ -81,7 +81,7 @@ def test_staging_copies_when_links_are_not_allowed(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(Path, "symlink_to", no_links)
     monkeypatch.setattr(local_corpus, "_copy_notice_shown", False)
     assert local_corpus.link_or_copy(src_file, tmp_path / "b.csv") == "copied"
-    assert (tmp_path / "b.csv").read_text() == "x\n1\n"
+    assert (tmp_path / "b.csv").read_text(encoding="utf-8") == "x\n1\n"
     assert "Developer Mode" in capsys.readouterr().err
 
 

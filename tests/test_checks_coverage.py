@@ -193,8 +193,8 @@ def test_the_estimation_check_names_the_inconsistent_coefficient(tmp_path: Path)
 
 
 def _econometrics_workspace(ws: Path, results: dict[str, Any]) -> None:
-    (ws / "econometric_spec.md").write_text("A mean-CAR test of the FOMC events, " * 10)
-    (ws / "estimation_results.json").write_text(json.dumps(results))
+    (ws / "econometric_spec.md").write_text("A mean-CAR test of the FOMC events, " * 10, encoding="utf-8", newline="\n")
+    (ws / "estimation_results.json").write_text(json.dumps(results), encoding="utf-8", newline="\n")
 
 
 def test_the_estimation_gate_runs_the_statistics_rule(tmp_path: Path):
@@ -208,8 +208,10 @@ def _verify_bundle(tmp_path: Path, results: dict[str, Any], *, prereg: bool = Fa
 
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"title": "Checks", "paper_id": "p1", "governance": "full"}))
-    (ws / "estimation_results.json").write_text(json.dumps(results))
+    (ws / "manifest.json").write_text(
+        json.dumps({"title": "Checks", "paper_id": "p1", "governance": "full"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "estimation_results.json").write_text(json.dumps(results), encoding="utf-8", newline="\n")
     if prereg:
         for name in ("paper_plan.md", "event_design.json", "identification_spec.json"):
             shutil.copy(FOMC / name, ws / name)
@@ -235,7 +237,7 @@ def test_verify_numbers_reports_consistent_statistics_without_a_paper(tmp_path: 
 
 
 def test_the_hypotheses_are_read_from_the_plan():
-    found = extract_hypotheses((FOMC / "paper_plan.md").read_text())
+    found = extract_hypotheses((FOMC / "paper_plan.md").read_text(encoding="utf-8"))
     assert [h["id"] for h in found] == ["H1", "H2"]
     assert found[0]["parts"] == ["H1a", "H1b"] and found[1]["statement"] == "Surprise Sensitivity Test"
     # A passing mention is not a declaration.
@@ -246,7 +248,7 @@ def test_the_hypotheses_are_read_from_the_plan():
 def test_the_preregister_step_writes_the_machine_readable_list_and_freezes_it(tmp_path: Path):
     for name in ("paper_plan.md", "event_design.json", "identification_spec.json"):
         shutil.copy(FOMC / name, tmp_path / name)
-    text = assemble(tmp_path).read_text()
+    text = assemble(tmp_path).read_text(encoding="utf-8")
     assert f"## {MACHINE_HEADING}" in text
     block = parse_machine_block(text)
     assert block is not None
@@ -254,7 +256,7 @@ def test_the_preregister_step_writes_the_machine_readable_list_and_freezes_it(tm
     assert block["sample_size"] == {"n": 31, "unit": "events", "source": "event_design.json"}
     # The researcher corrects the list before approving: the lock takes the edited one.
     edited = text.replace('"id": "H2"', '"id": "H3"')
-    (tmp_path / PREREG_FILE).write_text(edited)
+    (tmp_path / PREREG_FILE).write_text(edited, encoding="utf-8", newline="\n")
     lock = freeze(tmp_path)
     assert [h["id"] for h in lock["hypotheses"]] == ["H1", "H3"]
     assert lock["sample_size"]["n"] == 31
@@ -374,10 +376,10 @@ def _replication_workspace(tmp_path: Path) -> Path:
     shutil.copytree(REPL, ws)
     logs = ws / "sandbox" / "logs"
     logs.mkdir(parents=True)
-    (logs / "00-did_main.stdout.log").write_text("did_main finished\n")
+    (logs / "00-did_main.stdout.log").write_text("did_main finished\n", encoding="utf-8", newline="\n")
     # A package file the run did not write: never exported as a result.
     shipped = ws / "sandbox" / "run" / "supplementary_elections_social_assistance" / "README.md"
-    shipped.write_text("package readme\n")
+    shipped.write_text("package readme\n", encoding="utf-8", newline="\n")
     return ws
 
 
@@ -432,7 +434,11 @@ def test_a_replication_bundle_is_verified(tmp_path: Path, capsys: pytest.Capture
 def test_an_edited_output_file_fails_the_reproduction_check(tmp_path: Path):
     bundle = _export(_replication_workspace(tmp_path), tmp_path)
     csv = next(bundle.rglob("resultados_did.csv"))
-    csv.write_text(csv.read_text().replace("-0.00135097481805838", "-0.00235097481805838"))
+    csv.write_text(
+        csv.read_text(encoding="utf-8").replace("-0.00135097481805838", "-0.00235097481805838"),
+        encoding="utf-8",
+        newline="\n",
+    )
     checks = {c.name: c for c in _run_checks(bundle, online=False)}
     assert checks["integrity"].status == FAIL
     assert checks["reproduction"].status == FAIL and "l1_tac_att_twfe_sem" in checks["reproduction"].detail
@@ -442,7 +448,7 @@ def test_a_summary_that_disagrees_with_the_numbers_fails(tmp_path: Path):
     ws = _replication_workspace(tmp_path)
     report = _load(ws / "reproduction_report.json")
     report["summary"]["level_1"]["reproduced"] = 13
-    (ws / "reproduction_report.json").write_text(json.dumps(report))
+    (ws / "reproduction_report.json").write_text(json.dumps(report), encoding="utf-8", newline="\n")
     r = check_reproduction(ws)
     assert not r.passed and any("summary.level_1" in x for x in r.reasons)
 
@@ -452,7 +458,7 @@ def test_a_wrong_label_on_a_number_fails(tmp_path: Path):
     report = _load(ws / "reproduction_report.json")
     comp = report["results"][0]["comparisons"][0]
     comp["label"] = "reproduced_minor"
-    (ws / "reproduction_report.json").write_text(json.dumps(report))
+    (ws / "reproduction_report.json").write_text(json.dumps(report), encoding="utf-8", newline="\n")
     r = check_reproduction(ws)
     assert not r.passed and any("labelled 'reproduced_minor'" in x for x in r.reasons)
 
@@ -462,7 +468,7 @@ def test_an_older_replication_bundle_without_outputs_is_not_verified(tmp_path: P
     shutil.rmtree(bundle / "sandbox")
     prov = _load(bundle / "provenance.json")
     prov["files"] = {k: v for k, v in prov["files"].items() if not k.startswith("sandbox/")}
-    (bundle / "provenance.json").write_text(json.dumps(prov))
+    (bundle / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     check = next(c for c in _run_checks(bundle, online=False) if c.name == "reproduction")
     assert check.status == FAIL and "were not exported" in check.detail
 

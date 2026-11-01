@@ -38,8 +38,8 @@ def available_backends(settings=None) -> list[str]:
     The old default named all three CLIs whether or not they were there, so a
     matrix on a machine with one CLI spent two thirds of its runs failing.
     Gemini is never in the default: no full study has run on it, and since
-    Google ended Gemini CLI sign-in for individual accounts (October 2026) it
-    needs a Gemini API key. `--backends gemini` still runs it.
+    Google ended the Gemini CLI for AI Pro/Ultra plans and free individual
+    accounts (18 June 2026) it needs a paid Gemini API key. `--backends gemini` still runs it.
     """
     from .doctor import detect_backends
 
@@ -242,4 +242,4 @@ def _write_matrix(
         **(meta or {}),
         "runs": runs,
     }
-    (out_dir / "matrix.json").write_text(json.dumps(matrix, indent=2), encoding="utf-8")
+    (out_dir / "matrix.json").write_text(json.dumps(matrix, indent=2), encoding="utf-8", newline="\n")

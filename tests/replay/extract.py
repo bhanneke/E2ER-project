@@ -162,7 +162,7 @@ def extract(name: str, workspace: Path, db: Path, out: Path) -> None:
                 continue
             raw = src.read_bytes()
             try:
-                dest.write_text(_scrub(raw.decode("utf-8"), workspace, paper_id), encoding="utf-8")
+                dest.write_text(_scrub(raw.decode("utf-8"), workspace, paper_id), encoding="utf-8", newline="\n")
             except UnicodeDecodeError:
                 dest.write_bytes(raw)
         u = usage.get(sp, {})
@@ -184,7 +184,9 @@ def extract(name: str, workspace: Path, db: Path, out: Path) -> None:
     if name == "replication":
         scenario["sandbox"] = _replication_sandbox(workspace, out)
         scenario["zenodo"] = _replication_record(workspace, out)
-    (out / "scenario.json").write_text(json.dumps(scenario, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (out / "scenario.json").write_text(
+        json.dumps(scenario, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
 
 
 #: Package files kept besides the entry-point scripts and the result files they write.
@@ -278,7 +280,9 @@ def _replication_record(workspace: Path, out: Path) -> dict:
         },
         "files": [{"key": key, "size": len(data), "checksum": "md5:" + hashlib.md5(data).hexdigest()}],
     }
-    (rec_dir / "record.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (rec_dir / "record.json").write_text(
+        json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
     return {"record_id": manifest["record_id"], "doi": manifest["doi"], "files": len(keep)}
 
 

@@ -39,7 +39,7 @@ def did_ws(tmp_path: Path) -> Path:
 def _edit(path: Path, **changes: object) -> None:
     doc = json.loads(path.read_text(encoding="utf-8"))
     doc.update(changes)
-    path.write_text(json.dumps(doc), encoding="utf-8")
+    path.write_text(json.dumps(doc), encoding="utf-8", newline="\n")
 
 
 # ── difference-in-differences ───────────────────────────────────────────────
@@ -105,7 +105,7 @@ def test_the_results_check_draws_the_event_study_plot_from_the_results(did_ws: P
     # Run again on changed results: the figure it drew is drawn again, not kept stale.
     res = json.loads((did_ws / "estimation_results.json").read_text(encoding="utf-8"))
     res["event_study"]["periods"][0]["estimate"] = 0.5
-    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     assert check_did_results(did_ws).passed
     figs = json.loads((did_ws / "figure_spec.json").read_text(encoding="utf-8"))["figures"]
     assert [f for f in figs if f["figure_type"] == "event_study"][0]["estimates"][0] == 0.5
@@ -116,7 +116,7 @@ def test_a_figure_of_its_own_that_shows_other_numbers_fails(did_ws: Path):
     spec["figures"].append(
         {"filename": "fig_es.pdf", "figure_type": "event_study", "periods": [-2, 0], "estimates": [0.0, -9.0]}
     )
-    (did_ws / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8")
+    (did_ws / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     v = check_did_results(did_ws)
     assert not v.passed and any("does not show the results' estimate" in r for r in v.reasons)
 
@@ -124,11 +124,11 @@ def test_a_figure_of_its_own_that_shows_other_numbers_fails(did_ws: Path):
 def test_rejected_pre_trends_pass_only_with_a_rambachan_roth_sensitivity(did_ws: Path):
     res = json.loads((did_ws / "estimation_results.json").read_text(encoding="utf-8"))
     res["pre_trends"]["p_value"] = 0.01
-    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     v = check_did_results(did_ws)
     assert v.passed and any("sensitivity analysis" in n for n in v.notes)
     res["sensitivity"].pop("honest_did_rm")
-    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     v = check_did_results(did_ws)
     assert not v.passed and any("jointly different from zero" in r for r in v.reasons)
 
@@ -138,7 +138,7 @@ def test_no_placebo_no_sensitivity_no_pre_trends_and_a_wrong_estimator_fail(did_
     for k in ("placebo", "sensitivity", "pre_trends"):
         res.pop(k)
     res["main"]["estimator"] = "sun_abraham"
-    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     reasons = " ".join(check_did_results(did_ws).reasons)
     assert "(f) estimation_results.json has no 'pre_trends'" in reasons
     assert "(g) report a placebo test" in reasons
@@ -149,7 +149,7 @@ def test_too_few_leads_fail(did_ws: Path):
     res = json.loads((did_ws / "estimation_results.json").read_text(encoding="utf-8"))
     res["event_study"]["periods"] = [p for p in res["event_study"]["periods"] if p["relative_period"] >= -2]
     res["pre_trends"]["n_pre_periods"] = 1
-    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (did_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     v = check_did_results(did_ws)
     assert any("1 pre-treatment period(s)" in r for r in v.reasons)
 
@@ -215,10 +215,10 @@ def test_a_projected_crs_on_longitudes_and_latitudes_fails(sp_ws: Path):
 def test_boundaries_without_source_terms_fail(sp_ws: Path):
     design = json.loads((sp_ws / "spatial_design.json").read_text(encoding="utf-8"))
     design["boundaries"].pop("licence")
-    (sp_ws / "spatial_design.json").write_text(json.dumps(design), encoding="utf-8")
+    (sp_ws / "spatial_design.json").write_text(json.dumps(design), encoding="utf-8", newline="\n")
     assert any("need licence" in r for r in check_spatial_design(sp_ws).reasons)
     design["boundaries"]["source"] = "gisco"
-    (sp_ws / "spatial_design.json").write_text(json.dumps(design), encoding="utf-8")
+    (sp_ws / "spatial_design.json").write_text(json.dumps(design), encoding="utf-8", newline="\n")
     assert any("records no load from it" in r for r in check_spatial_design(sp_ws).reasons)
 
 
@@ -236,7 +236,7 @@ def test_a_reported_i_that_the_weights_do_not_give_and_a_normal_p_value_fail(sp_
     res["spatial_statistics"]["moran_rate_queen"]["estimate"] = 0.75
     for s in res["spatial_statistics"].values():
         s["p_value_method"] = "normal"
-    (sp_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (sp_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     reasons = " ".join(check_spatial_results(sp_ws).reasons)
     assert "(g) spatial_statistics.moran_rate_queen: the reported Moran's I 0.75 does not follow" in reasons
     assert "(f) no Moran's I has permutation inference" in reasons
@@ -260,7 +260,7 @@ def test_too_few_permutations_and_an_impossible_p_value_fail(sp_ws: Path):
     res = json.loads((sp_ws / "estimation_results.json").read_text(encoding="utf-8"))
     res["spatial_statistics"]["moran_rate_queen"]["n_permutations"] = 49
     res["spatial_statistics"]["moran_rate_knn4"]["p_value"] = 0.0001
-    (sp_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8")
+    (sp_ws / "estimation_results.json").write_text(json.dumps(res), encoding="utf-8", newline="\n")
     reasons = " ".join(check_spatial_results(sp_ws).reasons)
     assert "n_permutations must be at least 99" in reasons and "below 1 / (permutations + 1)" in reasons
 
@@ -291,8 +291,8 @@ def test_a_map_reads_its_boundaries_and_values_and_names_units_without_geometry(
             {"filename": "fig_bad.pdf", "figure_type": "map", "data": {"file": "nope.csv", "value_column": "x"}},
         ]
     }
-    (sp_ws / "pts.csv").write_text("lon,lat,v\n1.5,45.5,1\n9.2,52.1,3\n", encoding="utf-8")
-    (sp_ws / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8")
+    (sp_ws / "pts.csv").write_text("lon,lat,v\n1.5,45.5,1\n9.2,52.1,3\n", encoding="utf-8", newline="\n")
+    (sp_ws / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     report = render_figures(sp_ws)
     assert set(report.rendered) == {"fig_m.pdf", "fig_pts.pdf"}, report
     assert any("RZZ" in n for n in report.notes)  # the data unit without geometry
@@ -336,7 +336,9 @@ def test_an_extent_in_degrees_frames_a_map_drawn_in_etrs89_laea(tmp_path: Path):
         {"type": "Feature", "properties": {"id": "DE1"}, "geometry": square(9, 49)},
         {"type": "Feature", "properties": {"id": "FRY4"}, "geometry": square(55, -21)},  # La Réunion
     ]
-    (tmp_path / "b.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": feats}), "utf-8")
+    (tmp_path / "b.geojson").write_text(
+        json.dumps({"type": "FeatureCollection", "features": feats}), "utf-8", newline="\n"
+    )
     spec = {
         "figure_type": "map",
         "boundaries": {"file": "b.geojson", "id_property": "id"},

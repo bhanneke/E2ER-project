@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 #: What every child process gets: where programs are, the language, time zone, temporary
 #: folders, certificates, and Windows' system folders.
@@ -162,7 +163,8 @@ def run_in_own_session(
         env=dict(env),
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         start_new_session=True,
     )
     try:
@@ -179,15 +181,36 @@ def run_in_own_session(
 
 
 def _kill_group(proc: subprocess.Popen[str]) -> None:
+    kill_tree(proc)
+
+
+def kill_tree(proc: Any) -> None:
+    """Stop a process and every process it started.
+
+    POSIX: the process was started in its own session, so its process group is killed whole. Windows has
+    no such groups (``os.killpg`` does not exist there): ``taskkill /T /F`` ends the process and its
+    children. Either way ``proc.kill()`` is the last resort.
+    """
     import signal
 
+    pid = getattr(proc, "pid", None)
+    if isinstance(pid, int) and pid > 0:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+            try:
+                os.killpg(os.getpgid(pid), signal.SIGKILL)
+                return
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+        elif os.name == "nt":
+            try:
+                done = subprocess.run(
+                    ["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, timeout=30, check=False
+                )
+                if done.returncode == 0:
+                    return
+            except (OSError, subprocess.SubprocessError):
+                pass
     try:
-        if hasattr(os, "killpg"):
-            os.killpg(proc.pid, signal.SIGKILL)
-        else:  # Windows: no process groups of this kind
-            proc.kill()
-    except (ProcessLookupError, PermissionError, OSError):
-        try:
-            proc.kill()
-        except OSError:
-            pass
+        proc.kill()
+    except (ProcessLookupError, OSError):
+        pass

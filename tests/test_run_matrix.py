@@ -47,7 +47,7 @@ def test_matrix_json_is_well_formed(tmp_path: Path, monkeypatch):
     _patch_pipeline(monkeypatch, calls)
 
     m.run_matrix("Does X affect Y?", ["claude_code", "codex"], repeats=2, governance="off", out=str(tmp_path))
-    matrix = json.loads((tmp_path / "matrix.json").read_text())
+    matrix = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))
 
     assert matrix["research_question"] == "Does X affect Y?"
     assert matrix["backends"] == ["claude_code", "codex"]
@@ -58,7 +58,7 @@ def test_matrix_json_is_well_formed(tmp_path: Path, monkeypatch):
     assert r0["backend"] == "claude_code" and r0["repeat"] == 1
     assert r0["status"] == "completed"
     assert r0["paper_id"] == "pid-1"
-    assert r0["bundle_path"].endswith("claude_code-1/bundle-01")
+    assert Path(r0["bundle_path"]).parts[-2:] == ("claude_code-1", "bundle-01")  # a path of this system
 
 
 def test_matrix_records_failed_submit(tmp_path: Path, monkeypatch):
@@ -66,7 +66,7 @@ def test_matrix_records_failed_submit(tmp_path: Path, monkeypatch):
     _patch_pipeline(monkeypatch, calls, submit_ok=False)
 
     m.run_matrix("RQ", ["claude_code"], repeats=1, out=str(tmp_path))
-    runs = json.loads((tmp_path / "matrix.json").read_text())["runs"]
+    runs = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))["runs"]
     assert runs[0]["status"] == "submit_failed"
     assert runs[0]["paper_id"] is None
     assert runs[0]["bundle_path"] is None
@@ -77,7 +77,7 @@ def test_matrix_records_non_completed_status(tmp_path: Path, monkeypatch):
     _patch_pipeline(monkeypatch, calls, poll="failed")
 
     m.run_matrix("RQ", ["codex"], repeats=1, out=str(tmp_path))
-    runs = json.loads((tmp_path / "matrix.json").read_text())["runs"]
+    runs = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))["runs"]
     assert runs[0]["status"] == "failed"
     assert runs[0]["bundle_path"] is None  # no export for a non-completed run
 
@@ -122,7 +122,7 @@ def test_matrix_passes_template_review_pauses_demonstration_and_models(tmp_path:
         assert c["template"] == "event-study-finance"
         assert c["review_stages"] == ["initial"]
         assert c["demonstration"] is True
-    matrix = json.loads((tmp_path / "matrix.json").read_text())
+    matrix = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))
     assert matrix["template"] == "event-study-finance" and matrix["demonstration"] is True
     assert matrix["models"] == {"claude_code": "sonnet", "codex": "gpt-x"}
     assert [r["model"] for r in matrix["runs"]] == ["sonnet", "gpt-x"]
@@ -140,7 +140,7 @@ def test_matrix_without_models_records_each_backends_configured_model(tmp_path: 
     finally:
         get_settings.cache_clear()
     assert calls[0]["model"] is None  # the backend's own setting applies
-    matrix = json.loads((tmp_path / "matrix.json").read_text())
+    matrix = json.loads((tmp_path / "matrix.json").read_text(encoding="utf-8"))
     assert matrix["runs"][0]["model"] == "gpt-configured"
 
 
@@ -215,7 +215,9 @@ def test_compare_names_the_model_from_the_matrix_when_the_bundle_lacks_it(tmp_pa
                     },
                 ],
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     records, rq, _ = _resolve_records([str(tmp_path / "matrix.json")])
     assert [r["model"] for r in records] == ["sonnet", "gpt-x"]

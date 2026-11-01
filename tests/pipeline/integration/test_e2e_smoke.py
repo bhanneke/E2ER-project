@@ -64,7 +64,7 @@ def _make_workspace(tmp_path: Path, paper_id: str, methodology: str = "empirical
         "methodology": methodology,
         "current_stage": "idea",
     }
-    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
     return ws
 
 

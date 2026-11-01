@@ -32,11 +32,12 @@ EST = {
 def _make_ws(tmp_path: Path, paper_id: str, est: dict, table_spec: dict) -> Path:
     ws = tmp_path / paper_id
     ws.mkdir(parents=True)
-    (ws / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8")
-    (ws / "table_spec.json").write_text(json.dumps(table_spec), encoding="utf-8")
+    (ws / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8", newline="\n")
+    (ws / "table_spec.json").write_text(json.dumps(table_spec), encoding="utf-8", newline="\n")
     (ws / "paper_draft.tex").write_text(
         "\\documentclass{article}\n\\begin{document}\n\\input{tables/main.tex}\n\\end{document}\n",
         encoding="utf-8",
+        newline="\n",
     )
     return ws
 
@@ -102,16 +103,16 @@ async def test_resolve_dispatches_section_writer_and_fix_lands(tmp_path: Path, m
         if work_order.specialist == "section_writer":
             # The feedback should name the right field; apply the fix.
             assert "clark_west_stat" in work_order.focus
-            fixed = json.loads((ws / "table_spec.json").read_text())
+            fixed = json.loads((ws / "table_spec.json").read_text(encoding="utf-8"))
             fixed["tables"][0]["rows"][0]["field"] = "clark_west_stat"
-            (ws / "table_spec.json").write_text(json.dumps(fixed))
+            (ws / "table_spec.json").write_text(json.dumps(fixed), encoding="utf-8", newline="\n")
         return _contrib(runner, work_order.specialist)
 
     with patch("src.core.specialists.dispatcher.execute_work_order", side_effect=_capture):
         await runner._resolve_table_spec()
 
     assert dispatched == ["section_writer"]
-    assert "1.24" in (ws / "tables" / "main.tex").read_text()  # CW value now rendered
+    assert "1.24" in (ws / "tables" / "main.tex").read_text(encoding="utf-8")  # CW value now rendered
 
 
 @pytest.mark.asyncio
@@ -140,7 +141,7 @@ async def test_resolve_noop_when_everything_resolves(tmp_path: Path, mock_llm):
 
     assert dispatched == []  # normalization resolved it; no fix dispatch
     # oos_r_squared 0.0063 renders at the default 3 decimals as 0.006.
-    assert "0.006" in (runner._workspace / "tables" / "main.tex").read_text()
+    assert "0.006" in (runner._workspace / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 # ── the inventory is scoped per spec key ───────────────────────────────────
@@ -204,12 +205,12 @@ def _fix_one_per_call(runner: PipelineRunner, dispatched: list[str]):
 
     async def _capture(work_order, *args, **kwargs):
         dispatched.append(work_order.specialist)
-        spec = json.loads((ws / "table_spec.json").read_text())
+        spec = json.loads((ws / "table_spec.json").read_text(encoding="utf-8"))
         for row in spec["tables"][0]["rows"]:
             if row["field"].startswith("bad_"):
                 row["field"] = "clark_west_stat"
                 break
-        (ws / "table_spec.json").write_text(json.dumps(spec))
+        (ws / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
         return _contrib(runner, work_order.specialist)
 
     return _capture
@@ -228,7 +229,7 @@ async def test_repair_iterates_until_resolved(tmp_path: Path, mock_llm):
         await runner._resolve_table_spec()
 
     assert dispatched == ["section_writer", "section_writer"]
-    assert "1.24" in (runner._workspace / "tables" / "main.tex").read_text()
+    assert "1.24" in (runner._workspace / "tables" / "main.tex").read_text(encoding="utf-8")
 
 
 @pytest.mark.asyncio

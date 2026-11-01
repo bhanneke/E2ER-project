@@ -75,7 +75,7 @@ def test_a_cone_loads_a_table_and_records_adql_release_hash_terms_and_citation(
     with sqlite3.connect(ws / "data.db") as db:
         assert db.execute("SELECT COUNT(*) FROM pleiades").fetchone()[0] == out["row_count"]
 
-    [load] = json.loads((ws / "data_sources.json").read_text())["loads"]
+    [load] = json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
     assert load["connector"] == "gaia" and load["version"] == "DR3"
     assert load["terms"] == "https://www.cosmos.esa.int/web/gaia-users/license"
     assert "CC BY-NC 3.0 IGO" in load["terms_summary"] and "commercial use" in load["licence"]
@@ -87,7 +87,7 @@ def test_a_cone_loads_a_table_and_records_adql_release_hash_terms_and_citation(
     assert load["files"][0]["sha256"] == hashlib.sha256(csv.encode("utf-8")).hexdigest()
     assert load["request"]["ra"] == 56.75 and load["request"]["radius"] == 0.5
 
-    bib = (ws / "literature.bib").read_text()
+    bib = (ws / "literature.bib").read_text(encoding="utf-8")
     assert bib.count("{GaiaDR3_Vallenari2023,") == 1 and bib.count("{GaiaMission_Prusti2016,") == 1
 
 

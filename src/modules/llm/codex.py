@@ -13,7 +13,16 @@ Validated live on codex-cli 0.155 (October 2026). What each flag is for:
 * ``sandbox_workspace_write.network_access=true``: the sandbox has no network
   by default; ``e2er-data`` and ``e2er-lit`` need it.
 * ``--add-dir <run database folder>``: writes outside the workspace are
-  blocked, and the wrappers write their audit rows to the run database.
+  blocked, and the wrappers write their audit rows to the run database. Only
+  given when the database is outside the workspace (the default
+  ``~/.e2er/papers.db`` is).
+
+The sandbox was validated on macOS (Seatbelt) only. On Linux Codex sandboxes
+with bubblewrap, which needs unprivileged user namespaces (Ubuntu restricts
+them with AppArmor); on Windows ``apply_patch`` fails under workspace-write
+when extra writable folders are given (openai/codex#30009). Codex then exits 0
+with nothing written; :func:`sandbox_diagnostic` turns its refusals into a
+message that names the remedy (tester report, 2026-10-27).
 * ``shell_environment_policy``: pass the whole environment to shell commands,
   so FRED/Allium keys reach the wrappers (some Codex versions drop variables
   whose names contain KEY/TOKEN/SECRET).
@@ -40,6 +49,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import time
 from dataclasses import replace
@@ -93,6 +103,47 @@ _TRANSIENT_MARKERS = (
     "please try again",
 )
 _NOT_TRANSIENT_MARKERS = ("usage limit", "usage_limit", "quota", "not logged in", "unauthorized", "401")
+
+#: What a refusal by Codex's sandbox reads like in a failed command's output or an error event:
+#: Seatbelt (macOS), bubblewrap or Landlock (Linux), the Windows sandbox, apply_patch's own refusal.
+_SANDBOX_MARKERS = (
+    "sandbox",
+    "operation not permitted",
+    "permission denied",
+    "read-only file system",
+    "access is denied",
+    "bwrap",
+    "bubblewrap",
+    "landlock",
+    "seccomp",
+    "user namespace",
+    "writable root",
+    "patch rejected",
+    "outside of the project",
+)
+
+#: A file change Codex did not make.
+_REFUSED_PATCH = frozenset({"failed", "declined", "rejected"})
+
+#: The remedy for a refused write, per operating system (``sys.platform``).
+_SANDBOX_REMEDY = {
+    "linux": (
+        "On Linux, Codex's workspace-write sandbox runs under bubblewrap, which needs unprivileged user "
+        "namespaces: install bubblewrap (`sudo apt install bubblewrap`), and on Ubuntu 23.10 or later, where "
+        "AppArmor restricts the namespaces (`sysctl kernel.apparmor_restrict_unprivileged_userns` is 1), allow "
+        "them for bwrap with an AppArmor profile or `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`."
+    ),
+    "win32": (
+        "On Windows, Codex's sandbox refuses apply_patch under workspace-write when extra writable folders are "
+        "given (openai/codex issue #30009), and e2er gives one, the run database's folder. Run e2er inside WSL2, "
+        "where Codex uses its Linux sandbox."
+    ),
+}
+_FULL_ACCESS_REMEDY = (
+    "Or, knowing that every command of the model then runs as you without any sandbox, set "
+    "CODEX_SANDBOX=danger-full-access and CODEX_ALLOW_FULL_ACCESS=true in your studies folder's .env. "
+    "See docs/BACKENDS.md (Codex on Linux and Windows)."
+)
 
 
 def _codex_home() -> Path:
@@ -359,9 +410,15 @@ class CodexBackend(LLMBackend):
 
         parsed = parse_codex_events(stdout)
         output = last_message or parsed["last_agent_message"] or ("" if parsed["events"] else stdout.strip())
+        diagnostic = sandbox_diagnostic(parsed, sandbox=self._sandbox)
+        if parsed["sandbox_denials"]:
+            logger.warning("Codex: %s", diagnostic)
 
         if proc.returncode != 0 or parsed["error"]:
             error = parsed["error"] or stderr.strip() or f"Exit code {proc.returncode}: {stdout.strip()}"
+            if parsed["sandbox_denials"]:
+                # The diagnostic goes first: clip() keeps the head (and tail) of a long error.
+                error = f"{diagnostic} | {error}"
             return ToolLoopResult(
                 success=False,
                 output=output,
@@ -379,6 +436,7 @@ class CodexBackend(LLMBackend):
             usage=parsed["usage"],
             duration_seconds=duration,
             stop_reason="end_turn",
+            diagnostic=diagnostic,
         )
 
 
@@ -402,6 +460,8 @@ def parse_codex_events(stdout: str) -> dict[str, Any]:
     last_agent_message = ""
     error = ""
     events = 0
+    denials: list[str] = []
+    files_changed = 0
     for line in stdout.splitlines():
         line = line.strip()
         if not line.startswith("{"):
@@ -429,8 +489,19 @@ def parse_codex_events(stdout: str) -> dict[str, Any]:
             itype = item.get("type")
             if itype in _TOOL_ITEM_TYPES:
                 tool_calls += 1
-            elif itype == "agent_message" and item.get("text"):
+            if itype == "agent_message" and item.get("text"):
                 last_agent_message = str(item["text"])
+            elif itype == "file_change":
+                paths = ", ".join(str(c.get("path", "")) for c in item.get("changes") or [] if isinstance(c, dict))
+                if str(item.get("status", "")).lower() in _REFUSED_PATCH:
+                    denials.append(f"file change refused ({paths or 'no path given'})")
+                elif item.get("changes"):
+                    files_changed += 1
+            elif itype == "command_execution" and _command_refused(item):
+                out = _first_sandbox_line(str(item.get("aggregated_output") or ""))
+                denials.append(f"`{clip(str(item.get('command') or ''), 80)}`: {out}")
+            elif itype == "error" and _is_sandbox_text(str(item.get("message") or "")):
+                denials.append(clip(str(item["message"]), 200))
         elif etype == "turn.failed":
             err = ev.get("error") or {}
             error = str(err.get("message") if isinstance(err, dict) else err) or "turn failed"
@@ -438,6 +509,8 @@ def parse_codex_events(stdout: str) -> dict[str, Any]:
             # Codex also emits `error` events for reconnect attempts that then
             # succeed; keep the text, a later turn.completed clears it.
             error = str(ev.get("message") or "error")
+            if _is_sandbox_text(error):
+                denials.append(clip(error, 200))
     if usage.total_tokens and error and "turn.failed" not in stdout:
         # A completed turn after reconnect notices is a success.
         error = ""
@@ -447,7 +520,51 @@ def parse_codex_events(stdout: str) -> dict[str, Any]:
         "last_agent_message": last_agent_message.strip(),
         "error": error,
         "events": events,
+        # Writes and commands Codex's sandbox refused, and the file changes it made.
+        "sandbox_denials": denials,
+        "files_changed": files_changed,
     }
+
+
+def _is_sandbox_text(text: str) -> bool:
+    low = text.lower()
+    return any(m in low for m in _SANDBOX_MARKERS)
+
+
+def _command_refused(item: dict[str, Any]) -> bool:
+    """A command that failed with a sandbox refusal in its output."""
+    code = item.get("exit_code")
+    failed = str(item.get("status", "")).lower() in ("failed", "declined") or (code not in (None, 0))
+    return failed and _is_sandbox_text(str(item.get("aggregated_output") or ""))
+
+
+def _first_sandbox_line(output: str) -> str:
+    for line in output.splitlines():
+        if _is_sandbox_text(line):
+            return clip(line.strip(), 160)
+    return clip(output.strip(), 160)
+
+
+def sandbox_diagnostic(parsed: dict[str, Any], *, platform: str | None = None, sandbox: str = "workspace-write") -> str:
+    """Why a Codex call may have written nothing, with the remedy for this operating system; "" if no sign.
+
+    Said when Codex's sandbox refused something, or, on Linux and Windows (where the sandbox
+    is not validated), when the call changed no file at all. The runner adds it to the error
+    only when the specialist's output file is missing (src/core/specialists/base.py).
+    """
+    if sandbox != "workspace-write":
+        return ""
+    platform = platform or sys.platform
+    denials = parsed.get("sandbox_denials") or []
+    if denials:
+        more = f" and {len(denials) - 1} more" if len(denials) > 1 else ""
+        head = f"Codex's sandbox refused a write or command ({denials[0]}{more}), so files were not written."
+    elif platform != "darwin" and not parsed.get("files_changed"):
+        head = "Codex changed no file in this call; on Linux and Windows that is most often its sandbox."
+    else:
+        return ""
+    remedy = _SANDBOX_REMEDY.get("linux" if platform.startswith("linux") else platform, "")
+    return " ".join(x for x in (head, remedy, _FULL_ACCESS_REMEDY) if x)
 
 
 def is_transient_codex_error(error: str) -> bool:

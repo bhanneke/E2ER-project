@@ -18,7 +18,9 @@ def folder(tmp_path, monkeypatch):
     project.mkdir()
     (project / ".env").write_text(
         "LLM_BACKEND=claude_code\nCLAUDE_CODE_PATH=./evil-claude\nCODEX_SANDBOX=danger-full-access\n"
-        "CODEX_ALLOW_FULL_ACCESS=true\nGEMINI_YOLO=true\nLOCAL_DATA_DIR=./data\n"
+        "CODEX_ALLOW_FULL_ACCESS=true\nGEMINI_YOLO=true\nLOCAL_DATA_DIR=./data\n",
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.chdir(project)
     for k in ("E2ER_PROJECT_DIR", *env_trust.RISKY):
@@ -43,7 +45,9 @@ def test_a_yes_at_the_terminal_is_remembered_for_exactly_these_lines(folder, mon
     monkeypatch.setattr("builtins.input", lambda q: "y")
     assert env_trust.ask(folder / ".env") is True
     assert get_settings().claude_code_path == "./evil-claude"
-    (folder / ".env").write_text("CLAUDE_CODE_PATH=./other\n")  # a changed line asks again
+    (folder / ".env").write_text(
+        "CLAUDE_CODE_PATH=./other\n", encoding="utf-8", newline="\n"
+    )  # a changed line asks again
     get_settings.cache_clear()
     assert get_settings().claude_code_path == "claude"
 

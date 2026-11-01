@@ -37,7 +37,7 @@ with open("estimation_results.json", "w") as f:
 def _ws(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "run_estimation.py").write_text(SCRIPT, encoding="utf-8")
+    (ws / "run_estimation.py").write_text(SCRIPT, encoding="utf-8", newline="\n")
     return ws
 
 
@@ -47,7 +47,7 @@ def _run(ws: Path) -> int | None:
 
 def test_the_script_log_records_the_files_a_run_wrote(tmp_path):
     ws = _ws(tmp_path)
-    (ws / "untouched.json").write_text("{}", encoding="utf-8")
+    (ws / "untouched.json").write_text("{}", encoding="utf-8", newline="\n")
     assert _run(ws) == 0
     (row,) = read_script_runs(ws)
     assert set(row["outputs"]) == {"estimation_results.json"}  # the file it did not write is not listed
@@ -71,9 +71,9 @@ def test_results_written_by_the_shipped_script_are_from_code(tmp_path):
 def test_a_results_file_edited_after_the_run_is_not_from_code(tmp_path):
     ws = _ws(tmp_path)
     _run(ws)
-    data = json.loads((ws / "estimation_results.json").read_text())
+    data = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     data["main"]["b_value"] = 0.87
-    (ws / "estimation_results.json").write_text(json.dumps(data), encoding="utf-8")
+    (ws / "estimation_results.json").write_text(json.dumps(data), encoding="utf-8", newline="\n")
     outcome, why, _ = results_from_code(ws, "estimation_results.json")
     assert outcome == NOT_FROM_CODE
     assert "changed after run_estimation.py last wrote it" in why
@@ -82,14 +82,14 @@ def test_a_results_file_edited_after_the_run_is_not_from_code(tmp_path):
 def test_a_script_changed_after_the_run_is_not_the_shipped_one(tmp_path):
     ws = _ws(tmp_path)
     _run(ws)
-    (ws / "run_estimation.py").write_text(SCRIPT.replace("1.02", "1.10"), encoding="utf-8")
+    (ws / "run_estimation.py").write_text(SCRIPT.replace("1.02", "1.10"), encoding="utf-8", newline="\n")
     outcome, why, _ = results_from_code(ws, "estimation_results.json")
     assert outcome == NOT_FROM_CODE and "changed after the run" in why
 
 
 def test_a_failed_run_that_wrote_the_file_does_not_count(tmp_path):
     ws = _ws(tmp_path)
-    (ws / "run_estimation.py").write_text(SCRIPT + "\nraise SystemExit(3)\n", encoding="utf-8")
+    (ws / "run_estimation.py").write_text(SCRIPT + "\nraise SystemExit(3)\n", encoding="utf-8", newline="\n")
     assert _run(ws) == 3
     outcome, why, _ = results_from_code(ws, "estimation_results.json")
     assert outcome == NOT_FROM_CODE and "failed" in why
@@ -97,9 +97,9 @@ def test_a_failed_run_that_wrote_the_file_does_not_count(tmp_path):
 
 def test_runs_from_before_output_records_say_nothing(tmp_path):
     ws = _ws(tmp_path)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     line = {"script": "run_estimation.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
-    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8", newline="\n")
     assert results_from_code(ws, "estimation_results.json")[0] == NOT_RECORDED
     assert all(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))
 
@@ -108,12 +108,12 @@ def test_the_demo_case_hand_written_results_fail_the_estimation_contract(tmp_pat
     """No recorded run, results written by hand: the runner runs the shipped script, which writes other values."""
     ws = _ws(tmp_path)
     hand = {"main": {"n": 4, "mean": 7.25, "b_value": 0.87}}  # the specialist's own numbers
-    (ws / "estimation_results.json").write_text(json.dumps(hand), encoding="utf-8")
+    (ws / "estimation_results.json").write_text(json.dumps(hand), encoding="utf-8", newline="\n")
     record = confirm_results_from_code(ws, "econometrics_specialist")
     assert record["estimation_results.json"]["same"] is False
     assert record["estimation_results.json"]["differ"] == 1
     # The file is put back as the specialist left it (the evidence), and the contract fails with plain feedback.
-    assert json.loads((ws / "estimation_results.json").read_text()) == hand
+    assert json.loads((ws / "estimation_results.json").read_text(encoding="utf-8")) == hand
     (failed,) = [c for c in check_results_from_code(ws, "econometrics_specialist") if not c.ok]
     assert failed.kind == "reliability"
     assert failed.reason.startswith("estimation_results.json was not written by run_estimation.py as shipped")
@@ -145,7 +145,7 @@ def test_results_traced_to_the_last_run_need_no_rerun(tmp_path):
 def test_robustness_results_written_by_hand_fail_too(tmp_path):
     ws = _ws(tmp_path)
     _run(ws)
-    (ws / "robustness_results.json").write_text('{"alt": {"b_value": 0.9}}', encoding="utf-8")
+    (ws / "robustness_results.json").write_text('{"alt": {"b_value": 0.9}}', encoding="utf-8", newline="\n")
     confirm_results_from_code(ws, "econometrics_specialist")
     failed = [c for c in check_results_from_code(ws, "econometrics_specialist") if not c.ok]
     assert [c.artifact for c in failed] == ["robustness_results.json"]
@@ -197,7 +197,7 @@ def test_verify_fails_the_demo_case(tmp_path):
 
     ws = _ws(tmp_path)
     _run(ws)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4, "b_value": 0.87}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4, "b_value": 0.87}}', encoding="utf-8", newline="\n")
     check = _check_results_from_code(_bundle(tmp_path, ws))
     assert check is not None and check.status == FAIL
     assert "not the file run_estimation.py wrote" in check.detail
@@ -209,7 +209,7 @@ def test_verify_fails_a_results_file_swapped_in_the_folder(tmp_path):
     ws = _ws(tmp_path)
     _run(ws)
     bundle = _bundle(tmp_path, ws)
-    (bundle / "results" / "estimation_results.json").write_text('{"main": {"n": 5}}', encoding="utf-8")
+    (bundle / "results" / "estimation_results.json").write_text('{"main": {"n": 5}}', encoding="utf-8", newline="\n")
     check = _check_results_from_code(bundle)
     assert check is not None and check.status == FAIL
 
@@ -219,7 +219,9 @@ def test_verify_fails_results_that_no_run_wrote(tmp_path):
     from src.cli_verify import FAIL, _check_results_from_code
 
     ws = _ws(tmp_path)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")  # no script run at all
+    (ws / "estimation_results.json").write_text(
+        '{"main": {"n": 4}}', encoding="utf-8", newline="\n"
+    )  # no script run at all
     check = _check_results_from_code(_bundle(tmp_path, ws))
     assert check is not None and check.status == FAIL
     assert "the results have no script that computes them" in check.detail
@@ -231,9 +233,9 @@ def test_a_record_that_the_run_predates_output_records_fails_from_an_e2er_that_r
     from src.cli_verify import FAIL, _check_results_from_code
 
     ws = _ws(tmp_path)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     line = {"script": "run_estimation.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
-    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8", newline="\n")
     bundle = _bundle(tmp_path, ws)
     check = _check_results_from_code(bundle)
     assert check is not None and check.status == FAIL
@@ -244,10 +246,10 @@ def _with_run_version(bundle, *, run_version=None, segments=None):
     prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     if run_version:
         prov["run"]["e2er_version_run"] = run_version
-    (bundle / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+    (bundle / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
     if segments is not None:
         doc = {"e2er": {"version": segments[-1], "segments": [{"version": v, "commit": None} for v in segments]}}
-        (bundle / "e2er.json").write_text(json.dumps({"dossier": {"doc": doc}}), encoding="utf-8")
+        (bundle / "e2er.json").write_text(json.dumps({"dossier": {"doc": doc}}), encoding="utf-8", newline="\n")
 
 
 def test_predates_output_records_depends_on_the_e2er_that_ran_the_study(tmp_path):
@@ -255,9 +257,9 @@ def test_predates_output_records_depends_on_the_e2er_that_ran_the_study(tmp_path
     from src.cli_verify import FAIL, SKIP, _check_results_from_code
 
     ws = _ws(tmp_path)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     line = {"script": "run_estimation.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
-    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8", newline="\n")
     bundle = _bundle(tmp_path, ws)
     _with_run_version(bundle, run_version="0.16.0")
     check = _check_results_from_code(bundle)
@@ -272,9 +274,9 @@ def test_the_published_dossier_says_which_e2er_ran_an_older_export(tmp_path):
     from src.cli_verify import FAIL, SKIP, _check_results_from_code
 
     ws = _ws(tmp_path)
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     line = {"script": "run_estimation.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
-    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8", newline="\n")
     bundle = _bundle(tmp_path, ws)
     _with_run_version(bundle, segments=["0.16.0", "0.16.0"])
     check = _check_results_from_code(bundle)
@@ -311,13 +313,15 @@ def test_verify_of_an_export_without_the_record_says_it_was_not_checked(tmp_path
 
     bundle = tmp_path / "old-export"
     (bundle / "results").mkdir(parents=True)
-    (bundle / "results" / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
-    (bundle / "provenance.json").write_text(json.dumps({"run": {"e2er_version": "0.16.0"}}), encoding="utf-8")
+    (bundle / "results" / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
+    (bundle / "provenance.json").write_text(
+        json.dumps({"run": {"e2er_version": "0.16.0"}}), encoding="utf-8", newline="\n"
+    )
     check = _check_results_from_code(bundle)
     assert check is not None and check.status == SKIP and "predates output records" in check.detail
     # The record taken out of a later export (or the version with it): a failure, not a skip.
     for run in ({"e2er_version": "0.18.0"}, {}):
-        (bundle / "provenance.json").write_text(json.dumps({"run": run}), encoding="utf-8")
+        (bundle / "provenance.json").write_text(json.dumps({"run": run}), encoding="utf-8", newline="\n")
         check = _check_results_from_code(bundle)
         assert check is not None and check.status == FAIL and "records no run that wrote" in check.detail
 
@@ -328,10 +332,10 @@ def test_a_results_file_without_an_entry_in_the_record_fails(tmp_path):
     bundle = tmp_path / "b"
     (bundle / "results").mkdir(parents=True)
     for name in ("estimation_results.json", "robustness_results.json"):
-        (bundle / "results" / name).write_text('{"main": {"n": 4}}', encoding="utf-8")
+        (bundle / "results" / name).write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     record = {"results/estimation_results.json": {"outcome": "not_recorded", "reason": "x"}}
     run = {"e2er_version": "0.16.0", "results_from_code": record}
-    (bundle / "provenance.json").write_text(json.dumps({"run": run}), encoding="utf-8")
+    (bundle / "provenance.json").write_text(json.dumps({"run": run}), encoding="utf-8", newline="\n")
     check = _check_results_from_code(bundle)
     assert check is not None and check.status == FAIL
     assert "robustness_results.json: provenance.json records no run that wrote it" in check.detail
@@ -349,7 +353,7 @@ NO_SCRIPT = (
 def test_results_without_any_script_fail_the_estimation_contract(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4, "b_value": 0.87}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4, "b_value": 0.87}}', encoding="utf-8", newline="\n")
     assert confirm_results_from_code(ws, "econometrics_specialist") == {}  # nothing to run
     (failed,) = [c for c in check_results_from_code(ws, "econometrics_specialist") if not c.ok]
     assert failed.reason == NO_SCRIPT and failed.kind == "reliability"
@@ -358,7 +362,7 @@ def test_results_without_any_script_fail_the_estimation_contract(tmp_path):
 def test_robustness_results_without_a_script_fail_too(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "robustness_results.json").write_text('{"alt": {"b": 1}}', encoding="utf-8")
+    (ws / "robustness_results.json").write_text('{"alt": {"b": 1}}', encoding="utf-8", newline="\n")
     (failed,) = [c for c in check_results_from_code(ws, "econometrics_specialist") if not c.ok]
     assert failed.artifact == "robustness_results.json" and "no script that computes them" in failed.reason
 
@@ -366,9 +370,9 @@ def test_robustness_results_without_a_script_fail_too(tmp_path):
 def test_a_study_from_before_output_records_is_not_judged_even_without_a_script(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8")
+    (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     line = {"script": "old_script.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
-    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8")
+    (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8", newline="\n")
     assert all(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))
 
 
@@ -387,11 +391,11 @@ def test_a_rerun_that_differs_only_in_the_last_float_digits_keeps_the_shipped_fi
     """CI on Linux (2026-10-14): the rerun's file replaced the specialist's, last digits and all."""
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "run_estimation.py").write_text(FLOAT_SCRIPT, encoding="utf-8")
+    (ws / "run_estimation.py").write_text(FLOAT_SCRIPT, encoding="utf-8", newline="\n")
     import subprocess
 
     subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
-    data = json.loads((ws / "estimation_results.json").read_text())
+    data = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     data["main"]["estimate"] = -0.7108317348501937  # as another platform's libraries wrote it
     shipped = json.dumps(data).encode()
     (ws / "estimation_results.json").write_bytes(shipped)
@@ -408,13 +412,13 @@ def test_a_rerun_that_differs_only_in_the_last_float_digits_keeps_the_shipped_fi
 def test_a_value_changed_beyond_float_noise_still_fails(tmp_path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "run_estimation.py").write_text(FLOAT_SCRIPT, encoding="utf-8")
+    (ws / "run_estimation.py").write_text(FLOAT_SCRIPT, encoding="utf-8", newline="\n")
     import subprocess
 
     subprocess.run([sys.executable, "run_estimation.py"], cwd=ws, check=True)
-    data = json.loads((ws / "estimation_results.json").read_text())
+    data = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     data["main"]["se"] = data["main"]["se"] * (1 + 1e-6)  # changed by hand: beyond float noise
-    (ws / "estimation_results.json").write_text(json.dumps(data))
+    (ws / "estimation_results.json").write_text(json.dumps(data), encoding="utf-8", newline="\n")
     record = confirm_results_from_code(ws, "econometrics_specialist")
     assert record["estimation_results.json"]["same"] is False
     assert any(not c.ok for c in check_results_from_code(ws, "econometrics_specialist"))

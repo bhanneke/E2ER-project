@@ -23,7 +23,7 @@ BAD_IDS = ["%2E%2E", "..", "%2e%2e%2f%2e%2e", "abc", "x" * 50]
 def studies(tmp_path: Path):
     """A studies folder with a .env beside the workspaces, as on a real computer."""
     (tmp_path / "workspaces").mkdir()
-    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-FAKE-NOT-A-KEY\n")
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-ant-FAKE-NOT-A-KEY\n", encoding="utf-8", newline="\n")
     with patch("src.config.get_settings") as s, patch("src.api.app.get_settings", s):
         s.return_value.workspace_root = str(tmp_path / "workspaces")
         s.return_value.api_auth_token = None
@@ -72,8 +72,8 @@ def test_hidden_files_of_a_workspace_are_not_served(studies):
     pid = str(uuid.uuid4())
     ws = studies / "workspaces" / pid
     (ws / ".e2er").mkdir(parents=True)
-    (ws / ".e2er" / "secret.json").write_text("{}")
-    (ws / "paper.md").write_text("# ok")
+    (ws / ".e2er" / "secret.json").write_text("{}", encoding="utf-8", newline="\n")
+    (ws / "paper.md").write_text("# ok", encoding="utf-8", newline="\n")
     c = TestClient(app, base_url="http://127.0.0.1:8280")
     assert c.get(f"/api/papers/{pid}/artifacts/paper.md").status_code == 200
     assert c.get(f"/api/papers/{pid}/artifacts/.e2er/secret.json").status_code == 400

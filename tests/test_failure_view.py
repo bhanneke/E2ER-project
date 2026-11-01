@@ -25,7 +25,7 @@ def _ws(tmp_path: Path, feedback: dict[str, str]) -> Path:
     fb = ws / ".contract_feedback"
     fb.mkdir(parents=True)
     for name, text in feedback.items():
-        (fb / f"{name}.txt").write_text(text, encoding="utf-8")
+        (fb / f"{name}.txt").write_text(text, encoding="utf-8", newline="\n")
     return ws
 
 
@@ -111,7 +111,9 @@ def test_stopped_is_explained_as_a_check_not_a_crash(tmp_path: Path):
 def test_an_old_run_rejected_after_its_review_is_not_a_failure(tmp_path: Path):
     """Up to 0.13.1 a low internal quality review score stored `rejected` on a
     run that finished. With the review's file present, it is completed."""
-    (tmp_path / "review_aggregation.json").write_text('{"verdict": "MAJOR_REVISION", "weighted_avg": 6.1}')
+    (tmp_path / "review_aggregation.json").write_text(
+        '{"verdict": "MAJOR_REVISION", "weighted_avg": 6.1}', encoding="utf-8", newline="\n"
+    )
     detail = _failure_detail(tmp_path, {"status": "rejected", "last_error": ""}, [])
     assert detail == {"failed": False}
 

@@ -11,7 +11,7 @@ from src.core.renderer.figures import ensure_figure_placeholders, render_figures
 def _spec(tmp_path: Path, figures: list[dict]) -> Path:
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "figure_spec.json").write_text(json.dumps({"figures": figures}))
+    (ws / "figure_spec.json").write_text(json.dumps({"figures": figures}), encoding="utf-8", newline="\n")
     return ws
 
 
@@ -166,7 +166,9 @@ def test_placeholder_for_missing_referenced_figure(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "paper_draft.tex").write_text(
-        r"\includegraphics[width=0.7\textwidth]{fig_present.pdf}" "\n" r"\includegraphics{fig_missing.pdf}"
+        r"\includegraphics[width=0.7\textwidth]{fig_present.pdf}" "\n" r"\includegraphics{fig_missing.pdf}",
+        encoding="utf-8",
+        newline="\n",
     )
     # one figure already exists; the other must be stubbed
     (ws / "fig_present.pdf").write_bytes(b"%PDF-1.4 real")

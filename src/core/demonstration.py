@@ -129,7 +129,7 @@ def mark_report(path: Path, kind: str | None = "replication", *, purpose: str | 
     new = bom + (_block(kind) if purpose == DEMONSTRATION else "") + body
     if new == raw:
         return False
-    path.write_text(new, encoding="utf-8")
+    path.write_text(new, encoding="utf-8", newline="\n")
     return True
 
 

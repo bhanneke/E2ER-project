@@ -98,7 +98,12 @@ def _other_server(db: Path, paper_id: str) -> subprocess.Popen:
     )
     env = {**os.environ, "DATABASE_URL": f"sqlite:///{db}"}
     proc = subprocess.Popen(
-        [sys.executable, "-c", code, paper_id], cwd=REPO, env=env, stdout=subprocess.PIPE, text=True
+        [sys.executable, "-c", code, paper_id],
+        cwd=REPO,
+        env=env,
+        stdout=subprocess.PIPE,
+        encoding="utf-8",
+        errors="replace",
     )
     assert proc.stdout is not None
     assert proc.stdout.readline().strip() == "ready"

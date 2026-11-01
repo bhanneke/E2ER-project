@@ -50,6 +50,9 @@ class ToolLoopResult:
     peak_prompt_tokens: int = 0
     #: Older tool exchanges summarised to keep the conversation small (see ``llm/history.py``).
     summarised_exchanges: int = 0
+    #: What the backend saw that explains a missing output file (Codex: its sandbox refused writes),
+    #: added to the error when the output contract fails; empty when there is nothing to say.
+    diagnostic: str = ""
 
 
 class ToolHandler(ABC):

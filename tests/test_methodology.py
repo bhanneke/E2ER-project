@@ -93,7 +93,9 @@ def test_methodology_surfaces_in_tier0_context(tmp_path):
                 "datasets": [],
                 "current_stage": "idea",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
     ctx = build_tier0_context(workspace, pid)
@@ -116,7 +118,9 @@ def test_methodology_defaults_to_empirical_when_missing(tmp_path):
                 "datasets": [],
                 "current_stage": "idea",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
     ctx = build_tier0_context(workspace, pid)
@@ -158,7 +162,7 @@ def test_create_paper_accepts_valid_methodology(methodology, tmp_path, monkeypat
 
     assert resp.status_code == 200, f"create_paper rejected methodology={methodology}: {resp.text}"
     # Manifest written with correct methodology (and the run's id: the folder is named after the title)
-    manifest = json.loads((Path(resp.json()["workspace"]) / "manifest.json").read_text())
+    manifest = json.loads((Path(resp.json()["workspace"]) / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["methodology"] == methodology and manifest["paper_id"] == resp.json()["paper_id"]
 
 
@@ -218,7 +222,9 @@ def test_create_paper_methodology_defaults_to_empirical(tmp_path, monkeypatch):
         )
 
     assert resp.status_code == 200
-    manifest = json.loads((Path(resp.json()["workspace"]) / "manifest.json").read_text())  # a readable folder name
+    manifest = json.loads(
+        (Path(resp.json()["workspace"]) / "manifest.json").read_text(encoding="utf-8")
+    )  # a readable folder name
     assert manifest["methodology"] == "empirical"
 
 
@@ -253,4 +259,6 @@ async def test_theory_specialist_writes_model_spec(tmp_workspace, mock_llm, pape
     assert contribution.success, f"theory_specialist run failed: {contribution.error}"
     artifact = tmp_workspace / "model_spec.md"
     assert artifact.exists(), "theory_specialist must write model_spec.md"
-    assert "Formal Model" in artifact.read_text() or "Propositions" in artifact.read_text()
+    assert "Formal Model" in artifact.read_text(encoding="utf-8") or "Propositions" in artifact.read_text(
+        encoding="utf-8"
+    )

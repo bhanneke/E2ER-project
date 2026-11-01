@@ -84,10 +84,10 @@ _BIB = """@article{Bernanke:2005,
 def _folders(study: Path) -> None:
     """The researcher's data and literature folders, as New study lists them."""
     (study / "data").mkdir(parents=True, exist_ok=True)
-    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8")
-    (study / "data" / "bank_tickers.csv").write_text("ticker\nKBE\nKRE\n", encoding="utf-8")
+    (study / "data" / "fomc_announcement_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
+    (study / "data" / "bank_tickers.csv").write_text("ticker\nKBE\nKRE\n", encoding="utf-8", newline="\n")
     (study / "literature").mkdir(parents=True, exist_ok=True)
-    (study / "literature" / "refs.bib").write_text(_BIB, encoding="utf-8")
+    (study / "literature" / "refs.bib").write_text(_BIB, encoding="utf-8", newline="\n")
 
 
 def _write_inputs(ws: Path) -> None:
@@ -127,7 +127,9 @@ def _write_inputs(ws: Path) -> None:
         year=2018,
         source="openalex",
     )
-    (ws / "literature.bib").write_text(mine.to_bibtex() + "\n\n" + web.to_bibtex() + "\n", encoding="utf-8")
+    (ws / "literature.bib").write_text(
+        mine.to_bibtex() + "\n\n" + web.to_bibtex() + "\n", encoding="utf-8", newline="\n"
+    )
     draft = ws / "paper_draft.tex"
     draft.write_text(
         draft.read_text(encoding="utf-8").replace(
@@ -135,6 +137,7 @@ def _write_inputs(ws: Path) -> None:
             "\\section{Results}\nAs \\citet{Bernanke:2005} and \\citet{english2018monetary} find.\n",
         ),
         encoding="utf-8",
+        newline="\n",
     )
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE IF NOT EXISTS fomc_announcement_dates (date TEXT)")
@@ -156,6 +159,7 @@ def _write_inputs(ws: Path) -> None:
             }
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -412,9 +416,9 @@ def _events(paper_id: str, spec: dict[str, Any]) -> list[tuple[Any, ...]]:
 def _write_workspace(ws: Path, paper_id: str, name: str, spec: dict[str, Any]) -> None:
     ws.mkdir(parents=True, exist_ok=True)
     for fname, body in _FILES.items():
-        (ws / fname).write_text(body, encoding="utf-8")
+        (ws / fname).write_text(body, encoding="utf-8", newline="\n")
     (ws / "tables").mkdir(exist_ok=True)
-    (ws / "tables" / "h2_results.tex").write_text(TABLE_TEX, encoding="utf-8")
+    (ws / "tables" / "h2_results.tex").write_text(TABLE_TEX, encoding="utf-8", newline="\n")
     manifest = {
         "paper_id": paper_id,
         "title": f"FOMC and bank stocks ({name.replace('_', ' ')})",
@@ -424,7 +428,7 @@ def _write_workspace(ws: Path, paper_id: str, name: str, spec: dict[str, Any]) -
         "pipeline": spec["pipeline"],
         "purpose": "demonstration",
     }
-    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
     _write_inputs(ws)
     state = {
         "paper_id": paper_id,
@@ -448,20 +452,25 @@ def _write_workspace(ws: Path, paper_id: str, name: str, spec: dict[str, Any]) -
         (ws / "review_aggregation.json").write_text(
             json.dumps({"weighted_score": 7.4, "decision": "minor_revision", "scores": {"technical_reviewer": 7.0}}),
             encoding="utf-8",
+            newline="\n",
         )
-        (ws / "number_verification.json").write_text(json.dumps({"matched": 12, "mismatches": []}), encoding="utf-8")
+        (ws / "number_verification.json").write_text(
+            json.dumps({"matched": 12, "mismatches": []}), encoding="utf-8", newline="\n"
+        )
         (ws / "citation_integrity.json").write_text(
-            json.dumps({"passed": True, "verified": 9, "total_cites": 9, "missing_in_bib": 0}), encoding="utf-8"
+            json.dumps({"passed": True, "verified": 9, "total_cites": 9, "missing_in_bib": 0}),
+            encoding="utf-8",
+            newline="\n",
         )
         (ws / "paper_draft.pdf").write_bytes(b"%PDF-1.4\n%fixture\n")
     for outs in spec.get("stage_outputs", {}).values():
         for fname in outs.values():
-            (ws / fname).write_text("# Technical review\n\nOVERALL SCORE: 7.0/10\n", encoding="utf-8")
+            (ws / fname).write_text("# Technical review\n\nOVERALL SCORE: 7.0/10\n", encoding="utf-8", newline="\n")
     if spec.get("feedback"):
         fb = ws / ".contract_feedback"
         fb.mkdir(exist_ok=True)
         for sp, text in spec["feedback"].items():
-            (fb / f"{sp}.txt").write_text(text, encoding="utf-8")
+            (fb / f"{sp}.txt").write_text(text, encoding="utf-8", newline="\n")
 
 
 async def _populate(fx: Fixture) -> None:
@@ -546,6 +555,7 @@ def _exports(fx: Fixture) -> None:
             }
         ),
         encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -555,12 +565,14 @@ def build(folder: Path) -> Fixture:
     study = folder / "study"
     (study / "workspaces").mkdir(parents=True, exist_ok=True)
     env = env_for(folder)
-    (study / ".env").write_text("".join(f"{k}={v}\n" for k, v in env.items()), encoding="utf-8")
+    (study / ".env").write_text("".join(f"{k}={v}\n" for k, v in env.items()), encoding="utf-8", newline="\n")
     fx = Fixture(folder=folder, study=study, db=folder / "papers.db")
     _folders(study)
     asyncio.run(_populate(fx))
     _exports(fx)
-    (folder / "fixture.json").write_text(json.dumps({"ids": fx.ids, "keys": fx.keys}, indent=2), encoding="utf-8")
+    (folder / "fixture.json").write_text(
+        json.dumps({"ids": fx.ids, "keys": fx.keys}, indent=2), encoding="utf-8", newline="\n"
+    )
     return fx
 
 

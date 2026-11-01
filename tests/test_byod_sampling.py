@@ -31,7 +31,9 @@ def test_systematic_sample_noop_under_cap():
 async def test_csv_cap_spans_full_range(tmp_path: Path):
     ws = tmp_path / "p"
     (ws / "data").mkdir(parents=True)
-    (ws / "data" / "ts.csv").write_text("t\n" + "\n".join(str(i) for i in range(100)) + "\n")
+    (ws / "data" / "ts.csv").write_text(
+        "t\n" + "\n".join(str(i) for i in range(100)) + "\n", encoding="utf-8", newline="\n"
+    )
     await import_corpus_into_data_db(ws, max_rows=10)
     res = await read_only_query(ws, "SELECT COUNT(*) n, MIN(t) mn, MAX(t) mx FROM ts")
     n, mn, mx = res["rows"][0]
@@ -43,7 +45,7 @@ async def test_csv_cap_spans_full_range(tmp_path: Path):
 async def test_csv_under_cap_imported_fully(tmp_path: Path):
     ws = tmp_path / "p"
     (ws / "data").mkdir(parents=True)
-    (ws / "data" / "small.csv").write_text("t\n0\n1\n2\n3\n4\n")
+    (ws / "data" / "small.csv").write_text("t\n0\n1\n2\n3\n4\n", encoding="utf-8", newline="\n")
     await import_corpus_into_data_db(ws, max_rows=1000)
     res = await read_only_query(ws, "SELECT COUNT(*) n, MAX(t) mx FROM small")
     assert res["rows"][0] == [5, 4]
@@ -52,7 +54,9 @@ async def test_csv_under_cap_imported_fully(tmp_path: Path):
 async def test_jsonl_cap_spans(tmp_path: Path):
     ws = tmp_path / "p"
     (ws / "data").mkdir(parents=True)
-    (ws / "data" / "ev.jsonl").write_text("\n".join(f'{{"t": {i}}}' for i in range(100)) + "\n")
+    (ws / "data" / "ev.jsonl").write_text(
+        "\n".join(f'{{"t": {i}}}' for i in range(100)) + "\n", encoding="utf-8", newline="\n"
+    )
     await import_corpus_into_data_db(ws, max_rows=10)
     res = await read_only_query(ws, "SELECT COUNT(*) n, MAX(t) mx FROM ev")
     n, mx = res["rows"][0]
@@ -66,7 +70,9 @@ async def test_csv_cap_boundary_band_still_spans(tmp_path: Path):
     head(N) — dropping the newest ~third of the file. ceil() fixes it."""
     ws = tmp_path / "p"
     (ws / "data").mkdir(parents=True)
-    (ws / "data" / "band.csv").write_text("t\n" + "\n".join(str(i) for i in range(140)) + "\n")
+    (ws / "data" / "band.csv").write_text(
+        "t\n" + "\n".join(str(i) for i in range(140)) + "\n", encoding="utf-8", newline="\n"
+    )
     await import_corpus_into_data_db(ws, max_rows=100)
     res = await read_only_query(ws, "SELECT COUNT(*) n, MIN(t) mn, MAX(t) mx FROM band")
     n, mn, mx = res["rows"][0]

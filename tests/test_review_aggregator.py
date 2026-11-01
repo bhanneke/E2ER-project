@@ -232,7 +232,9 @@ def test_runner_aggregation_prefers_disk_over_chat_summary(tmp_path, monkeypatch
 
     # Disk: mechanism_reviewer wrote a 7/10 review file.
     (workspace / "review_mechanism.md").write_text(
-        "Comprehensive review body.\n\nOVERALL SCORE: 7/10\nRECOMMENDATION: Minor Revision\n"
+        "Comprehensive review body.\n\nOVERALL SCORE: 7/10\nRECOMMENDATION: Minor Revision\n",
+        encoding="utf-8",
+        newline="\n",
     )
     # Chat-side summary from the same reviewer says 3/10 — disagreement.
     chat_summary = "OVERALL SCORE: 3/10\nRECOMMENDATION: Reject"
@@ -270,7 +272,7 @@ def test_runner_aggregation_prefers_disk_over_chat_summary(tmp_path, monkeypatch
     assert aggregation_path.exists(), "aggregation should have been written"
     import json
 
-    agg = json.loads(aggregation_path.read_text())
+    agg = json.loads(aggregation_path.read_text(encoding="utf-8"))
     # 7/10 = MINOR_REVISION; 3/10 would have been HARD_REJECT (Rule 2).
     assert agg["verdict"] in {"MINOR_REVISION", "MAJOR_REVISION"}, (
         f"verdict must be from the disk score (7/10), not the chat summary (3/10). "

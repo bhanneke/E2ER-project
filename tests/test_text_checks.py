@@ -82,9 +82,9 @@ def _g2(a: int, b: int, c: int, d: int) -> float:
 def _study(ws: Path) -> Path:
     ws.mkdir(parents=True, exist_ok=True)
     (ws / "data.db").unlink(missing_ok=True)
-    (ws / "stopwords.txt").write_text("\n".join(STOP) + "\n", encoding="utf-8")
+    (ws / "stopwords.txt").write_text("\n".join(STOP) + "\n", encoding="utf-8", newline="\n")
     design = _design()
-    (ws / tc.DESIGN_FILE).write_text(json.dumps(design), encoding="utf-8")
+    (ws / tc.DESIGN_FILE).write_text(json.dumps(design), encoding="utf-8", newline="\n")
     con = sqlite3.connect(ws / "data.db")
     con.execute("CREATE TABLE corpus (doc_id TEXT, year INTEGER, period TEXT, text TEXT)")
     con.executemany("INSERT INTO corpus VALUES (?, ?, ?, ?)", [(k, y, p, t) for k, (y, p, t) in DOCS.items()])
@@ -118,7 +118,7 @@ def _study(ws: Path) -> Path:
         ],
         "corpus": stats,
     }
-    (ws / tc.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8")
+    (ws / tc.MANIFEST_FILE).write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
 
     def count(term: str, ids: list[str]) -> int:
         n = len(term.split())
@@ -255,7 +255,7 @@ def _study(ws: Path) -> Path:
         },
         "limits": {"sampling_bias": "four invented documents"},
     }
-    (ws / tc.RESULTS_FILE).write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8")
+    (ws / tc.RESULTS_FILE).write_text(json.dumps(results, ensure_ascii=False), encoding="utf-8", newline="\n")
     figures = {
         "figures": [
             {"filename": "fig_key.pdf", "figure_type": "bar", "source": {"results": "models.key.outputs.terms"}},
@@ -266,7 +266,7 @@ def _study(ws: Path) -> Path:
             },
         ]
     }
-    (ws / "figure_spec.json").write_text(json.dumps(figures), encoding="utf-8")
+    (ws / "figure_spec.json").write_text(json.dumps(figures), encoding="utf-8", newline="\n")
     sample = {
         "fear_words": {
             "seed": 7,
@@ -279,20 +279,20 @@ def _study(ws: Path) -> Path:
             ],
         }
     }
-    (ws / tc.SAMPLE_FILE).write_text(json.dumps(sample), encoding="utf-8")
+    (ws / tc.SAMPLE_FILE).write_text(json.dumps(sample), encoding="utf-8", newline="\n")
     judged = copy.deepcopy(sample)["fear_words"]
     for i, it in enumerate(judged["items"]):
         it["correct"] = i != 1
         it["reason"] = "negated: she felt no fear" if i == 1 else "fear in the scene"
     judged["precision"] = 0.75
-    (ws / tc.VALIDATION_FILE).write_text(json.dumps({"fear_words": judged}), encoding="utf-8")
+    (ws / tc.VALIDATION_FILE).write_text(json.dumps({"fear_words": judged}), encoding="utf-8", newline="\n")
     return ws
 
 
 def _edit(ws: Path, name: str, change) -> None:
     doc = json.loads((ws / name).read_text(encoding="utf-8"))
     change(doc)
-    (ws / name).write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    (ws / name).write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8", newline="\n")
 
 
 @pytest.fixture
@@ -399,7 +399,7 @@ def test_the_design_check_lets_the_corpus_build_write_the_stop_words_later(ws: P
     v = tc.check_corpus(ws)
     assert not v.passed and "stopwords.txt is missing" in _reasons(v)
     (ws / "data").mkdir()
-    (ws / "data" / "stopwords.txt").write_text("the\n", encoding="utf-8")
+    (ws / "data" / "stopwords.txt").write_text("the\n", encoding="utf-8", newline="\n")
     assert "there is data/stopwords.txt: paths in corpus_design.json are relative to the study folder" in _reasons(
         tc.check_corpus(ws)
     )
@@ -527,7 +527,7 @@ def test_the_results_check_refuses(ws: Path, change, rule: str):
 
 def test_a_word_list_changed_after_the_corpus_check_stops_the_results_and_the_validation(ws: Path):
     assert tc.check_corpus(ws).passed
-    (ws / "stopwords.txt").write_text("the\n", encoding="utf-8")
+    (ws / "stopwords.txt").write_text("the\n", encoding="utf-8", newline="\n")
     assert "(k) stopwords.txt changed after the corpus check froze it" in _reasons(tc.check_text_results(ws))
     assert "(r) stopwords.txt changed" in _reasons(tc.check_text_validation(ws))
 

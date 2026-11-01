@@ -24,7 +24,8 @@ def e2er(*argv: str) -> subprocess.CompletedProcess:
         [sys.executable, "-m", "src", *argv],
         cwd=ROOT,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
 

@@ -3,7 +3,7 @@
 These backends shell out to vendor CLIs (`codex exec`, `gemini`). The
 tests mock the subprocess so they run hermetically and in <100ms. Live
 validation of Codex against a ChatGPT plan happens out of band; Gemini is not
-tested live (it needs a Gemini API key since October 2026).
+tested live (it needs a paid Gemini API key since 18 June 2026).
 
 What's pinned:
   - Backend instantiates without an installed CLI (constructor doesn't

@@ -51,7 +51,7 @@ def _note(host, port, blocked):
     if not _LOG:
         return
     try:
-        with open(_LOG, "a", encoding="utf-8") as f:
+        with open(_LOG, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps({"host": str(host), "port": port, "blocked": blocked}) + "\n")
     except OSError:
         pass

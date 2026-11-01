@@ -1285,10 +1285,7 @@ def verify_and_save(
     and the dashboard."""
     report = verify(draft_path, workspace)
     output_path = workspace / "number_verification.json"
-    output_path.write_text(
-        json.dumps(report.to_dict(), indent=2, default=str),
-        encoding="utf-8",
-    )
+    output_path.write_text(json.dumps(report.to_dict(), indent=2, default=str), encoding="utf-8", newline="\n")
     logger.info(
         "verify_numbers: matched=%d mismatched=%d unverifiable=%d total=%d passed=%s",
         report.matched,

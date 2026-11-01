@@ -122,7 +122,7 @@ def test_a_pdf_with_no_text_layer_is_reported_as_such(tmp_path):
 
 def test_a_file_that_is_not_a_pdf_does_not_crash(tmp_path):
     p = tmp_path / "not.pdf"
-    p.write_text("this is plainly not a PDF")
+    p.write_text("this is plainly not a PDF", encoding="utf-8", newline="\n")
 
     result = read_pdf_file(p)
     assert not result.ok
@@ -284,7 +284,7 @@ async def test_a_folder_of_pdfs_is_read_whole(tmp_path):
     (folder / "sub").mkdir(parents=True)
     for name in ["a.pdf", "b.pdf", "sub/c.pdf"]:
         (folder / name).write_bytes(minimal_pdf(BODY))
-    (folder / "notes.txt").write_text("not a paper")
+    (folder / "notes.txt").write_text("not a paper", encoding="utf-8", newline="\n")
 
     papers = await _metadata_for(str(folder), limit=None, search=False)
 
@@ -672,7 +672,7 @@ def test_export_writes_files(tmp_path):
 
     dest = tmp_path / "out"
     assert main(["--db", db, "export", str(dest)]) == 0
-    assert json.loads((dest / "index.json").read_text())["papers"] == 1
+    assert json.loads((dest / "index.json").read_text(encoding="utf-8"))["papers"] == 1
 
 
 def test_remove_accepts_a_bare_doi(tmp_path):

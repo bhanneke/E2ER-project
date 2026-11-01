@@ -194,7 +194,7 @@ def test_long_result_is_cut_with_a_note_and_read_file_can_read_on(tmp_path):
     from src.modules.llm.tools import FileToolHandler
 
     lines = [f"line {i}" for i in range(1, 20_001)]
-    (tmp_path / "big.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (tmp_path / "big.txt").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     h = FileToolHandler(tmp_path)
     full = asyncio.run(h.handle("read_file", {"path": "big.txt"}))
     cut = history.cap_tool_result(full, "read_file", {"path": "big.txt"})

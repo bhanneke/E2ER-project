@@ -61,8 +61,8 @@ def test_the_checkout_wrappers_call_the_entry_points_implementation():
 def test_run_records_the_run_and_passes_the_exit_code_on(tmp_path: Path, monkeypatch, capfd):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("E2ER_PYTHON", sys.executable)
-    (tmp_path / "ok.py").write_text("print('ran')\n", encoding="utf-8")
-    (tmp_path / "bad.py").write_text("raise SystemExit(5)\n", encoding="utf-8")
+    (tmp_path / "ok.py").write_text("print('ran')\n", encoding="utf-8", newline="\n")
+    (tmp_path / "bad.py").write_text("raise SystemExit(5)\n", encoding="utf-8", newline="\n")
     assert wrappers.run_main(["ok.py"]) == 0
     assert wrappers.run_main(["bad.py"]) == 5
     assert "ran" in capfd.readouterr().out
@@ -76,7 +76,7 @@ def test_run_records_the_run_and_passes_the_exit_code_on(tmp_path: Path, monkeyp
 def test_run_stops_a_script_at_the_time_limit(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("E2ER_RUN_TIMEOUT", "1")
-    (tmp_path / "slow.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+    (tmp_path / "slow.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8", newline="\n")
     assert wrappers.run_main(["slow.py"]) == wrappers.TIMED_OUT
     assert read_script_runs(tmp_path)[-1]["exit_code"] == wrappers.TIMED_OUT
 
@@ -90,7 +90,7 @@ def test_run_refuses_what_the_shell_wrapper_refused(tmp_path: Path, monkeypatch,
 
 def test_run_refuses_a_link_out_of_the_workspace(tmp_path: Path, monkeypatch):
     outside = tmp_path / "outside.py"
-    outside.write_text("print('no')\n", encoding="utf-8")
+    outside.write_text("print('no')\n", encoding="utf-8", newline="\n")
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "link.py").symlink_to(outside)

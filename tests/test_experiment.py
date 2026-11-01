@@ -25,10 +25,12 @@ def test_harvest_run_computes_fabrication(tmp_path: Path):
     (b / "results").mkdir(parents=True)
     (b / "reviews").mkdir(parents=True)
     (b / "results" / "number_verification.json").write_text(
-        json.dumps({"mismatches": [{"severity": "critical"}, {"severity": "critical"}, {"severity": "major"}]})
+        json.dumps({"mismatches": [{"severity": "critical"}, {"severity": "critical"}, {"severity": "major"}]}),
+        encoding="utf-8",
+        newline="\n",
     )
     (b / "reviews" / "citation_integrity.json").write_text(
-        json.dumps({"missing_in_bib": 1, "unverifiable": 2, "total_cites": 10})
+        json.dumps({"missing_in_bib": 1, "unverifiable": 2, "total_cites": 10}), encoding="utf-8", newline="\n"
     )
     events = [
         {"event_type": "gate_shadow", "payload": {"passed": False}},
@@ -103,7 +105,9 @@ def test_shadowed_contract_violations_are_harvested():
 
 def test_load_config(tmp_path: Path):
     p = tmp_path / "c.yaml"
-    p.write_text("name: t\nresearch_questions:\n  - Q1\nregimes: [off, full]\nrepeats: 2\n")
+    p.write_text(
+        "name: t\nresearch_questions:\n  - Q1\nregimes: [off, full]\nrepeats: 2\n", encoding="utf-8", newline="\n"
+    )
     c = load_config(p)
     assert c.name == "t"
     assert c.research_questions == ["Q1"]
@@ -133,10 +137,10 @@ def _dry_run(tmp_path: Path):
         (dest / "results").mkdir(parents=True, exist_ok=True)
         (dest / "reviews").mkdir(parents=True, exist_ok=True)
         (dest / "results" / "number_verification.json").write_text(
-            json.dumps({"mismatches": [{"severity": "critical"}] * fab[regime]})
+            json.dumps({"mismatches": [{"severity": "critical"}] * fab[regime]}), encoding="utf-8", newline="\n"
         )
         (dest / "reviews" / "citation_integrity.json").write_text(
-            json.dumps({"missing_in_bib": 0, "unverifiable": 0, "total_cites": 5})
+            json.dumps({"missing_in_bib": 0, "unverifiable": 0, "total_cites": 5}), encoding="utf-8", newline="\n"
         )
         return dest
 
@@ -180,7 +184,7 @@ def test_dry_run_writes_well_formed_results_csv(tmp_path: Path):
 
 def test_dry_run_writes_summary_with_per_regime_means(tmp_path: Path):
     _dry_run(tmp_path)
-    summary = (tmp_path / "summary.md").read_text()
+    summary = (tmp_path / "summary.md").read_text(encoding="utf-8")
     assert "Per-regime means" in summary
     assert "| off |" in summary and "| full |" in summary
     # fabrication is measured in the shadow regimes, not zeroed out.

@@ -172,7 +172,7 @@ def test_first_publish_creates_uploads_describes_and_publishes(bundle: Path, tmp
         meta = dep["metadata"]
         assert meta["title"].endswith(f"({item})") and meta["upload_type"] in ("dataset", "software")
         assert meta["publication_date"] and meta["creators"] and meta["license"]
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert m["availability"]["code"]["doi"] == rec["code"]["doi"]
 
 
@@ -207,7 +207,7 @@ def test_changed_files_become_a_new_version_of_the_same_record(bundle: Path, tmp
     assert zenodo.deps[new["id"]]["files"]["demo-code.zip"] != b"the earlier code"
     assert zenodo.deps[old["id"]]["files"] == {"demo-code.zip": b"the earlier code"}  # the old version stays
     assert rec["data"] == first["deposits"]["data"]  # unchanged data keep their DOI
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert (
         m["availability"]["code"]["doi"] == new["doi"]
         and m["dossier"]["doc"]["availability"]["code"]["doi"] == new["doi"]
@@ -263,7 +263,7 @@ def test_the_sandbox_is_another_address_and_token(bundle: Path, tmp_path: Path, 
     assert publish(str(bundle), **BASE, **REPO, **PUBLIC, zenodo_sandbox=True, out=str(tmp_path / "e")) == 0
     assert seen == ["https://sandbox.zenodo.org"]
     assert set(_zenodo_records(bundle)) == {"sandbox.zenodo.org"}
-    assert json.loads((bundle / "e2er.json").read_text())["availability"]["code"]["zenodo"].startswith(
+    assert json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["availability"]["code"]["zenodo"].startswith(
         "https://sandbox.zenodo.org/records/"
     )
 
@@ -275,14 +275,14 @@ def test_the_sandbox_s_dois_carry_its_test_prefix(bundle: Path, tmp_path: Path, 
     out = capsys.readouterr().out
     assert "not the reserved" not in out
     rec = _record(bundle)["deposits"]
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     for item in ("data", "code"):
         doi = f"10.5072/zenodo.{rec[item]['id']}"
         assert rec[item]["doi"] == doi and m["availability"][item]["doi"] == doi
         assert m["dossier"]["doc"]["availability"][item]["doi"] == doi
     # A test DOI resolves nowhere: the data's address is the sandbox's record (the code's is the repository).
     assert m["availability"]["data"]["url"] == f"https://sandbox.zenodo.org/records/{rec['data']['id']}"
-    assert "10.5281/" not in (bundle / "e2er.json").read_text()
+    assert "10.5281/" not in (bundle / "e2er.json").read_text(encoding="utf-8")
 
 
 def test_a_sandbox_record_written_with_production_s_prefix_is_corrected(
@@ -298,12 +298,12 @@ def test_a_sandbox_record_written_with_production_s_prefix_is_corrected(
     capsys.readouterr()
     assert publish(str(bundle), **kw) == 0
     assert "unchanged since doi 10.5072/" in capsys.readouterr().out
-    assert "10.5281/" not in (bundle / "e2er.json").read_text()
+    assert "10.5281/" not in (bundle / "e2er.json").read_text(encoding="utf-8")
 
 
 def test_production_dois_keep_their_prefix(bundle: Path, tmp_path: Path, zenodo: Zenodo):
     assert publish(str(bundle), **BASE, **REPO, **PUBLIC, out=str(tmp_path / "e")) == 0
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     rec = _record(bundle)["deposits"]
     assert m["availability"]["code"]["doi"] == f"10.5281/zenodo.{rec['code']['id']}"
     assert m["availability"]["data"]["url"] == f"https://doi.org/10.5281/zenodo.{rec['data']['id']}"
@@ -321,7 +321,7 @@ def test_a_folder_published_on_a_platform_takes_deposits_without_to_and_publishe
 
     kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
     assert publish(str(bundle), **kw) == 0
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     link = {
         "platform_url": "https://e2er.example",
         "owner_project": "bhanneke/demo",
@@ -329,14 +329,14 @@ def test_a_folder_published_on_a_platform_takes_deposits_without_to_and_publishe
         "dossier_id": m["dossier"]["id"],
         "content_id": m["content_id"],
     }
-    (bundle / ".e2er" / "link.json").write_text(json.dumps(link))
+    (bundle / ".e2er" / "link.json").write_text(json.dumps(link), encoding="utf-8", newline="\n")
     record = _record(bundle)
     record["deposits"]["code"]["files"] = {}  # the code changed: a new version, a new dossier
     _write(bundle, record)
     assert publish(str(bundle), **kw) == 0
-    now = json.loads((bundle / "e2er.json").read_text())
+    now = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert now["dossier"]["id"] != link["dossier_id"]
-    saved = json.loads((bundle / ".e2er" / "link.json").read_text())
+    saved = json.loads((bundle / ".e2er" / "link.json").read_text(encoding="utf-8"))
     assert {k: saved[k] for k in link} == link  # still the platform's version
     assert saved["described_here"]["dossier_id"] == now["dossier"]["id"]
     assert saved["described_here"]["content_id"] == now["content_id"]
@@ -369,13 +369,13 @@ def test_a_record_in_the_format_before_hosts_is_read_as_its_host(bundle: Path, t
     kw = dict(**BASE, **REPO, **PUBLIC, out=str(tmp_path / "e"))
     assert publish(str(bundle), **kw) == 0
     production = _record(bundle, sandbox=False)
-    (bundle / ZENODO_RECORD).write_text(json.dumps({"sandbox": False, **production}))
+    (bundle / ZENODO_RECORD).write_text(json.dumps({"sandbox": False, **production}), encoding="utf-8", newline="\n")
     n = len(zenodo.calls)
     assert publish(str(bundle), **kw) == 0
     assert zenodo.calls[n:] == []
     assert _zenodo_records(bundle) == {"zenodo.org": production}
     assert publish(str(bundle), **kw, zenodo_sandbox=True) == 0  # written in the new format, production kept
-    saved = json.loads((bundle / ZENODO_RECORD).read_text())
+    saved = json.loads((bundle / ZENODO_RECORD).read_text(encoding="utf-8"))
     assert set(saved) == {"hosts"} and saved["hosts"]["zenodo.org"] == production
 
 
@@ -395,7 +395,7 @@ def test_a_draft_deleted_on_zenodo_is_reserved_again(bundle: Path, tmp_path: Pat
     assert rec["data"]["id"] not in drafts.values() and rec["data"]["state"] == "published"
     assert rec["code"]["id"] == drafts["code"]
     assert f"the draft {drafts['data']}" in out and "a new one is reserved" in out
-    m = json.loads((bundle / "e2er.json").read_text())
+    m = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert m["availability"]["data"]["doi"] == rec["data"]["doi"]
 
 
@@ -475,8 +475,8 @@ def test_many_data_files_go_as_one_zip(tmp_path: Path):
     (b / "data").mkdir(parents=True)
     files = {}
     for k in range(zen.MAX_FILES + 1):
-        (b / "data" / f"t{k}.csv").write_text(f"{k}\n")
+        (b / "data" / f"t{k}.csv").write_text(f"{k}\n", encoding="utf-8", newline="\n")
         files[f"data/t{k}.csv"] = "x"
-    (b / "provenance.json").write_text(json.dumps({"files": files}))
+    (b / "provenance.json").write_text(json.dumps({"files": files}), encoding="utf-8", newline="\n")
     plan = _deposit_plan(b, {"data": {"access": "public"}, "code": {"access": "private"}}, "p")
     assert [n for n, _ in plan["data"]["files"]] == ["p-data.zip"]

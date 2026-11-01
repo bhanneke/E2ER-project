@@ -243,7 +243,7 @@ def _amend(bundle: Path, rel: str, reason: str, kind: str | None = None) -> dict
         prov["amendments"][-1]["kind"] = kind
         from .core.export.provenance import dump
 
-        prov_path.write_text(dump(prov), encoding="utf-8")
+        prov_path.write_text(dump(prov), encoding="utf-8", newline="\n")
         entry["kind"] = kind
     return entry
 
@@ -370,7 +370,7 @@ def _save_zenodo_record(b: Path, record: dict[str, Any], sandbox: bool = False) 
     hosts[zen.service(sandbox)] = {k: v for k, v in record.items() if k != "sandbox"}
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps({"hosts": hosts}, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps({"hosts": hosts}, indent=2) + "\n", encoding="utf-8", newline="\n")
     os.replace(tmp, p)
 
 
@@ -487,6 +487,7 @@ def _describe(
     github_user: dict[str, Any] | None = None,
     blind: dict[str, Any] | None = None,
     deposits_after: list[Callable[[], str | None]] | None = None,
+    package_platform: str | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     """Describe, stamp and verify the bundle; write e2er.json.
 
@@ -679,7 +680,7 @@ def _describe(
         text = tex.read_text(encoding="utf-8")
         fixed = point_bibliography(text, tex.parent)
         if fixed != text:
-            tex.write_text(fixed, encoding="utf-8")
+            tex.write_text(fixed, encoding="utf-8", newline="\n")
             _amend(b, "paper/paper.tex", "pointed at the bibliography the bundle ships (refs.bib)")
             print("✓ Pointed paper.tex at the bibliography the bundle ships (refs.bib)")
     for report in (b / "reproduction_report.md", b / "misc" / "reproduction_report.md"):
@@ -693,7 +694,7 @@ def _describe(
         raw = refs.read_text(encoding="utf-8")
         escaped = escape_bib(raw)
         if escaped != raw:
-            refs.write_text(escaped, encoding="utf-8")
+            refs.write_text(escaped, encoding="utf-8", newline="\n")
             _amend(b, "paper/refs.bib", "escaped & % # so the paper compiles")
             print("✓ Escaped & % # in refs.bib so the paper compiles")
 
@@ -913,8 +914,22 @@ def _describe(
         print("error: --github pushes the files only as part of a publish on a platform (--to); nothing was pushed")
         return 1, None
     if github_target is not None and hosted is not None:
+        # The study package goes with the files: the file of the release <project>-v<N> (study_package.py).
+        package_version: int | None = None
+        if github_mode == "plan":
+            package_version = _planned_version(b)
+        elif github_mode == "push":
+            from .core import study_package as sp
+
+            try:
+                package_version = sp.version_for(
+                    package_platform or site_url, f"{owner}/{project}", manifest["content_id"]
+                )
+            except sp.PackageHostError as e:
+                print(f"error: {e}; nothing was pushed")
+                return 1, None
         try:
-            sha = _host_on_github(
+            sha, package = _host_on_github(
                 b,
                 manifest,
                 github_target,
@@ -924,17 +939,39 @@ def _describe(
                 owner=owner,
                 project=project,
                 site=site_url,
+                package_version=package_version,
             )
         except gf.GitHubError as e:
             print(f"error: {e}")
             return 1, None
         repository["commit"] = sha
         manifest["repository"] = copy.deepcopy(repository)
+        if package is not None:
+            manifest["package"] = package
         if "paper/paper.pdf" in hosted.files:
             access, _ = paper_access("public", None, repository)
             manifest["access"] = copy.deepcopy(access)
         else:
             print("note: the folder has no paper/paper.pdf, so the paper has no public address")
+
+    # 6b. The study package in the code deposit (--zenodo): built now, uploaded with the code in step 7.
+    if deposits.get("code") is not None and (z is not None or zenodo_plan_only):
+        failed_package = _zenodo_package(
+            b,
+            manifest,
+            deposits,
+            zrec,
+            availability=availability,
+            access=access,
+            owner=owner,
+            project=project,
+            platform=package_platform if remote else None,
+            sandbox=zenodo_sandbox,
+            plan_only=z is None,
+        )
+        if failed_package:
+            print(f"error: {failed_package}")
+            return 1, None
 
     # 7. Zenodo, irreversible part: last, after everything that can fail. With a platform (``deposits_after``)
     # the caller publishes them only after the platform registered the study: a DOI, once minted, stays.
@@ -951,6 +988,11 @@ def _describe(
                 z.clear_files(dep)  # a new version starts with the earlier files; a retry with its own
                 for fname, data_bytes in deposits[item]["files"]:
                     z.upload(dep, fname, data_bytes)
+                package_file = deposits[item].get("package")
+                if package_file is not None:
+                    # The study package: one more file, kept apart from the files whose checksums decide
+                    # whether the code changed (rec["files"]).
+                    z.upload(dep, package_file["name"], package_file["data"])
                 z.describe(
                     dep,
                     _deposit_metadata(
@@ -964,6 +1006,8 @@ def _describe(
                 )
                 done = z.publish(dep)
                 rec.update(state="published", published_url=done.get("url"), files=zen.md5s(deposits[item]["files"]))
+                if package_file is not None:
+                    rec["package"] = {k: package_file[k] for k in ("name", "sha256", "url")}
                 _save_zenodo_record(b, zrec, zenodo_sandbox)
                 if rec.get("doi") and done.get("doi") and done["doi"] != rec["doi"]:
                     print(f"warning: Zenodo published the {item} as doi {done['doi']}, not the reserved {rec['doi']}")
@@ -993,7 +1037,7 @@ def _describe(
         entry_root = Path(out).expanduser() if out else Path.cwd() / "e2er-registry-entry"
         entry = entry_root / REGISTRY_DIR / owner / f"{project}.json"
         entry.parent.mkdir(parents=True, exist_ok=True)
-        entry.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        entry.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
 
     agents = manifest["ai"]["agents"]
     print(f"✓ Bundle verified ({len(checks)} checks)")
@@ -1303,7 +1347,9 @@ def publish(
     if kw.get("github_target") is not None:
         kw["github_mode"] = "push"
     after: list[Callable[[], str | None]] = []
-    code, manifest = _describe(str(b), **kw, remote=bool(to_url), deposits_after=after if to_url else None)
+    code, manifest = _describe(
+        str(b), **kw, remote=bool(to_url), deposits_after=after if to_url else None, package_platform=to_url
+    )
     if code or manifest is None or not to_url:
         return code
     rc, held = _send(b, manifest, to_url)
@@ -1352,9 +1398,11 @@ def _unblind(b: Path, spec: str, *, to_url: str | None) -> int:
         f"  There you choose the handle and the study's name for {base}/r/{code}; e2er.org publishes a version with "
         "your name and the anonymous version stays as it was published. A command-line token cannot unblind."
     )
+    from .console import shell_arg
+
     print(
         f"  To publish a named export afterwards, publish it as a normal new version of that study:\n"
-        f"    e2er publish {b} --owner <handle> --project <name> --to {base}"
+        f"    e2er publish {shell_arg(b)} --owner <handle> --project <name> --to {base}"
     )
     print("Nothing was sent.")
     return 1
@@ -1617,7 +1665,8 @@ def recompile_paper(bundle: Path) -> None:
             ["tectonic", "--untrusted", "--keep-intermediates", "-Z", "continue-on-errors", "paper.tex"],
             cwd=work,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         produced = (work / "paper.pdf").is_file()
         missing = unresolved_citations(work) if produced else []
@@ -1672,13 +1721,13 @@ def _stamp_and_compile(
             "engine e2er uses) is not installed. Install it (https://tectonic-typesetting.github.io) and publish "
             "again; nothing was sent."
         )
-    tex.write_text(new, encoding="utf-8")
+    tex.write_text(new, encoding="utf-8", newline="\n")
     rels = ["paper/paper.tex"]
     if shutil.which("tectonic"):
         try:
             recompile_paper(bundle)
         except PublishError:
-            tex.write_text(old, encoding="utf-8")
+            tex.write_text(old, encoding="utf-8", newline="\n")
             raise
         rels.append("paper/paper.pdf")
     else:
@@ -1817,6 +1866,102 @@ def _print_deposit_plan(
         if item == "data" and licensed:
             names = ", ".join(u.label for u in licensed)
             print(f"zenodo   the description states the terms and citation of the {names}")
+
+
+# ── the study package in the code deposit on Zenodo (--zenodo) ──────────────
+
+
+def _zenodo_package(
+    b: Path,
+    manifest: dict[str, Any],
+    deposits: dict[str, Any],
+    zrec: dict[str, Any],
+    *,
+    availability: dict[str, Any],
+    access: dict[str, Any] | None,
+    owner: str,
+    project: str,
+    platform: str | None,
+    sandbox: bool,
+    plan_only: bool,
+) -> str | None:
+    """Build the study package for the code deposit and record it in ``manifest["package"]``; the error, or None.
+
+    The package holds the paper and the code, so it goes only with a public paper and public code; with private
+    data it holds none (as `e2er pack --no-data`). A code deposit published before and unchanged gets no new
+    version: the package goes with it only when it is the one that deposit already holds.
+    """
+    from .core import study_package as sp
+    from .core.export import package as pkg
+
+    if not access:
+        print(
+            "note: the study package is not added to the code deposit: the paper is private and the package holds "
+            "it (use --paper public); `e2er pack` makes it for you to share as you choose"
+        )
+        return None
+    no_data = availability["data"]["access"] != "public"
+    try:
+        # The number the platform gives this version; without a platform (a registry entry), the next after
+        # the folder's last publication.
+        if plan_only or not platform:
+            version = _planned_version(b)
+        else:
+            version = sp.version_for(platform, f"{owner}/{project}", manifest["content_id"])
+    except sp.PackageHostError as e:
+        return f"{e}; nothing was deposited"
+    name = sp.asset_name(project, version)
+    if plan_only:
+        print(
+            f"zenodo code: would add the study package {name} (what `e2er pack` ships"
+            + (", without the data" if no_data else "")
+            + ")"
+        )
+        return None
+    pre = copy.deepcopy(manifest)
+    pre.pop("published", None)
+    pre.pop("package", None)
+    e2er_json = b / MANIFEST_NAME
+    before = e2er_json.read_bytes() if e2er_json.is_file() else None
+    write_manifest(b, pre)
+    try:
+        with tempfile.TemporaryDirectory(prefix="e2er-zenodo-pack-") as td:
+            try:
+                packed = pkg.build(b, Path(td) / name, no_data=no_data)
+            except pkg.PackageError as e:
+                return f"the study package could not be built: {e}; nothing was deposited"
+            data = packed.path.read_bytes()
+            fingerprint = packed.manifest["fingerprint"]
+            sha = sp.sha256_file(packed.path)
+    finally:
+        if before is None:
+            e2er_json.unlink(missing_ok=True)
+        else:
+            e2er_json.write_bytes(before)
+    rec = (zrec.get("deposits") or {}).get("code") or {}
+    base = zen.base_url(sandbox)
+    if rec.get("state") == "published":
+        held = rec.get("package") or {}
+        if held.get("sha256") == sha and isinstance(held.get("url"), str):
+            manifest["package"] = {
+                "url": held["url"],
+                "sha256": sha,
+                "bytes": len(data),
+                "host": "zenodo",
+                "fingerprint": fingerprint,
+            }
+            print(f"zenodo code: the study package {held.get('name')} is already in the deposit")
+        else:
+            print(
+                "note: the code is unchanged since its Zenodo deposit was published, so the deposit gets no new "
+                "version and the study package of this version is not added to it; `e2er pack` makes it"
+            )
+        return None
+    url = sp.zenodo_url(base, rec["id"], name)
+    deposits["code"]["package"] = {"name": name, "data": data, "sha256": sha, "url": url}
+    manifest["package"] = {"url": url, "sha256": sha, "bytes": len(data), "host": "zenodo", "fingerprint": fingerprint}
+    print(f"✓ Built the study package {name} ({pkg.human_size(len(data))}) for the code deposit")
+    return None
 
 
 # ── the files in a public GitHub repository (--github) ───────────────────────
@@ -1964,7 +2109,7 @@ def _write_readme(b: Path, **kw: Any) -> bool:
     new = readme_block(b, **kw) + (f"\n---\n\n{rest}" if rest.strip() else "")
     if new == old:
         return False
-    readme.write_text(new, encoding="utf-8")
+    readme.write_text(new, encoding="utf-8", newline="\n")
     _amend(b, "README.md", "the study's summary for its GitHub repository, at the top", kind="readme")
     return True
 
@@ -1984,21 +2129,29 @@ def _host_on_github(
     owner: str,
     project: str,
     site: str,
-) -> str:
-    """Push the study's files (what `e2er pack` ships) to ``t``; the commit that holds them.
+    package_version: int | None = None,
+) -> tuple[str, dict[str, Any] | None]:
+    """Push the study's files (what `e2er pack` ships) to ``t``; the commit that holds them, and the package.
 
     e2er.json goes up as well, without the commit (no commit can name itself), without the paper's
-    address (which names the commit) and without the time of publishing. The local e2er.json, written
-    after this, has all three.
+    address (which names the commit), without the time of publishing and without the package (which
+    holds this e2er.json). The local e2er.json, written after this, has all four.
+
+    ``package_version`` (the number e2er.org gives this version): the package the files were opened from
+    becomes the file of the release ``<project>-v<N>`` of the repository at the pushed commit
+    (study_package.host_release), and its record is returned. In a dry run (``plan``) the record names
+    the address it would have; a rehearsal makes none.
     """
+    from .core import study_package as sp
     from .core.export import package as pkg
 
     if mode == "rehearse":
-        return NO_COMMIT
+        return NO_COMMIT, None
     pre = copy.deepcopy(manifest)
     pre["repository"] = {k: v for k, v in (pre.get("repository") or {}).items() if k != "commit"}
     pre.pop("access", None)
     pre.pop("published", None)  # the time of this publish: the same study published again makes no new commit
+    pre.pop("package", None)
     e2er_json = b / MANIFEST_NAME
     before = e2er_json.read_bytes() if e2er_json.is_file() else None
 
@@ -2011,8 +2164,10 @@ def _host_on_github(
     write_manifest(b, pre)
     try:
         with tempfile.TemporaryDirectory(prefix="e2er-github-") as td:
+            name = sp.asset_name(project, package_version) if package_version else None
+            kept = Path(td) / "package" / name if name else None
             try:
-                staged = gf.stage(b, Path(td) / "study")
+                staged = gf.stage(b, Path(td) / "study", keep=kept)
             except pkg.PackageError as e:
                 raise gf.GitHubError(f"the study could not be packed for GitHub: {e}") from e
             bad = gf.kept_out(b, staged)
@@ -2035,8 +2190,16 @@ def _host_on_github(
                 )
             if mode == "plan":
                 _print_github_plan(t, staged)
+                planned = None
+                if kept is not None and name and package_version:
+                    tag = sp.tag_for(project, package_version)
+                    for line in sp.plan_lines(t.full, tag, name, kept.stat().st_size):
+                        print(line)
+                    planned = sp.record(
+                        kept, sp.release_url(t.full, tag, name), "github", staged.manifest["fingerprint"]
+                    )
                 restore()
-                return NO_COMMIT
+                return NO_COMMIT, planned
             state = gf.repo_state(t)
             gf.check_repo(state, t)
             if state is None:
@@ -2052,6 +2215,39 @@ def _host_on_github(
             pushed = gf.push(
                 t, staged, study_ids=ids, message=message, user=user, restricted=restricted, exists=state is not None
             )
+            package: dict[str, Any] | None = None
+            if kept is not None and name and package_version:
+                tag = sp.tag_for(project, package_version)
+                try:
+                    hosted_at = sp.host_release(
+                        t.full,
+                        tag=tag,
+                        commit=pushed.commit,
+                        file=kept,
+                        name=name,
+                        title=f"{manifest['id']} version {package_version}: the study package",
+                        notes=(
+                            f"The study package of {manifest['id']}, version {package_version}, on e2er.org: every "
+                            f"file of the study at commit {pushed.commit[:7]}, in one .e2er file.\n\n"
+                            f"Dossier: {manifest['dossier']['url']}\n\n"
+                            f"    e2er inspect {name}\n"
+                            f"    e2er verify {name} --against {site}/{owner}/{project}\n"
+                            f"    e2er reproduce {name}\n\n"
+                            "Published with e2er publish --github."
+                        ),
+                    )
+                except sp.PackageHostError as e:
+                    raise gf.GitHubError(
+                        f"{e}\n  The files are on GitHub at commit {pushed.commit[:7]}; nothing was registered. Run "
+                        "the same command again once the problem is solved: no new commit is made."
+                    ) from e
+                package = sp.record(kept, hosted_at.url, "github", staged.manifest["fingerprint"])
+                word = "Uploaded" if hosted_at.created else "Already on GitHub:"
+                print(
+                    f"✓ {word} the study package {name} ({pkg.human_size(package['bytes'])}) as the file of the "
+                    f"release {tag}: {hosted_at.url}"
+                )
+                sp.save_local(b, package, tag=tag, commit=pushed.commit, version=package_version)
     except BaseException:
         restore()
         raise
@@ -2076,7 +2272,19 @@ def _host_on_github(
             "pushed_at": _now(),
         },
     )
-    return pushed.commit
+    return pushed.commit, package
+
+
+def _planned_version(b: Path) -> int:
+    """In a dry run: the version number this publish would have, from the folder's last publication (no request)."""
+    from .cli_platform import read_link
+
+    try:
+        link = read_link(b) or {}
+    except (OSError, ValueError):
+        link = {}
+    number = link.get("version") if isinstance(link, dict) else None
+    return int(number) + 1 if isinstance(number, int) else 1
 
 
 def _print_github_plan(t: gf.Target, staged: gf.Staged) -> None:

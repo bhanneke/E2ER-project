@@ -85,7 +85,7 @@ def _save_budget(workspace: Path, specialist: str, counts: dict[str, int]) -> No
         data = {}
     data[specialist] = counts
     try:
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8", newline="\n")
     except OSError as e:
         logger.warning("could not persist literature budget: %s", e)
 

@@ -38,7 +38,7 @@ def _ws(tmp_path: Path, md: str | None = None) -> Path:
     ws = tmp_path / "ws"
     shutil.copytree(REPL, ws)
     if md is not None:
-        (ws / "reproduction_report.md").write_text(md, encoding="utf-8")
+        (ws / "reproduction_report.md").write_text(md, encoding="utf-8", newline="\n")
     return ws
 
 
@@ -69,7 +69,7 @@ def test_the_pipeline_check_fails_on_the_real_report(tmp_path: Path):
     r = check_reproduction(ws)
     assert not r.passed
     assert any("says 16 level-1 numbers" in x and "has 17" in x for x in r.reasons)
-    doc = json.loads((ws / CHECK_FILE).read_text())
+    doc = json.loads((ws / CHECK_FILE).read_text(encoding="utf-8"))
     assert doc["report_text"]["agrees"] is False
 
 
@@ -77,7 +77,7 @@ def test_the_pipeline_check_writes_the_summary_and_passes_a_consistent_report(tm
     ws = _ws(tmp_path)
     r = check_reproduction(ws)
     assert r.passed, r.reasons
-    md = (ws / "reproduction_report.md").read_text()
+    md = (ws / "reproduction_report.md").read_text(encoding="utf-8")
     block, rest = split_summary(md)
     assert block == render_summary(REPORT, LOG)
     assert "| not_reproduced | 3 | 3 |" in block and "| Total | 17 | 11 |" in block
@@ -86,8 +86,8 @@ def test_the_pipeline_check_writes_the_summary_and_passes_a_consistent_report(tm
     assert md.index(BEGIN) < md.index("## Summary") and md.startswith("# Reproduction Report")
     # a second run leaves the file as it is
     check_reproduction(ws)
-    assert (ws / "reproduction_report.md").read_text() == md
-    assert json.loads((ws / CHECK_FILE).read_text())["report_text"] == {
+    assert (ws / "reproduction_report.md").read_text(encoding="utf-8") == md
+    assert json.loads((ws / CHECK_FILE).read_text(encoding="utf-8"))["report_text"] == {
         "file": "reproduction_report.md",
         "agrees": True,
         "summary_written": False,
@@ -96,11 +96,11 @@ def test_the_pipeline_check_writes_the_summary_and_passes_a_consistent_report(tm
 
 def test_the_summary_is_not_written_while_the_json_fails(tmp_path: Path):
     ws = _ws(tmp_path)
-    report = json.loads((ws / "reproduction_report.json").read_text())
+    report = json.loads((ws / "reproduction_report.json").read_text(encoding="utf-8"))
     report["summary"]["level_1"]["reproduced"] = 13
-    (ws / "reproduction_report.json").write_text(json.dumps(report))
+    (ws / "reproduction_report.json").write_text(json.dumps(report), encoding="utf-8", newline="\n")
     assert not check_reproduction(ws).passed
-    assert BEGIN not in (ws / "reproduction_report.md").read_text()
+    assert BEGIN not in (ws / "reproduction_report.md").read_text(encoding="utf-8")
 
 
 def test_a_missing_markdown_report_fails(tmp_path: Path):
@@ -141,7 +141,11 @@ def test_verify_passes_a_consistent_bundle_and_catches_an_edited_summary(tmp_pat
     assert check.status == "PASS", check.detail
     assert "reproduction_report.md agrees with reproduction_report.json" in check.detail
     md = bundle / "misc" / "reproduction_report.md"
-    md.write_text(md.read_text().replace("| not_reproduced | 3 | 3 |", "| not_reproduced | 2 | 3 |"))
+    md.write_text(
+        md.read_text(encoding="utf-8").replace("| not_reproduced | 3 | 3 |", "| not_reproduced | 2 | 3 |"),
+        encoding="utf-8",
+        newline="\n",
+    )
     check = next(c for c in _run_checks(bundle, online=False) if c.name == "reproduction")
     assert check.status == "FAIL" and "summary section" in check.detail
 

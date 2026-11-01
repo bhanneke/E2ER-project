@@ -128,8 +128,9 @@ _BACKEND_CHOICES: list[tuple[str, str]] = [
     ("anthropic", "Anthropic SDK (per-token API)"),
     ("openrouter", "OpenRouter (per-token, 200+ models)"),
     ("codex", "ChatGPT Plus/Pro ($0/token)"),
-    # Other providers (not tested). Google ended Gemini CLI sign-in for
-    # individual accounts in October 2026; the backend needs GEMINI_API_KEY.
+    # Other providers (not tested). Google ended the Gemini CLI for AI Pro/Ultra
+    # plans and free individual accounts on 18 June 2026; the backend needs a
+    # paid GEMINI_API_KEY.
     ("gemini", "Other provider, not tested: Gemini CLI with a Gemini API key (per-token, billed by Google)"),
 ]
 
@@ -188,8 +189,9 @@ def _check_backend_prereqs(backend: str) -> tuple[bool, list[str]]:
         else:
             ready = False
             notes.append("  ✗ GEMINI_API_KEY not set")
-            notes.append("     Google ended Gemini CLI sign-in for individual accounts in October 2026,")
-            notes.append("     so the Gemini backend needs a key: https://aistudio.google.com/apikey")
+            notes.append("     Google ended the Gemini CLI for AI Pro/Ultra plans and free individual accounts")
+            notes.append("     on 18 June 2026, so the Gemini backend needs a paid Gemini API key:")
+            notes.append("     https://aistudio.google.com/apikey")
         notes.append("  · not tested: full runs are tested on Claude Code and Codex only")
 
     return ready, notes
@@ -247,7 +249,7 @@ def _scaffold_project_dirs(root: Path) -> tuple[Path, Path]:
         d.mkdir(parents=True, exist_ok=True)
         readme_path = d / "README.md"
         if not readme_path.exists():
-            readme_path.write_text(readme, encoding="utf-8")
+            readme_path.write_text(readme, encoding="utf-8", newline="\n")
     return data_dir, lit_dir
 
 
@@ -418,7 +420,7 @@ def write_env_file(env_path: Path, content: str) -> None:
     env_path = Path(env_path)
     tmp = env_path.with_name(env_path.name + ".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(content)
     os.chmod(tmp, 0o600)
     os.replace(tmp, env_path)

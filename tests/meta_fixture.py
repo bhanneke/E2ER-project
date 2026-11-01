@@ -262,4 +262,4 @@ def extraction() -> dict[str, Any]:
 
 
 def write_protocol(ws: Path) -> None:
-    (ws / "review_protocol.json").write_text(json.dumps(PROTOCOL, indent=2), encoding="utf-8")
+    (ws / "review_protocol.json").write_text(json.dumps(PROTOCOL, indent=2), encoding="utf-8", newline="\n")

@@ -51,5 +51,22 @@
   });
   document.addEventListener('htmx:afterRequest', (ev) => { if (ev.detail.successful) clearNotice(); });
 
+  // A polled panel (the study page's #live, every 3 s) is replaced as a whole: a <details> the
+  // researcher opened ("What happened", "Technical details") closed again on every poll. The ids of
+  // the open ones are noted before the swap and opened again after it.
+  const openBefore = new WeakMap();
+  document.addEventListener('htmx:beforeSwap', (ev) => {
+    const target = ev.detail.target;
+    if (!target || !target.querySelectorAll) return;
+    openBefore.set(target, Array.from(target.querySelectorAll('details[id][open]'), (d) => d.id));
+  });
+  document.addEventListener('htmx:afterSwap', (ev) => {
+    const target = ev.detail.target;
+    const ids = target && openBefore.get(target);
+    if (!ids) return;
+    openBefore.delete(target);
+    ids.forEach((id) => { const d = document.getElementById(id); if (d && target.contains(d)) d.open = true; });
+  });
+
   window.e2er = { call, notice, messageFor, UNREACHABLE };
 })();

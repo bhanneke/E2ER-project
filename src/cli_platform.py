@@ -38,7 +38,7 @@ def read_link(bundle: Path) -> dict[str, Any] | None:
 def write_link(bundle: Path, link: dict[str, Any]) -> Path:
     p = bundle / LINK
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(link, indent=2) + "\n", encoding="utf-8")
+    p.write_text(json.dumps(link, indent=2) + "\n", encoding="utf-8", newline="\n")
     return p
 
 

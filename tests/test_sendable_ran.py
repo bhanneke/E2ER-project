@@ -17,7 +17,7 @@ def _state():
 
 
 def test_only_specialists_that_ran_are_offered(tmp_path: Path):
-    (tmp_path / "paper_draft.tex").write_text("x")
+    (tmp_path / "paper_draft.tex").write_text("x", encoding="utf-8", newline="\n")
     pending = SimpleNamespace(kind="researcher", stage="review_draft")
     offered = _sendable(tmp_path, _state(), pending, None, {"paper_drafter", "data_analyst"})
     assert "paper_drafter" in offered
@@ -25,7 +25,7 @@ def test_only_specialists_that_ran_are_offered(tmp_path: Path):
 
 
 def test_without_a_log_every_specialist_with_output_stays(tmp_path: Path):
-    (tmp_path / "paper_draft.tex").write_text("x")
+    (tmp_path / "paper_draft.tex").write_text("x", encoding="utf-8", newline="\n")
     pending = SimpleNamespace(kind="researcher", stage="review_draft")
     offered = _sendable(tmp_path, _state(), pending, None, None)
     assert {"paper_drafter", "field_review_writer"} <= set(offered)

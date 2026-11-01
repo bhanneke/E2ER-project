@@ -39,7 +39,7 @@ def ws(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _loads(ws: Path) -> list[dict[str, Any]]:
-    return json.loads((ws / "data_sources.json").read_text())["loads"]
+    return json.loads((ws / "data_sources.json").read_text(encoding="utf-8"))["loads"]
 
 
 @respx.mock
@@ -160,7 +160,7 @@ def test_the_data_folder_records_each_file_with_its_hash(tmp_path: Path) -> None
     from src.modules.data.byod_import import _import_corpus_sync
 
     (tmp_path / "data").mkdir()
-    (tmp_path / "data" / "fomc_dates.csv").write_text("date\n2015-12-16\n")
+    (tmp_path / "data" / "fomc_dates.csv").write_text("date\n2015-12-16\n", encoding="utf-8", newline="\n")
     _import_corpus_sync(tmp_path, 1000)
     [load] = _loads(tmp_path)
     assert load["connector"] == "data-folder" and load["series"] == "fomc_dates.csv"
@@ -254,7 +254,9 @@ def test_the_dossier_keeps_what_a_study_page_shows(tmp_path: Path) -> None:
                     },
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     fred, folder = _data_sources(tmp_path)
     assert fred == {
@@ -303,8 +305,8 @@ async def test_fetch_data_of_a_kit_source_adds_its_citation_and_dictionary_entry
         )
     assert out["recorded_in"] == ["data_sources.json", "data_dictionary.json"]
     assert out["cite_key"] == usgs.cite_key and out["citation_added"] is True
-    assert (
-        "@" in (tmp_path / "literature.bib").read_text() and usgs.cite_key in (tmp_path / "literature.bib").read_text()
-    )
-    [entry] = json.loads((tmp_path / "data_dictionary.json").read_text())["tables"]
+    assert "@" in (tmp_path / "literature.bib").read_text(encoding="utf-8") and usgs.cite_key in (
+        tmp_path / "literature.bib"
+    ).read_text(encoding="utf-8")
+    [entry] = json.loads((tmp_path / "data_dictionary.json").read_text(encoding="utf-8"))["tables"]
     assert entry["name"] == "quakes" and entry["source"] == "usgs" and entry["cite_key"] == usgs.cite_key

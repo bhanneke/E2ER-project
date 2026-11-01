@@ -27,9 +27,9 @@ def _bundle(tmp_path: Path, *, with_reports: bool = True) -> Path:
     (b / "results").mkdir()
     (b / "reviews").mkdir()
 
-    (b / "paper" / "paper.tex").write_text("\\documentclass{article}", encoding="utf-8")
+    (b / "paper" / "paper.tex").write_text("\\documentclass{article}", encoding="utf-8", newline="\n")
     (b / "paper" / "abstract.tex").write_text(
-        "\\begin{abstract}We find no detectable change.\\end{abstract}", encoding="utf-8"
+        "\\begin{abstract}We find no detectable change.\\end{abstract}", encoding="utf-8", newline="\n"
     )
     (b / "provenance.json").write_text(
         json.dumps(
@@ -40,17 +40,19 @@ def _bundle(tmp_path: Path, *, with_reports: bool = True) -> Path:
             }
         ),
         encoding="utf-8",
+        newline="\n",
     )
     if with_reports:
         (b / "results" / "table_render_report.json").write_text(
-            json.dumps({"rendered": ["main.tex"], "unresolved": [], "errors": []}), encoding="utf-8"
+            json.dumps({"rendered": ["main.tex"], "unresolved": [], "errors": []}), encoding="utf-8", newline="\n"
         )
         (b / "results" / "number_verification.json").write_text(
-            json.dumps({"matched": 42, "mismatches": []}), encoding="utf-8"
+            json.dumps({"matched": 42, "mismatches": []}), encoding="utf-8", newline="\n"
         )
         (b / "reviews" / "citation_integrity.json").write_text(
             json.dumps({"passed": True, "verified": 9, "total_cites": 9, "missing_in_bib": 0}),
             encoding="utf-8",
+            newline="\n",
         )
     return b
 

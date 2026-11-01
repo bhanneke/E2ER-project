@@ -185,7 +185,9 @@ def test_text_contract_checks_frequencies_per_token():
 def test_figures_named_by_the_results_must_be_in_figure_spec(tmp_path: Path):
     doc = _schema_example("descriptive")
     assert any("no readable figure_spec.json" in p for p in check_results("descriptive", doc, tmp_path))
-    (tmp_path / "figure_spec.json").write_text(json.dumps({"figures": [{"filename": "fig_radius_period.pdf"}]}))
+    (tmp_path / "figure_spec.json").write_text(
+        json.dumps({"figures": [{"filename": "fig_radius_period.pdf"}]}), encoding="utf-8", newline="\n"
+    )
     assert check_results("descriptive", doc, tmp_path) == [
         "'figures' names fig_radius_hist.pdf, which figure_spec.json does not declare"
     ]
@@ -196,7 +198,9 @@ def test_figures_named_by_the_results_must_be_in_figure_spec(tmp_path: Path):
 
 def test_the_kind_comes_from_the_running_template_else_the_results_file(tmp_path: Path, template):
     assert active_kind(tmp_path) == "regression"
-    (tmp_path / "estimation_results.json").write_text(json.dumps({"result_kind": "text", "corpus": {}}))
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"result_kind": "text", "corpus": {}}), encoding="utf-8", newline="\n"
+    )
     assert file_kind(tmp_path) == "text" and active_kind(tmp_path) == "text"
     template(DESCRIPTIVE)
     assert active_kind(tmp_path) == "descriptive"
@@ -224,9 +228,9 @@ def test_a_descriptive_template_holds_the_analysis_to_its_contract_not_to_a_regr
     assert all(c.ok for c in checks), [c for c in checks if not c.ok]
     assert not any("regression" in c.reason for c in checks)
 
-    results = json.loads((ws / "estimation_results.json").read_text())
+    results = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     results["statistics"]["radius_earth"]["min"] = 99.0
-    (ws / "estimation_results.json").write_text(json.dumps(results))
+    (ws / "estimation_results.json").write_text(json.dumps(results), encoding="utf-8", newline="\n")
     failed = [c for c in check_specialist_artifacts(ws, "econometrics_specialist") if not c.ok]
     assert len(failed) == 1 and failed[0].kind == "verification"
     assert failed[0].reason.startswith("descriptive results contract: statistics.radius_earth: min (99.0) is above")
@@ -236,20 +240,22 @@ def test_a_descriptive_template_holds_the_analysis_to_its_contract_not_to_a_regr
 def test_without_a_template_the_same_file_must_still_be_a_regression(tmp_path: Path):
     """Unchanged behaviour: no template, no result_kind -> the regression contract."""
     ws = _exoplanet_workspace(tmp_path)
-    results = json.loads((ws / "estimation_results.json").read_text())
+    results = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     results.pop("result_kind")
-    (ws / "estimation_results.json").write_text(json.dumps(results))
+    (ws / "estimation_results.json").write_text(json.dumps(results), encoding="utf-8", newline="\n")
     failed = [c for c in check_specialist_artifacts(ws, "econometrics_specialist") if not c.ok]
     assert [c.reason[:25] for c in failed] == ["no estimated regression: "]
 
 
 def test_a_non_causal_regression_template_does_not_hold_main_to_an_identification(tmp_path: Path, template):
     spec = json.dumps({"primary": {"fixed_effects": ["unit"], "cluster_level": "unit"}})
-    (tmp_path / "identification_spec.json").write_text(spec)
-    (tmp_path / "econometric_spec.md").write_text("x" * 200)
-    (tmp_path / "run_estimation.py").write_text("import json\n" + "# analysis\n" * 20)
+    (tmp_path / "identification_spec.json").write_text(spec, encoding="utf-8", newline="\n")
+    (tmp_path / "econometric_spec.md").write_text("x" * 200, encoding="utf-8", newline="\n")
+    (tmp_path / "run_estimation.py").write_text("import json\n" + "# analysis\n" * 20, encoding="utf-8", newline="\n")
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"assoc": {"coefficients": {"x": {"estimate": 1.0, "se": 0.5}}, "n_observations": 50}})
+        json.dumps({"assoc": {"coefficients": {"x": {"estimate": 1.0, "se": 0.5}}, "n_observations": 50}}),
+        encoding="utf-8",
+        newline="\n",
     )
     causal = [c for c in check_specialist_artifacts(tmp_path, "econometrics_specialist") if not c.ok]
     assert any("identified-spec contract" in c.reason for c in causal)
@@ -260,7 +266,7 @@ def test_a_non_causal_regression_template_does_not_hold_main_to_an_identificatio
 
 
 def test_identification_spec_is_required_only_in_a_causal_template(tmp_path: Path, template):
-    (tmp_path / "identification_strategy.md").write_text("design " * 40)
+    (tmp_path / "identification_strategy.md").write_text("design " * 40, encoding="utf-8", newline="\n")
     missing = [c for c in check_specialist_artifacts(tmp_path, "identification_strategist") if not c.ok]
     assert [c.artifact for c in missing] == ["identification_spec.json"]
     template(DESCRIPTIVE)

@@ -90,7 +90,7 @@ def _run(bundle: Path, writer: FakeWriter, **kw):
 
 
 def test_the_abstract_goes_into_paper_pdf_and_provenance(bundle: Path):
-    prov_before = (bundle / "provenance.json").read_text()
+    prov_before = (bundle / "provenance.json").read_text(encoding="utf-8")
     old_tex = (bundle / "paper" / "paper.tex").read_bytes()
     writer = FakeWriter(GOOD)
     out = _run(bundle, writer)
@@ -100,13 +100,13 @@ def test_the_abstract_goes_into_paper_pdf_and_provenance(bundle: Path):
     assert "## The final paper (paper_draft.tex)" in writer.prompts[0]
     assert "## Headline result entries" in writer.prompts[0]
 
-    paper = (bundle / "paper" / "paper.tex").read_text()
+    paper = (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
     assert "Spot Bitcoin ETFs opened Bitcoin to investors" in paper and paper.count("\\begin{abstract}") == 1
-    abstract = (bundle / "paper" / "abstract.tex").read_text()
+    abstract = (bundle / "paper" / "abstract.tex").read_text(encoding="utf-8")
     assert abstract.startswith("\\title{No Cash Flows, New Owners:")  # the study's title stays where it was read
     assert (bundle / "paper" / "paper.pdf").read_bytes().startswith(b"%PDF-fake")
 
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     mine = [a for a in prov["amendments"] if a.get("kind") == ab.AMENDMENT_KIND]
     assert {a["path"] for a in mine} == {"paper/abstract.tex", "paper/paper.tex", "paper/paper.pdf"}
     tex_entry = next(a for a in mine if a["path"] == "paper/paper.tex")
@@ -155,7 +155,7 @@ def test_a_resend_that_passes_is_used(bundle: Path):
 
 
 def test_an_edited_folder_is_refused(bundle: Path):
-    (bundle / "paper" / "refs.bib").write_text("edited")
+    (bundle / "paper" / "refs.bib").write_text("edited", encoding="utf-8", newline="\n")
     with pytest.raises(AbstractError, match="not what was exported"):
         _run(bundle, FakeWriter(GOOD))
 
@@ -185,7 +185,7 @@ def test_a_folder_that_does_not_verify_with_the_new_abstract_is_put_back(bundle:
 
     def failing(b: Path, strict: bool):
         # Called with the folder amended: the new abstract and its amendments are in place.
-        seen.append("amendments" in json.loads((b / "provenance.json").read_text()))
+        seen.append("amendments" in json.loads((b / "provenance.json").read_text(encoding="utf-8")))
         return [cli_verify.Check("anchor", FAIL, "the folder is not what was exported")]
 
     monkeypatch.setattr(cli_verify, "_run_checks", failing)
@@ -217,7 +217,7 @@ def test_after_a_publish_the_anchor_holds_and_publish_puts_the_amendments_in_the
     assert anchor.status == PASS and "abstract was rewritten" in anchor.detail
 
     assert publish(str(bundle), **args, out=str(tmp_path / "e2"), yes=True) == 0
-    doc = json.loads((bundle / "e2er.json").read_text())["dossier"]["doc"]
+    doc = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["dossier"]["doc"]
     kinds = [a.get("kind") for a in doc.get("amendments") or []]
     assert kinds.count(ab.AMENDMENT_KIND) == 3
 
@@ -239,18 +239,20 @@ def test_the_command_line_entry(bundle: Path, monkeypatch, capsys):
 def test_a_researchers_abstract_is_checked_and_recorded_as_theirs(bundle: Path, tmp_path: Path):
     mine = tmp_path / "mine.tex"
     mine.write_text(
-        GOOD.replace("left its link to the stock market where it was", "left its stock-market link as it was")
+        GOOD.replace("left its link to the stock market where it was", "left its stock-market link as it was"),
+        encoding="utf-8",
+        newline="\n",
     )
     out = rewrite(
         bundle, from_file=mine, reason="corrected to the paper's claim", compile_pdf=_fake_pdf, say=lambda _s: None
     )
     assert out["kind"] == ab.EDITED_KIND and out["backend"] == "researcher"
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     mine_entries = [a for a in prov["amendments"] if a.get("kind") == ab.EDITED_KIND]
     assert {a["path"] for a in mine_entries} >= {"paper/abstract.tex", "paper/paper.tex"}
     assert all(a["reason"] == "corrected to the paper's claim" and a["edited_by"] == "researcher" for a in mine_entries)
     assert not any("model" in a for a in mine_entries)
-    assert "left its stock-market link as it was" in (bundle / "paper" / "paper.tex").read_text()
+    assert "left its stock-market link as it was" in (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
     checks = _run_checks(bundle, False)
     assert not [c for c in checks if c.status == FAIL]
     from src.core.redact import provenance_before_redactions
@@ -261,7 +263,9 @@ def test_a_researchers_abstract_is_checked_and_recorded_as_theirs(bundle: Path, 
 def test_a_researchers_abstract_must_pass_the_check_and_give_a_reason(bundle: Path, tmp_path: Path):
     before = _snapshot(bundle)
     mine = tmp_path / "mine.tex"
-    mine.write_text(GOOD.replace("with 9 cryptocurrencies", "with 9.137 cryptocurrencies"))
+    mine.write_text(
+        GOOD.replace("with 9 cryptocurrencies", "with 9.137 cryptocurrencies"), encoding="utf-8", newline="\n"
+    )
     with pytest.raises(AbstractError, match="needs --reason"):
         rewrite(bundle, from_file=mine, compile_pdf=_fake_pdf)
     with pytest.raises(AbstractError, match="9.137 is no value"):
@@ -292,7 +296,7 @@ def _amend(bundle: Path, rel: str, data: bytes, kind: str = ab.AMENDMENT_KIND, *
     """Change ``rel`` and record it as an abstract amendment, consistently (what a forger writes)."""
     from src.core.export.provenance import dump
 
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     old = (bundle / rel).read_bytes()
     (bundle / rel).write_bytes(data)
     entry = {
@@ -307,14 +311,14 @@ def _amend(bundle: Path, rel: str, data: bytes, kind: str = ab.AMENDMENT_KIND, *
     }
     prov["files"][rel] = {"sha256": entry["sha256_after"], "bytes": len(data)}
     prov.setdefault("amendments", []).append(entry)
-    (bundle / "provenance.json").write_text(dump(prov))
+    (bundle / "provenance.json").write_text(dump(prov), encoding="utf-8", newline="\n")
     return entry
 
 
 def test_the_paper_amendment_records_the_old_abstract(bundle: Path):
     old_tex = (bundle / "paper" / "paper.tex").read_bytes()
     _run(bundle, FakeWriter(GOOD))
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     entry = next(a for a in prov["amendments"] if a["path"] == "paper/paper.tex")
     rec = entry["abstract_before"]
     span = ab.block_span(old_tex.decode())
@@ -328,7 +332,7 @@ def test_a_results_file_recorded_as_an_abstract_amendment_fails(bundle: Path, tm
     """The reviewer's laundering: any file changed after publishing, recorded as an abstract amendment."""
     _published(bundle, tmp_path, monkeypatch)
     rel = "results/estimation_results.json"
-    doc = json.loads((bundle / rel).read_text())
+    doc = json.loads((bundle / rel).read_text(encoding="utf-8"))
     _amend(bundle, rel, json.dumps({**doc, "laundered": 1.0}).encode())
     checks = {c.name: c for c in _run_checks(bundle, False)}
     assert checks["integrity"].status == FAIL and "e2er abstract never changes that file" in checks["integrity"].detail

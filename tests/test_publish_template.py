@@ -44,13 +44,13 @@ def _workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"
     shutil.copytree(REPL, ws)
     assert check_reproduction(ws).passed  # writes the summary into reproduction_report.md
-    pid = json.loads((ws / "manifest.json").read_text()).get("paper_id") or ws.name
+    pid = json.loads((ws / "manifest.json").read_text(encoding="utf-8")).get("paper_id") or ws.name
     make_run_db(tmp_path, pid)  # the study folder's run database, named in its .env
     return ws
 
 
 def _prov(bundle: Path) -> dict:
-    return json.loads((bundle / "provenance.json").read_text())
+    return json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
 
 
 # ── the export records the template ───────────────────────────────────────────
@@ -64,8 +64,10 @@ def test_the_export_records_the_template_it_is_given(tmp_path: Path):
 
 def test_the_export_falls_back_to_the_manifest(tmp_path: Path):
     ws = _workspace(tmp_path)
-    manifest = json.loads((ws / "manifest.json").read_text())
-    (ws / "manifest.json").write_text(json.dumps({**manifest, "pipeline": "event-study-finance"}))
+    manifest = json.loads((ws / "manifest.json").read_text(encoding="utf-8"))
+    (ws / "manifest.json").write_text(
+        json.dumps({**manifest, "pipeline": "event-study-finance"}), encoding="utf-8", newline="\n"
+    )
     bundle = export_paper(ws, tmp_path / "out", date_str="20260930")
     assert recorded_template(bundle) == "event-study-finance"
 
@@ -77,8 +79,8 @@ def test_an_export_without_a_template_records_none(tmp_path: Path):
 
 def test_the_runner_and_the_browser_pass_the_study_template():
     src = Path(__file__).resolve().parents[1] / "src"
-    assert "template=self._spec.name" in (src / "core" / "strategist" / "runner.py").read_text()
-    finish = (src / "api" / "finish.py").read_text()
+    assert "template=self._spec.name" in (src / "core" / "strategist" / "runner.py").read_text(encoding="utf-8")
+    finish = (src / "api" / "finish.py").read_text(encoding="utf-8")
     assert finish.count('template=paper.get("pipeline") or None') == 2
 
 
@@ -108,11 +110,11 @@ def test_publish_uses_the_recorded_template_and_its_disclaimer(tmp_path: Path, c
     )
     out = capsys.readouterr().out
     assert rc == 0, out
-    manifest = json.loads((bundle / "e2er.json").read_text())
+    manifest = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
     assert manifest["kind"] == "replication" and manifest["purpose"] == "demonstration"
     assert "template:replication" in json.dumps(manifest)
     assert "template:empirical" not in json.dumps(manifest)
-    md = (bundle / "misc" / "reproduction_report.md").read_text()
+    md = (bundle / "misc" / "reproduction_report.md").read_text(encoding="utf-8")
     assert DISCLAIMERS["replication"] in md.split("\n#", 1)[0]  # above the title, once
     assert md.count(DISCLAIMERS["replication"]) == 1
 

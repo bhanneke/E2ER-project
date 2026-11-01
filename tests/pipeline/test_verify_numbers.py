@@ -329,7 +329,9 @@ Variable & Coef & SE \\
 \bottomrule
 \end{tabular}
 \end{document}
-"""
+""",
+        encoding="utf-8",
+        newline="\n",
     )
     return draft
 
@@ -349,7 +351,7 @@ class TestVerifyEndToEnd:
 
     def test_unparseable_json_skips_that_file(self, tmp_path: Path):
         _write_draft(tmp_path, "x & 0.42 & 0.01 \\\\")
-        (tmp_path / "summary_statistics.json").write_text("{not valid json")
+        (tmp_path / "summary_statistics.json").write_text("{not valid json", encoding="utf-8", newline="\n")
         # No other source files exist → after the unparseable one is dropped,
         # there are no values left, so the skip path fires.
         report = verify(tmp_path / "paper_draft.tex", tmp_path)
@@ -357,7 +359,9 @@ class TestVerifyEndToEnd:
 
     def test_exact_match_passes(self, tmp_path: Path):
         _write_draft(tmp_path, "x & 0.42 & 0.01 \\\\")
-        (tmp_path / "summary_statistics.json").write_text(json.dumps({"x": {"coef": 0.42, "se": 0.01}}))
+        (tmp_path / "summary_statistics.json").write_text(
+            json.dumps({"x": {"coef": 0.42, "se": 0.01}}), encoding="utf-8", newline="\n"
+        )
         report = verify(tmp_path / "paper_draft.tex", tmp_path)
         assert report.passed
         assert report.matched == 2
@@ -368,7 +372,9 @@ class TestVerifyEndToEnd:
         # Drafter claims -0.41 but source says -0.23. Relative error
         # (0.41 - 0.23) / 0.23 = 78% → critical (>10% threshold).
         _write_draft(tmp_path, "log RV & -0.41 & 0.10 \\\\")
-        (tmp_path / "estimation_results.json").write_text(json.dumps({"log_rv": {"coef": -0.23, "se": 0.10}}))
+        (tmp_path / "estimation_results.json").write_text(
+            json.dumps({"log_rv": {"coef": -0.23, "se": 0.10}}), encoding="utf-8", newline="\n"
+        )
         report = verify(tmp_path / "paper_draft.tex", tmp_path)
         assert not report.passed
         assert any(m.severity == "critical" for m in report.mismatches)
@@ -379,7 +385,9 @@ class TestVerifyEndToEnd:
         # 0.41 vs 0.42 — same sign, dist=0.01. Within 50% of |draft|=0.41.
         # Relative error = 0.01/0.42 ≈ 2.4% → major, not critical.
         _write_draft(tmp_path, "x & 0.41 & 0.01 \\\\")
-        (tmp_path / "summary_statistics.json").write_text(json.dumps({"x": {"coef": 0.42, "se": 0.01}}))
+        (tmp_path / "summary_statistics.json").write_text(
+            json.dumps({"x": {"coef": 0.42, "se": 0.01}}), encoding="utf-8", newline="\n"
+        )
         report = verify(tmp_path / "paper_draft.tex", tmp_path)
         # Draft 0.41 vs source 0.42: diff=0.01, tolerance=0.005*max(1,0.42)=0.005
         # → doesn't match, falls to closest-value branch as 'major'.
@@ -392,7 +400,9 @@ class TestVerifyEndToEnd:
         # which is >50% of |draft|=5.0 away). Counted as unverifiable, not
         # as a mismatch.
         _write_draft(tmp_path, "derived & 5.00 & 0.01 \\\\")
-        (tmp_path / "summary_statistics.json").write_text(json.dumps({"x": {"coef": 0.42, "se": 0.01}}))
+        (tmp_path / "summary_statistics.json").write_text(
+            json.dumps({"x": {"coef": 0.42, "se": 0.01}}), encoding="utf-8", newline="\n"
+        )
         report = verify(tmp_path / "paper_draft.tex", tmp_path)
         assert report.unverifiable >= 1
         # Unverifiable values do not contribute to mismatched counts and
@@ -407,12 +417,14 @@ class TestVerifyEndToEnd:
 
 def test_verify_and_save_writes_number_verification_json(tmp_path: Path):
     _write_draft(tmp_path, "x & 0.42 & 0.01 \\\\")
-    (tmp_path / "summary_statistics.json").write_text(json.dumps({"x": {"coef": 0.42, "se": 0.01}}))
+    (tmp_path / "summary_statistics.json").write_text(
+        json.dumps({"x": {"coef": 0.42, "se": 0.01}}), encoding="utf-8", newline="\n"
+    )
     report = verify_and_save(tmp_path / "paper_draft.tex", tmp_path)
     assert report.passed
     out = tmp_path / "number_verification.json"
     assert out.exists(), "verify_and_save must persist the report"
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["passed"] is True
     assert data["matched"] >= 2
 
@@ -427,7 +439,7 @@ def test_verify_and_save_persists_even_on_skip(tmp_path: Path):
     assert report.skipped_reason
     out = tmp_path / "number_verification.json"
     assert out.exists()
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     assert data["skipped_reason"]
 
 
@@ -506,12 +518,13 @@ def test_fabricated_data_cell_still_caught(tmp_path: Path):
     """The fix must not gut the gate: a wrong number in a plain data row is
     still a critical mismatch."""
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"main": {"coefficients": {"x": {"estimate": 0.50}}}}), encoding="utf-8"
+        json.dumps({"main": {"coefficients": {"x": {"estimate": 0.50}}}}), encoding="utf-8", newline="\n"
     )
     draft = tmp_path / "paper_draft.tex"
     draft.write_text(
         "\\begin{tabular}{lc}\n\\toprule\nTreatment & 0.80 \\\\\n\\bottomrule\n\\end{tabular}\n",
         encoding="utf-8",
+        newline="\n",
     )
     report = verify(draft, tmp_path)
     assert report.critical_mismatches, "0.80 vs source 0.50 should be a critical mismatch"
@@ -523,8 +536,8 @@ def test_fabricated_data_cell_still_caught(tmp_path: Path):
 
 
 def _ws_with_est(tmp_path: Path, est: dict, draft: str) -> Path:
-    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8")
-    (tmp_path / "paper_draft.tex").write_text(draft, encoding="utf-8")
+    (tmp_path / "estimation_results.json").write_text(json.dumps(est), encoding="utf-8", newline="\n")
+    (tmp_path / "paper_draft.tex").write_text(draft, encoding="utf-8", newline="\n")
     return tmp_path
 
 
@@ -566,13 +579,14 @@ def test_table_spec_feedback_surfaced(tmp_path: Path):
     """Unresolved table_spec refs from table_render_report.json are surfaced
     with available spec keys so the drafter can fix them."""
     (tmp_path / "estimation_results.json").write_text(
-        json.dumps({"full_dp": {"coefficients": {}}, "_meta": {}}), encoding="utf-8"
+        json.dumps({"full_dp": {"coefficients": {}}, "_meta": {}}), encoding="utf-8", newline="\n"
     )
     (tmp_path / "table_render_report.json").write_text(
         json.dumps({"unresolved": [{"kind": "spec_key", "ref": "weird_key"}, {"kind": "stat", "ref": "cw_stat"}]}),
         encoding="utf-8",
+        newline="\n",
     )
-    (tmp_path / "paper_draft.tex").write_text("No tables here.\n", encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text("No tables here.\n", encoding="utf-8", newline="\n")
     report = verify(tmp_path / "paper_draft.tex", tmp_path)
     refs = {e["ref"] for e in report.table_spec_unresolved}
     assert {"weird_key", "cw_stat"} <= refs

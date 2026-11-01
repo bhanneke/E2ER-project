@@ -25,9 +25,10 @@ import pytest
 
 from src.core.specialists.base import _workspace_bib_for_prompt
 from src.modules.literature.cli import _bib_keys, _load_budget, _save_budget, build_parser
+from tests.platform_help import checkout_command
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-WRAPPER = REPO_ROOT / "scripts" / "e2er-lit"
+WRAPPER = checkout_command("e2er-lit")
 
 BIB = """@article{lycsa2020impact,
   title = {Impact of macroeconomic news on the volatility of bitcoin},
@@ -48,7 +49,7 @@ BIB = """@article{lycsa2020impact,
 
 
 def test_bib_keys_reads_entries(tmp_path: Path):
-    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
     assert _bib_keys(tmp_path) == ["alexander2020price", "lycsa2020impact"]
 
 
@@ -71,7 +72,7 @@ def test_budget_roundtrips_per_specialist(tmp_path: Path):
 def test_budget_survives_a_corrupt_file(tmp_path: Path):
     """One bash call is one process, so a half-written counter file must not
     take down the next invocation."""
-    (tmp_path / ".lit_budget.json").write_text("{not json", encoding="utf-8")
+    (tmp_path / ".lit_budget.json").write_text("{not json", encoding="utf-8", newline="\n")
     assert _load_budget(tmp_path, "literature_scanner") == {}
     _save_budget(tmp_path, "literature_scanner", {"search": 1})
     assert _load_budget(tmp_path, "literature_scanner")["search"] == 1
@@ -87,7 +88,7 @@ def _with_workspace_root(tmp_path: Path):
 def test_prompt_block_lists_the_citable_keys(tmp_path: Path):
     ws = tmp_path / "paper-1"
     ws.mkdir()
-    (ws / "literature.bib").write_text(BIB, encoding="utf-8")
+    (ws / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
 
     with _with_workspace_root(tmp_path):
         out = _workspace_bib_for_prompt("paper_drafter", "paper-1")
@@ -102,7 +103,7 @@ def test_prompt_block_lists_the_citable_keys(tmp_path: Path):
 def test_prompt_block_forbids_citing_from_memory(tmp_path: Path):
     ws = tmp_path / "paper-1"
     ws.mkdir()
-    (ws / "literature.bib").write_text(BIB, encoding="utf-8")
+    (ws / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
 
     with _with_workspace_root(tmp_path):
         out = _workspace_bib_for_prompt("paper_drafter", "paper-1")
@@ -121,7 +122,7 @@ def test_prompt_block_empty_when_no_bibliography(tmp_path: Path):
 def test_prompt_block_only_for_bib_specialists(tmp_path: Path):
     ws = tmp_path / "paper-1"
     ws.mkdir()
-    (ws / "literature.bib").write_text(BIB, encoding="utf-8")
+    (ws / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
 
     with _with_workspace_root(tmp_path):
         assert _workspace_bib_for_prompt("econometrics_specialist", "paper-1") == ""
@@ -133,7 +134,7 @@ def test_prompt_block_truncates_a_large_bibliography(tmp_path: Path):
     ws = tmp_path / "paper-1"
     ws.mkdir()
     many = "\n\n".join(f"@article{{key{i},\n  title = {{T{i}}},\n  year = {{2020}},\n}}" for i in range(50))
-    (ws / "literature.bib").write_text(many, encoding="utf-8")
+    (ws / "literature.bib").write_text(many, encoding="utf-8", newline="\n")
 
     with _with_workspace_root(tmp_path):
         out = _workspace_bib_for_prompt("paper_drafter", "paper-1", limit=10)
@@ -167,7 +168,15 @@ def test_subcommand_is_required():
 @pytest.mark.skipif(not WRAPPER.exists(), reason="wrapper not present")
 def test_wrapper_list_reports_an_empty_bibliography(tmp_path: Path):
     env = dict(os.environ, E2ER_PYTHON=sys.executable, E2ER_SPECIALIST="literature_scanner")
-    proc = subprocess.run([str(WRAPPER), "list"], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+    proc = subprocess.run(
+        [str(WRAPPER), "list"],
+        cwd=tmp_path,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        env=env,
+    )
     assert proc.returncode == 0, proc.stderr
     assert "nothing is citable yet" in proc.stdout
 
@@ -176,9 +185,17 @@ def test_wrapper_list_reports_an_empty_bibliography(tmp_path: Path):
 def test_wrapper_list_reads_the_directory_it_was_called_from(tmp_path: Path):
     """cwd is the workspace; the wrapper must resolve the project root from its
     own path, not from cwd."""
-    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8")
+    (tmp_path / "literature.bib").write_text(BIB, encoding="utf-8", newline="\n")
     env = dict(os.environ, E2ER_PYTHON=sys.executable, E2ER_SPECIALIST="paper_drafter")
-    proc = subprocess.run([str(WRAPPER), "list"], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+    proc = subprocess.run(
+        [str(WRAPPER), "list"],
+        cwd=tmp_path,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        env=env,
+    )
     assert proc.returncode == 0, proc.stderr
     assert "lycsa2020impact" in proc.stdout
     assert "ONLY citable keys" in proc.stdout
@@ -187,7 +204,15 @@ def test_wrapper_list_reads_the_directory_it_was_called_from(tmp_path: Path):
 @pytest.mark.skipif(not WRAPPER.exists(), reason="wrapper not present")
 def test_wrapper_save_requires_an_argument(tmp_path: Path):
     env = dict(os.environ, E2ER_PYTHON=sys.executable, E2ER_SPECIALIST="literature_scanner")
-    proc = subprocess.run([str(WRAPPER), "save"], cwd=tmp_path, capture_output=True, text=True, timeout=120, env=env)
+    proc = subprocess.run(
+        [str(WRAPPER), "save"],
+        cwd=tmp_path,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        env=env,
+    )
     assert proc.returncode == 2
     assert "--doi or --entry" in proc.stderr
 
@@ -196,5 +221,5 @@ def test_budget_file_is_not_mistaken_for_a_bib(tmp_path: Path):
     """.lit_budget.json lives beside literature.bib; it must never be parsed
     as one."""
     _save_budget(tmp_path, "literature_scanner", {"search": 1})
-    assert json.loads((tmp_path / ".lit_budget.json").read_text())
+    assert json.loads((tmp_path / ".lit_budget.json").read_text(encoding="utf-8"))
     assert _bib_keys(tmp_path) == []

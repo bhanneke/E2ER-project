@@ -189,14 +189,14 @@ def _through(ws: Path, step: str) -> None:
     assert wf.search_step(ws).passed
     if step == "search":
         return
-    (ws / "screening.json").write_text(json.dumps(mf.screening()), encoding="utf-8")
+    (ws / "screening.json").write_text(json.dumps(mf.screening()), encoding="utf-8", newline="\n")
     assert wf.screening_step(ws).passed
     if step == "screening":
         return
     assert wf.fulltext_step(ws).passed
     if step == "fulltext":
         return
-    (ws / "extraction.json").write_text(json.dumps(mf.extraction()), encoding="utf-8")
+    (ws / "extraction.json").write_text(json.dumps(mf.extraction()), encoding="utf-8", newline="\n")
     v = wf.extraction_step(ws)
     assert v.passed, v
     if step == "extraction":
@@ -211,7 +211,9 @@ def test_the_search_is_recorded_deduplicated_and_cached(ws: Path, fake: mf.FakeO
     log = json.loads((ws / "search_log.json").read_text(encoding="utf-8"))
     assert [s["count_reported"] for s in log["searches"]] == [10, 2]
     assert "publication_year:2010-2024" in log["searches"][0]["query"]
-    w103 = next(r for r in json.loads((ws / "records.json").read_text())["records"] if r["id"] == "W103")
+    w103 = next(
+        r for r in json.loads((ws / "records.json").read_text(encoding="utf-8"))["records"] if r["id"] == "W103"
+    )
     assert w103["found_by"] == ["openalex:main", "openalex:grades"]
     assert "Search counts" in (ws / "search_counts.md").read_text(encoding="utf-8")
     sent = len(fake.calls)
@@ -239,7 +241,7 @@ def test_screening_refusals(ws: Path, fake, change, match):
     _through(ws, "search")
     d = mf.screening()
     change(d)
-    (ws / "screening.json").write_text(json.dumps(d), encoding="utf-8")
+    (ws / "screening.json").write_text(json.dumps(d), encoding="utf-8", newline="\n")
     v = meta_checks.meta_screening(ws)
     assert not v.passed and any(match in r for r in v.reasons), v.reasons
 
@@ -278,7 +280,7 @@ def _extract_with(ws: Path, change) -> Any:
     _through(ws, "fulltext")
     d = mf.extraction()
     change(d)
-    (ws / "extraction.json").write_text(json.dumps(d), encoding="utf-8")
+    (ws / "extraction.json").write_text(json.dumps(d), encoding="utf-8", newline="\n")
     return meta_checks.meta_extraction(ws)
 
 
@@ -373,14 +375,14 @@ def test_the_script_runs_without_e2er(ws: Path, fake, tmp_path: Path):
 def test_too_few_studies_give_a_narrative_synthesis(ws: Path, fake):
     p = json.loads(json.dumps(mf.PROTOCOL))
     p["synthesis"]["min_studies"] = 10
-    (ws / "review_protocol.json").write_text(json.dumps(p), encoding="utf-8")
+    (ws / "review_protocol.json").write_text(json.dumps(p), encoding="utf-8", newline="\n")
     _through(ws, "synthesis")
     r = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     assert r["narrative_only"] and r["pooled"] is None and "at least 10" in r["narrative_reason"]
     assert r["figures"] == ["fig_prisma.pdf"] and not (ws / wf.TABLE_RESULTS).exists()
     assert check_results("metaanalysis", r, ws) == []
     # A draft that reports a pooled estimate anyway is refused.
-    (ws / "paper_draft.tex").write_text("\\input{tables/meta_results.tex}", encoding="utf-8")
+    (ws / "paper_draft.tex").write_text("\\input{tables/meta_results.tex}", encoding="utf-8", newline="\n")
     assert any("cannot include a pooled-results table" in x for x in wf.draft_problems(ws))
 
 
@@ -413,7 +415,7 @@ def test_a_protocol_changed_after_the_freeze_stops_the_synthesis(ws: Path, fake)
     freeze(ws)
     p = json.loads((ws / "review_protocol.json").read_text(encoding="utf-8"))
     p["synthesis"]["tau2_method"] = "DL"
-    (ws / "review_protocol.json").write_text(json.dumps(p), encoding="utf-8")
+    (ws / "review_protocol.json").write_text(json.dumps(p), encoding="utf-8", newline="\n")
     v = meta_checks.meta_synthesis(ws)
     assert not v.passed and "changed after it was frozen" in v.reasons[0]
 
@@ -432,12 +434,12 @@ def test_the_number_check_traces_the_tables_and_the_draft_contract(ws: Path, fak
             "\\citep{" + ",".join(list(keys.values())[:-1]) + "}",
         ]
     )
-    (ws / "paper_draft.tex").write_text(draft, encoding="utf-8")
+    (ws / "paper_draft.tex").write_text(draft, encoding="utf-8", newline="\n")
     rep = verify(ws / "paper_draft.tex", ws)
     assert rep.passed and rep.total_values_in_tables >= 60 and rep.mismatched == 0
     problems = wf.draft_problems(ws)
     assert problems == [f"the draft must cite every included study; not cited: {list(keys.values())[-1]}"]
-    (ws / "paper_draft.tex").write_text("\\input{tables/meta_studies.tex}", encoding="utf-8")
+    (ws / "paper_draft.tex").write_text("\\input{tables/meta_studies.tex}", encoding="utf-8", newline="\n")
     joined = " ".join(wf.draft_problems(ws))
     assert "tables/meta_flow.tex" in joined and "fig_forest.pdf" in joined
 
@@ -446,7 +448,9 @@ def test_the_exported_study_is_checked_against_its_quotes(ws: Path, fake):
     _through(ws, "synthesis")
     assert wf.export_check(ws).passed
     csv_path = ws / "meta_studies.csv"
-    csv_path.write_text(csv_path.read_text(encoding="utf-8").replace(",412.0,", ",413.0,"), encoding="utf-8")
+    csv_path.write_text(
+        csv_path.read_text(encoding="utf-8").replace(",412.0,", ",413.0,"), encoding="utf-8", newline="\n"
+    )
     v = wf.export_check(ws)
     assert not v.passed and "W101: meta_studies.csv has n = 413" in " ".join(v.reasons)
 
@@ -465,7 +469,7 @@ def test_the_figures_render_from_their_entries(tmp_path: Path):
             {"filename": "fig_bad.pdf", "figure_type": "forest", "studies": []},
         ]
     }  # fmt: skip
-    (tmp_path / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8")
+    (tmp_path / "figure_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     rep = render_figures(tmp_path)
     assert set(rep.rendered) == {"fig_prisma.pdf", "fig_forest.pdf", "fig_funnel.pdf"}
     assert any(s.startswith("fig_bad.pdf") for s in rep.skipped)

@@ -90,7 +90,7 @@ def test_status_words_are_plain():
 
 def test_a_workspace_with_the_review_file_reads_as_completed(tmp_path: Path):
     assert workspace_status("rejected", tmp_path) == "stopped"
-    (tmp_path / "review_aggregation.json").write_text(json.dumps(FOMC))
+    (tmp_path / "review_aggregation.json").write_text(json.dumps(FOMC), encoding="utf-8", newline="\n")
     assert workspace_status("rejected", tmp_path) == "completed"
     assert workspace_status("rejected", None) == "stopped"
 
@@ -199,7 +199,7 @@ def test_a_finished_run_with_a_low_score_is_completed_with_its_score(tmp_path: P
     """The FOMC case: stored `rejected`, review file in the workspace."""
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "review_aggregation.json").write_text(json.dumps(FOMC))
+    (ws / "review_aggregation.json").write_text(json.dumps(FOMC), encoding="utf-8", newline="\n")
     db = _run_db(tmp_path, "rejected", ws, error="MAJOR_REVISION: Weighted average score: 6.11/10. Verdict: …")
     run = read_run(db, PID)
     assert run.outcome == {"status": "completed", "at": "2026-09-29T15:59:32Z"}
@@ -215,7 +215,9 @@ def test_a_finished_run_with_a_low_score_is_completed_with_its_score(tmp_path: P
 def test_every_aggregated_code_gives_completed_and_a_score(tmp_path: Path, code: str):
     bundle = tmp_path / "bundle"
     (bundle / "reviews").mkdir(parents=True)
-    (bundle / "reviews" / "review_aggregation.json").write_text(json.dumps({**FOMC, "verdict": code}))
+    (bundle / "reviews" / "review_aggregation.json").write_text(
+        json.dumps({**FOMC, "verdict": code}), encoding="utf-8", newline="\n"
+    )
     stored = "completed" if code == "ACCEPT" else "rejected"
     run = read_run(_run_db(tmp_path, stored, None), PID, bundle=bundle)
     assert run.outcome["status"] == "completed"
@@ -225,10 +227,12 @@ def test_every_aggregated_code_gives_completed_and_a_score(tmp_path: Path, code:
 def test_the_bundle_file_is_read_before_the_workspace(tmp_path: Path):
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "review_aggregation.json").write_text(json.dumps({**FOMC, "weighted_avg": 2.0}))
+    (ws / "review_aggregation.json").write_text(
+        json.dumps({**FOMC, "weighted_avg": 2.0}), encoding="utf-8", newline="\n"
+    )
     bundle = tmp_path / "bundle"
     (bundle / "reviews").mkdir(parents=True)
-    (bundle / "reviews" / "review_aggregation.json").write_text(json.dumps(FOMC))
+    (bundle / "reviews" / "review_aggregation.json").write_text(json.dumps(FOMC), encoding="utf-8", newline="\n")
     run = read_run(_run_db(tmp_path, "rejected", ws), PID, bundle=bundle)
     assert run.internal_review["score"] == 6.11
 
@@ -315,7 +319,7 @@ def test_visible_strings_use_no_review_words(rel: str):
 def test_the_dashboard_review_row_is_a_score(tmp_path: Path):
     from src.api.app import _gate_verdicts
 
-    (tmp_path / "review_aggregation.json").write_text(json.dumps(FOMC))
+    (tmp_path / "review_aggregation.json").write_text(json.dumps(FOMC), encoding="utf-8", newline="\n")
     [row] = _gate_verdicts(tmp_path)
     assert row["ok"] is None
     assert row["label"] == "Internal quality review"
@@ -327,7 +331,7 @@ def test_the_export_report_shows_the_score(tmp_path: Path):
     from src.core.export.report import _verdicts
 
     (tmp_path / "reviews").mkdir()
-    (tmp_path / "reviews" / "review_aggregation.json").write_text(json.dumps(FOMC))
+    (tmp_path / "reviews" / "review_aggregation.json").write_text(json.dumps(FOMC), encoding="utf-8", newline="\n")
     [row] = _verdicts(tmp_path)
     assert row["name"] == "e2er's internal quality review" and row["ok"] is None
     assert not _banned(json.dumps(row))

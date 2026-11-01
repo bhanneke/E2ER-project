@@ -24,14 +24,18 @@ PID = "5b3d53ca-55e9-41fd-848f-c71f55ae5f85"
 def _workspace(tmp_path: Path) -> Path:
     ws = tmp_path / "ws"
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": PID, "title": "FOMC and bank stocks"}))
-    (ws / "paper_draft.tex").write_text("\\documentclass{article}\\begin{document}x\\end{document}")
-    (ws / "estimation_results.json").write_text('{"main": {"coef": 0.5}}')
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": PID, "title": "FOMC and bank stocks"}), encoding="utf-8", newline="\n"
+    )
+    (ws / "paper_draft.tex").write_text(
+        "\\documentclass{article}\\begin{document}x\\end{document}", encoding="utf-8", newline="\n"
+    )
+    (ws / "estimation_results.json").write_text('{"main": {"coef": 0.5}}', encoding="utf-8", newline="\n")
     return ws
 
 
 def _touch(p: Path, text: str) -> None:
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8", newline="\n")
     later = time.time() + 5
     os.utime(p, (later, later))
 
@@ -39,7 +43,7 @@ def _touch(p: Path, text: str) -> None:
 def _export(ws: Path, root: Path) -> tuple[Path, str]:
     out, state = cur.export_current(ws, root, paper_id=PID, date_str="20261008")
     # export_paper records the run in provenance.json; the tests make sure it names this run.
-    prov = json.loads((out / "provenance.json").read_text())
+    prov = json.loads((out / "provenance.json").read_text(encoding="utf-8"))
     assert (prov.get("run") or {}).get("paper_id") == PID
     return out, state
 
@@ -59,7 +63,9 @@ def test_a_published_folder_stays_and_the_next_change_gets_a_new_folder(tmp_path
     ws, root = _workspace(tmp_path), tmp_path / "exports"
     first, _ = _export(ws, root)
     (first / ".e2er").mkdir()
-    (first / ".e2er" / "link.json").write_text(json.dumps({"owner_project": "kim/fomc", "version": 1}))
+    (first / ".e2er" / "link.json").write_text(
+        json.dumps({"owner_project": "kim/fomc", "version": 1}), encoding="utf-8", newline="\n"
+    )
     assert cur.is_published(first)
     _touch(ws / "estimation_results.json", '{"main": {"coef": 0.7}}')
     second, state = _export(ws, root)
@@ -73,7 +79,7 @@ def test_remove_older_copies_never_removes_the_current_or_the_published_folder(t
     old1 = export_paper(ws, root, date_str="20261007")  # copies `e2er export` or an older e2er made
     old2 = export_paper(ws, root, date_str="20261007")
     (old2 / ".e2er").mkdir()
-    (old2 / ".e2er" / "link.json").write_text("{}")
+    (old2 / ".e2er" / "link.json").write_text("{}", encoding="utf-8", newline="\n")
     (root / f"{old1.name}-registry-entry").mkdir()
     time.sleep(0.01)
     now, _ = _export(ws, root)

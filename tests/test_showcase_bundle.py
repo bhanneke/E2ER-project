@@ -121,7 +121,8 @@ def test_every_bundle_file_is_committed():
         ["git", "ls-files", "-z", "examples/showcase"],
         cwd=repo,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if out.returncode != 0:
@@ -178,7 +179,7 @@ def test_an_edited_table_cell_fails_the_tables_check(tmp_path: Path):
     text = table.read_text(encoding="utf-8")
     match = re.search(r"-?\d+\.\d{3,}", text)
     assert match, "expected a decimal estimate in main.tex"
-    table.write_text(text.replace(match.group(0), "-9.9999", 1), encoding="utf-8")
+    table.write_text(text.replace(match.group(0), "-9.9999", 1), encoding="utf-8", newline="\n")
 
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)
@@ -225,7 +226,7 @@ def test_empty_derivation_graph_fails_integrity(tmp_path: Path):
 
     # Strip the cell edges, leaving the hashes untouched and correct.
     prov["edges"] = [e for e in prov["edges"] if e.get("type") != "table_cell"]
-    (bundle / "provenance.json").write_text(json.dumps(prov), encoding="utf-8")
+    (bundle / "provenance.json").write_text(json.dumps(prov), encoding="utf-8", newline="\n")
 
     check = _check_integrity(bundle)
     assert check.status == "FAIL"
@@ -243,12 +244,18 @@ def test_rendered_tables_with_no_traced_cells_is_not_a_pass(tmp_path: Path):
     (bundle / "results").mkdir(parents=True)
 
     # No render report, but table files present.
-    (bundle / "paper" / "tables" / "main.tex").write_text("\\begin{tabular}{l}x\\end{tabular}")
+    (bundle / "paper" / "tables" / "main.tex").write_text(
+        "\\begin{tabular}{l}x\\end{tabular}", encoding="utf-8", newline="\n"
+    )
     assert _bundle_has_rendered_tables(bundle) is True
 
     # Render report wins when present, and an empty one means no tables.
-    (bundle / "results" / "table_render_report.json").write_text(json.dumps({"rendered": []}))
+    (bundle / "results" / "table_render_report.json").write_text(
+        json.dumps({"rendered": []}), encoding="utf-8", newline="\n"
+    )
     assert _bundle_has_rendered_tables(bundle) is False
 
-    (bundle / "results" / "table_render_report.json").write_text(json.dumps({"rendered": ["main.tex"]}))
+    (bundle / "results" / "table_render_report.json").write_text(
+        json.dumps({"rendered": ["main.tex"]}), encoding="utf-8", newline="\n"
+    )
     assert _bundle_has_rendered_tables(bundle) is True

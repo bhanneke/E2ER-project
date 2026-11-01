@@ -137,13 +137,13 @@ The announcement-day returns of bank stocks are small and not distinguishable fr
     ],
 )
 def test_a_draft_writer_is_sent_back_with_the_sentence(tmp_path: Path, specialist: str, file: str):
-    (tmp_path / file).write_text(DRAFT, encoding="utf-8")
+    (tmp_path / file).write_text(DRAFT, encoding="utf-8", newline="\n")
     failed = [c for c in check_specialist_artifacts(tmp_path, specialist) if not c.ok]
     phrase = [c for c in failed if "construction" in c.reason]
     assert len(phrase) == 1 and phrase[0].artifact == file
     assert f'"Against this background" in: {LIVE}' in phrase[0].reason
     assert "Rewrite each of these sentences" in phrase[0].reason
-    (tmp_path / file).write_text(DRAFT.replace("Against this background, this", "This"), encoding="utf-8")
+    (tmp_path / file).write_text(DRAFT.replace("Against this background, this", "This"), encoding="utf-8", newline="\n")
     assert not [c for c in check_specialist_artifacts(tmp_path, specialist) if "construction" in c.reason]
 
 
@@ -151,7 +151,7 @@ def test_the_feedback_reaches_the_next_attempt(tmp_path: Path):
     """The dispatcher's attempt loop feeds the sentences into the writer's next prompt."""
     from src.core.specialists.contract_check import write_contract_feedback
 
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
     failures = [c for c in check_specialist_artifacts(tmp_path, "paper_drafter") if not c.ok]
     write_contract_feedback(tmp_path, "paper_drafter", "; ".join(f"{c.artifact}: {c.reason}" for c in failures))
     block = read_contract_feedback(tmp_path, "paper_drafter")

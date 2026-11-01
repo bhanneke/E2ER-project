@@ -88,17 +88,19 @@ def test_the_post_run_of_an_analysis_script_sees_no_secret(leaky, tmp_path, monk
     ws.mkdir()
     real_home = tmp_path / "realhome"
     (real_home / ".ssh").mkdir(parents=True)
-    (real_home / ".ssh" / "id_rsa").write_text("PRIVATE")
+    (real_home / ".ssh" / "id_rsa").write_text("PRIVATE", encoding="utf-8", newline="\n")
     monkeypatch.setenv("HOME", str(real_home))
     (ws / "run_estimation.py").write_text(
         "import json, os\n"
         "seen = {k: os.environ.get(k) for k in " + repr(sorted([*SECRETS, "FRED_API_KEY", "ANTHROPIC_API_KEY"])) + "}\n"
         "ssh = os.path.exists(os.path.expanduser('~/.ssh/id_rsa'))\n"
-        "json.dump({'models': [{'n': 1}], 'seen': seen, 'ssh': ssh}, open('estimation_results.json', 'w'))\n"
+        "json.dump({'models': [{'n': 1}], 'seen': seen, 'ssh': ssh}, open('estimation_results.json', 'w'))\n",
+        encoding="utf-8",
+        newline="\n",
     )
     attempt = maybe_execute_specialist_script(ws, "econometrics_specialist")
     assert attempt.ran, attempt.reason
-    out = json.loads((ws / "estimation_results.json").read_text())
+    out = json.loads((ws / "estimation_results.json").read_text(encoding="utf-8"))
     assert all(v is None for v in out["seen"].values()), out["seen"]
     assert out["ssh"] is False
 
@@ -109,11 +111,13 @@ def test_e2er_run_passes_no_key_to_the_script(leaky, tmp_path, monkeypatch):
     (tmp_path / "s.py").write_text(
         "import json, os\n"
         "json.dump({'fred': os.environ.get('FRED_API_KEY'), 'anth': os.environ.get('ANTHROPIC_API_KEY'), "
-        "'home': os.environ['HOME']}, open('o.json', 'w'))\n"
+        "'home': os.environ['HOME']}, open('o.json', 'w'))\n",
+        encoding="utf-8",
+        newline="\n",
     )
     monkeypatch.chdir(tmp_path)
     assert wrappers.run_main(["s.py"]) == 0
-    out = json.loads((tmp_path / "o.json").read_text())
+    out = json.loads((tmp_path / "o.json").read_text(encoding="utf-8"))
     assert out["fred"] is None and out["anth"] is None and out["home"] != os.environ["HOME"]
 
 
@@ -121,10 +125,14 @@ def test_e2er_run_passes_no_key_to_the_script(leaky, tmp_path, monkeypatch):
 def test_a_scripts_own_child_is_stopped_at_the_time_limit(tmp_path):
     marker = tmp_path / "child-alive"
     child = tmp_path / "child.py"
-    child.write_text(f"import time\ntime.sleep(3)\nopen({str(marker)!r}, 'w').write('x')\n")
+    child.write_text(
+        f"import time\ntime.sleep(3)\nopen({str(marker)!r}, 'w').write('x')\n", encoding="utf-8", newline="\n"
+    )
     script = tmp_path / "s.py"
     script.write_text(
-        f"import subprocess, sys, time\nsubprocess.Popen([sys.executable, {str(child)!r}])\ntime.sleep(30)\n"
+        f"import subprocess, sys, time\nsubprocess.Popen([sys.executable, {str(child)!r}])\ntime.sleep(30)\n",
+        encoding="utf-8",
+        newline="\n",
     )
     with pytest.raises(subprocess.TimeoutExpired):
         ce.run_in_own_session([sys.executable, str(script)], cwd=tmp_path, env=dict(os.environ), timeout=1)

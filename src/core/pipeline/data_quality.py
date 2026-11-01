@@ -316,7 +316,9 @@ def _before(a: Any, b: Any) -> bool:
 def _write_report(ws: Path, report: dict[str, Any], reasons: list[str], notes: list[str]) -> None:
     report["passed"] = not reasons
     report["problems"] = list(reasons)
-    (ws / DATA_QUALITY_JSON).write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (ws / DATA_QUALITY_JSON).write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n"
+    )
     lines = [
         "# Data quality",
         "",
@@ -351,7 +353,7 @@ def _write_report(ws: Path, report: dict[str, Any], reasons: list[str], notes: l
         lines += ["## Problems", ""] + [f"- {r}" for r in reasons] + [""]
     if notes:
         lines += ["## Notes", ""] + [f"- {n}" for n in notes] + [""]
-    (ws / DATA_QUALITY_MD).write_text("\n".join(lines), encoding="utf-8")
+    (ws / DATA_QUALITY_MD).write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 # ── figures from saved data ─────────────────────────────────────────────────
@@ -658,5 +660,6 @@ def check_figure_data(workspace: Path) -> CheckResult:
         json.dumps({"passed": not reasons, "figures": checked, "problems": reasons}, indent=2, ensure_ascii=False)
         + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return CheckResult(not reasons, tuple(reasons), (), {"figures": len(figures), "parts": len(checked)})

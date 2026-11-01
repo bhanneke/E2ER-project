@@ -122,7 +122,7 @@ def _write_cache(models: dict[str, OpenRouterModel]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         body = {"fetched_at": time.time(), "models": [asdict(m) for m in models.values()]}
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(body), encoding="utf-8")
+        tmp.write_text(json.dumps(body), encoding="utf-8", newline="\n")
         tmp.replace(path)
     except OSError as e:
         logger.debug("could not cache the OpenRouter model list: %s", e)
@@ -269,7 +269,7 @@ def provider_order(model: str) -> list[str]:
             order = parse_endpoints(payload)
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps({"fetched_at": time.time(), "order": order}), encoding="utf-8")
+                path.write_text(json.dumps({"fetched_at": time.time(), "order": order}), encoding="utf-8", newline="\n")
             except OSError:
                 pass
     if order is None:

@@ -51,12 +51,12 @@ MUST_BE_TRACKABLE = [
 def staged(tmp_path_factory) -> set[str]:
     """What `git add -A` stages in a fresh repo using the real .gitignore."""
     work = tmp_path_factory.mktemp("ignore-check")
-    (work / ".gitignore").write_text(GITIGNORE.read_text(encoding="utf-8"), encoding="utf-8")
+    (work / ".gitignore").write_text(GITIGNORE.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
 
     for rel in MUST_BE_IGNORED + MUST_BE_TRACKABLE:
         path = work / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("SECRET=real\n", encoding="utf-8")
+        path.write_text("SECRET=real\n", encoding="utf-8", newline="\n")
 
     subprocess.run(["git", "init", "-q", "."], cwd=work, check=True)
     subprocess.run(["git", "add", "-A"], cwd=work, check=True)
@@ -64,7 +64,8 @@ def staged(tmp_path_factory) -> set[str]:
         ["git", "diff", "--cached", "--name-only", "-z"],
         cwd=work,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return {p for p in out.stdout.split("\0") if p}

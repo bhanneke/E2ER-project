@@ -298,7 +298,9 @@ def apply_action(
         p = workspace / INSTRUCTIONS_FILE
         prior = p.read_text(encoding="utf-8") if p.is_file() else ""
         p.write_text(
-            prior + ("\n\n" if prior else "") + f"(at step {pending.stage}, {payload['at']}) {text}\n", encoding="utf-8"
+            prior + ("\n\n" if prior else "") + f"(at step {pending.stage}, {payload['at']}) {text}\n",
+            encoding="utf-8",
+            newline="\n",
         )
         payload.update(text=text)
 
@@ -319,6 +321,7 @@ def apply_action(
             + ("\n\n" if prior else "")
             + f"(for {target}, sent back at step {pending.stage}, {payload['at']}) {remark}\n",
             encoding="utf-8",
+            newline="\n",
         )
         payload.update(target=target, remark=remark)
         if pending.kind in CHECK_KINDS:
@@ -459,6 +462,7 @@ def apply_rerun(workspace: Path, state: PipelineState, spec: Any, step: str, rem
     p.write_text(
         prior + ("\n\n" if prior else "") + f"(for {for_whom}, rerun of the study, {at}) {remark}\n",
         encoding="utf-8",
+        newline="\n",
     )
     reruns = [n for n in names[start:] if spec.step(n).applies_to(state.mode) and not spec.step(n).after]
     payload: dict[str, Any] = {

@@ -163,7 +163,7 @@ def _store_credentials(p: Path, data: dict[str, Any]) -> None:
         os.chmod(folder, 0o700)  # e2er's own folder: other users see nothing in it
     fd, tmp = tempfile.mkstemp(prefix=".credentials-", suffix=".tmp", dir=folder)  # mode 0600
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(data, indent=2) + "\n")
             f.flush()
             os.fsync(f.fileno())

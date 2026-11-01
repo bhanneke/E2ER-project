@@ -62,7 +62,7 @@ def _make_workspace(tmp_path: Path, paper_id: str, mode: str = "single_pass") ->
         "mode": mode,
         "current_stage": "idea",
     }
-    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (ws / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8", newline="\n")
     return ws
 
 
@@ -114,7 +114,7 @@ async def test_single_pass_creates_core_artifacts(tmp_path, mock_llm):
     assert (workspace / "review_aggregation.json").exists()
 
     # Aggregation JSON must be valid
-    agg = json.loads((workspace / "review_aggregation.json").read_text())
+    agg = json.loads((workspace / "review_aggregation.json").read_text(encoding="utf-8"))
     assert "verdict" in agg
     assert agg["verdict"] in {
         "ACCEPT",
@@ -237,7 +237,7 @@ async def test_review_aggregation_accept_completes_paper(tmp_path, mock_llm):
         await runner.run()
 
     # mock_llm always returns Score: 7/10 for all reviewers → expect ACCEPT or MINOR_REVISION
-    agg = json.loads((workspace / "review_aggregation.json").read_text())
+    agg = json.loads((workspace / "review_aggregation.json").read_text(encoding="utf-8"))
     assert agg["verdict"] in {"ACCEPT", "MINOR_REVISION"}, (
         f"With mock scores all 7/10, expected ACCEPT or MINOR_REVISION, got {agg['verdict']}"
     )
@@ -374,7 +374,7 @@ def test_inject_context_tier0(tmp_path):
         "mode": "single_pass",
         "current_stage": "idea",
     }
-    (ws / "manifest.json").write_text(json.dumps(manifest))
+    (ws / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
 
     wo = WorkOrder(paper_id="test-id", specialist="idea_developer", focus="Develop idea", context_tier=0)
     enriched = _inject_context(wo, ws)
@@ -401,8 +401,8 @@ def test_inject_context_tier1_includes_paper_plan(tmp_path):
         "mode": "single_pass",
         "current_stage": "idea",
     }
-    (ws / "manifest.json").write_text(json.dumps(manifest))
-    (ws / "paper_plan.md").write_text("# Paper Plan\n\nH1: X increases Y.")
+    (ws / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
+    (ws / "paper_plan.md").write_text("# Paper Plan\n\nH1: X increases Y.", encoding="utf-8", newline="\n")
 
     wo = WorkOrder(
         paper_id="test-id",
@@ -432,8 +432,10 @@ def test_inject_context_tier2_includes_draft(tmp_path):
         "mode": "single_pass",
         "current_stage": "review",
     }
-    (ws / "manifest.json").write_text(json.dumps(manifest))
-    (ws / "paper_draft.tex").write_text(r"\documentclass{article}\begin{document}The draft.\end{document}")
+    (ws / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
+    (ws / "paper_draft.tex").write_text(
+        r"\documentclass{article}\begin{document}The draft.\end{document}", encoding="utf-8", newline="\n"
+    )
 
     wo = WorkOrder(
         paper_id="test-id",
@@ -641,7 +643,7 @@ async def test_state_saved_after_each_phase(tmp_path, mock_llm):
 
     state_path = workspace / ".pipeline_state.json"
     assert state_path.exists(), ".pipeline_state.json must be written"
-    state = json.loads(state_path.read_text())
+    state = json.loads(state_path.read_text(encoding="utf-8"))
     assert "initial" in state["completed_stages"]
     assert "review" in state["completed_stages"]
     assert "revision" in state["completed_stages"]
@@ -656,7 +658,9 @@ async def test_resume_skips_completed_phases(tmp_path, mock_llm):
 
     # Pre-write review files so _run_revision_phase workspace fallback finds scores
     for reviewer in ["mechanism", "technical", "literature", "writing", "data", "identification"]:
-        (workspace / f"review_{reviewer}.md").write_text("# Review\n\nScore: 7/10\n\nLooks good.")
+        (workspace / f"review_{reviewer}.md").write_text(
+            "# Review\n\nScore: 7/10\n\nLooks good.", encoding="utf-8", newline="\n"
+        )
 
     # Pre-write state: initial + review already done
     pre_state = {
@@ -670,7 +674,7 @@ async def test_resume_skips_completed_phases(tmp_path, mock_llm):
         "last_status": "in_progress",
         "metadata": {},
     }
-    (workspace / ".pipeline_state.json").write_text(json.dumps(pre_state))
+    (workspace / ".pipeline_state.json").write_text(json.dumps(pre_state), encoding="utf-8", newline="\n")
 
     from src.core.strategist.engine import StrategistEngine
     from src.core.strategist.runner import PipelineRunner
@@ -1181,12 +1185,16 @@ async def test_reviewer_gets_full_draft_in_context(tmp_path):
                 "datasets": [],
                 "current_stage": "review",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     # A draft long enough that tier-2 truncation would lose information.
     long_draft = "\\section{Introduction}\nThis is the paper draft. " + ("Lorem ipsum dolor sit amet. " * 500)
-    (workspace / "paper_draft.tex").write_text(long_draft)
-    (workspace / "identification_strategy.md").write_text("# ID strategy\n" + "X" * 3000)
+    (workspace / "paper_draft.tex").write_text(long_draft, encoding="utf-8", newline="\n")
+    (workspace / "identification_strategy.md").write_text(
+        "# ID strategy\n" + "X" * 3000, encoding="utf-8", newline="\n"
+    )
 
     wo = ContractWorkOrder(
         paper_id=paper_id,
@@ -1218,7 +1226,9 @@ async def test_dispatcher_auto_fills_output_file(tmp_path):
     )
     # Workspace has a manifest so context-builder doesn't fail.
     (tmp_path / "manifest.json").write_text(
-        '{"paper_id": "p", "title": "T", "research_question": "RQ", "datasets": [], "current_stage": "designing"}'
+        '{"paper_id": "p", "title": "T", "research_question": "RQ", "datasets": [], "current_stage": "designing"}',
+        encoding="utf-8",
+        newline="\n",
     )
     out = _inject_context(wo, tmp_path)
     assert out.output_file == "paper_plan.md"
@@ -1364,8 +1374,8 @@ async def test_audit_bundle_contains_expected_files(tmp_path, monkeypatch):
     paper_id = str(uuid.uuid4())
     workspace = tmp_path / paper_id
     (workspace / "replication").mkdir(parents=True)
-    (workspace / "replication" / "estimation.py").write_text("# replication script\n")
-    (workspace / "audit_log.csv").write_text("id,query\n1,SELECT 1\n")
+    (workspace / "replication" / "estimation.py").write_text("# replication script\n", encoding="utf-8", newline="\n")
+    (workspace / "audit_log.csv").write_text("id,query\n1,SELECT 1\n", encoding="utf-8", newline="\n")
 
     # Point the API at this tmp workspace_root. Patch the binding inside
     # src.api.app, not src.config, because app.py imports the symbol at the top.
@@ -1494,7 +1504,7 @@ def test_paper_detail_renders(tmp_path, monkeypatch):
     paper_id = str(uuid.uuid4())
     workspace = tmp_path / paper_id
     workspace.mkdir()
-    (workspace / "paper_plan.md").write_text("# plan")
+    (workspace / "paper_plan.md").write_text("# plan", encoding="utf-8", newline="\n")
 
     monkeypatch.setattr(
         "src.api.app.get_settings",
@@ -1580,9 +1590,9 @@ def test_artifact_streaming_rejects_traversal(tmp_path, monkeypatch):
     paper_id = str(uuid.uuid4())
     workspace = tmp_path / paper_id
     workspace.mkdir()
-    (workspace / "ok.md").write_text("hello")
+    (workspace / "ok.md").write_text("hello", encoding="utf-8", newline="\n")
     # Sibling file outside the workspace that traversal would try to reach.
-    (tmp_path / "secret.txt").write_text("nope")
+    (tmp_path / "secret.txt").write_text("nope", encoding="utf-8", newline="\n")
 
     monkeypatch.setattr(
         "src.api.app.get_settings",
@@ -1628,7 +1638,7 @@ async def test_save_bibtex_writes_to_workspace(tmp_path):
     out = json.loads(await h.handle("save_bibtex", {"bibtex_entry": entry}))
     assert out["status"] == "saved"
     assert out["key"] == "smith2023"
-    bib = (tmp_path / "literature.bib").read_text()
+    bib = (tmp_path / "literature.bib").read_text(encoding="utf-8")
     assert "smith2023" in bib
 
     # Duplicate write is a no-op.
@@ -1666,15 +1676,19 @@ def test_assemble_refs_bib_merges_and_dedupes(tmp_path):
 
     (tmp_path / "literature.bib").write_text(
         "@article{a2023, title={A}, author={A}, year={2023}}\n"
-        "@article{shared2024, title={Shared}, author={X}, year={2024}}\n"
+        "@article{shared2024, title={Shared}, author={X}, year={2024}}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     (tmp_path / "user_refs.bib").write_text(
         "@article{b2022, title={B}, author={B}, year={2022}}\n"
-        "@article{shared2024, title={Shared dup}, author={Y}, year={2024}}\n"
+        "@article{shared2024, title={Shared dup}, author={Y}, year={2024}}\n",
+        encoding="utf-8",
+        newline="\n",
     )
     refs = assemble_refs_bib(tmp_path)
     assert refs is not None
-    text = refs.read_text()
+    text = refs.read_text(encoding="utf-8")
     # All three unique keys present.
     assert "a2023" in text
     assert "b2022" in text
@@ -1748,10 +1762,14 @@ def test_tier1_context_includes_user_data(tmp_path):
                 "datasets": [],
                 "current_stage": "designing",
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     (workspace / "data").mkdir()
-    (workspace / "data" / "trades.csv").write_text("id,price,volume\n1,100.5,50\n2,101.0,75\n3,99.8,30\n")
+    (workspace / "data" / "trades.csv").write_text(
+        "id,price,volume\n1,100.5,50\n2,101.0,75\n3,99.8,30\n", encoding="utf-8", newline="\n"
+    )
     ctx = build_tier1_context(workspace, "p")
     assert "Researcher-Provided Data Files" in ctx
     assert "data/trades.csv" in ctx

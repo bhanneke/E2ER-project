@@ -131,12 +131,12 @@ async def test_the_runner_records_the_skills_and_what_each_step_wrote(tmp_path: 
         logged.append((event_type, payload or {}))
 
     async def run_specialist(work_order, workspace, **kw):
-        (workspace / "paper_plan.md").write_text("the plan v2")
+        (workspace / "paper_plan.md").write_text("the plan v2", encoding="utf-8", newline="\n")
         return Contribution(paper_id=PID, specialist=work_order.specialist, output="", success=True)
 
     monkeypatch.setattr("src.db.events.log_event", log_event)
     monkeypatch.setattr(dispatcher, "run_specialist", run_specialist)
-    (tmp_path / "paper_plan.md").write_text("the plan v1")
+    (tmp_path / "paper_plan.md").write_text("the plan v1", encoding="utf-8", newline="\n")
     order = WorkOrder(paper_id=PID, specialist="idea_developer", focus="x", context="c")
     await dispatcher.execute_work_order(order, backend=None, workspace=tmp_path, model="m")  # type: ignore[arg-type]
     (start, sp), (end, ep) = logged
@@ -448,7 +448,7 @@ def test_models_are_matched_to_steps_by_time_not_by_order(tmp_path: Path):
 def test_the_preregistration_carries_its_plan_files(tmp_path: Path):
     b = tmp_path / "b"
     (b / "design").mkdir(parents=True)
-    (b / "design" / "preregistration.md").write_text("plan")
+    (b / "design" / "preregistration.md").write_text("plan", encoding="utf-8", newline="\n")
     (b / "design" / "preregistration.lock.json").write_text(
         json.dumps(
             {
@@ -457,7 +457,9 @@ def test_the_preregistration_carries_its_plan_files(tmp_path: Path):
                 "frozen_at": "2026-09-29 12:49:29",
                 "plan_files": {"event_design.json": "b" * 64},
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
     doc = build_dossier(_manifest(None), bundle=b)
     assert doc["preregistration"]["plan_files"] == {"event_design.json": "b" * 64}

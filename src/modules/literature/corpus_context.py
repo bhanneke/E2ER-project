@@ -330,7 +330,7 @@ def write_evidence(workspace: Path, evidence: CorpusEvidence) -> Path | None:
     target = Path(workspace) / "literature" / EVIDENCE_FILENAME
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(render_markdown(evidence), encoding="utf-8")
+        target.write_text(render_markdown(evidence), encoding="utf-8", newline="\n")
     except OSError as e:
         logger.warning("could not write %s: %s", target, e)
         return None

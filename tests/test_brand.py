@@ -24,7 +24,13 @@ def _hits(text: str) -> list[str]:
 
 
 def _help(*args: str) -> str:
-    out = subprocess.run([sys.executable, "-m", "src", *args, "--help"], cwd=ROOT, capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, "-m", "src", *args, "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     return out.stdout + out.stderr
 
 

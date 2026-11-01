@@ -174,7 +174,7 @@ def assemble_refs_bib(workspace: Path) -> Path | None:
             merged.append(entry.strip())
 
     refs_path = workspace / "refs.bib"
-    refs_path.write_text("\n\n".join(merged) + "\n", encoding="utf-8")
+    refs_path.write_text("\n\n".join(merged) + "\n", encoding="utf-8", newline="\n")
     return refs_path
 
 

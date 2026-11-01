@@ -85,6 +85,19 @@ class Limits:
     user: str = "1000:1000"
 
 
+def bind_mount(source: Path | str, target: str, *, readonly: bool = False) -> str:
+    """The value of ``docker run --mount`` for a bind mount of ``source`` (a folder or file of this computer).
+
+    Docker reads the value as one line of CSV: a path with a comma (``Reviews/Smith, Jones/study``) split
+    into a broken field and the container did not start. Such a field is quoted, as CSV quotes it. Windows
+    paths (``C:\\Users\\…``) go as they are; Docker Desktop maps them.
+    """
+    field = f"source={source}"
+    if any(c in field for c in ',"\n\r'):
+        field = '"' + field.replace('"', '""') + '"'
+    return f"type=bind,{field},target={target}" + (",readonly" if readonly else "")
+
+
 def docker_binary() -> str | None:
     for c in _DOCKER_CANDIDATES:
         found = shutil.which(c) if "/" not in c else (c if Path(c).is_file() else None)
@@ -268,9 +281,9 @@ def run_argv(
         "--tmpfs",
         f"/tmp:rw,exec,size={limits.tmp_gb}g",
         "--mount",
-        f"type=bind,source={package_dir.resolve()},target={PACKAGE_MOUNT},readonly",
+        bind_mount(package_dir.resolve(), PACKAGE_MOUNT, readonly=True),
         "--mount",
-        f"type=bind,source={run_dir.resolve()},target={RUN_MOUNT}",
+        bind_mount(run_dir.resolve(), RUN_MOUNT),
         "-e",
         "HOME=/tmp",
         "-e",
@@ -297,8 +310,8 @@ def _exec(runner: Runner, argv: list[str], timeout: float, log_base: Path) -> di
     out_s = out.decode("utf-8", "replace") if isinstance(out, bytes) else (out or "")
     err_s = err.decode("utf-8", "replace") if isinstance(err, bytes) else (err or "")
     log_base.parent.mkdir(parents=True, exist_ok=True)
-    log_base.with_suffix(".stdout.log").write_text(out_s, encoding="utf-8")
-    log_base.with_suffix(".stderr.log").write_text(err_s, encoding="utf-8")
+    log_base.with_suffix(".stdout.log").write_text(out_s, encoding="utf-8", newline="\n")
+    log_base.with_suffix(".stderr.log").write_text(err_s, encoding="utf-8", newline="\n")
     return {
         "exit_code": code,
         "timed_out": timed_out,
@@ -552,4 +565,4 @@ def run_sandbox(
 
 
 def _write_log(workspace: Path, log: dict[str, Any]) -> None:
-    (workspace / LOG_FILE).write_text(json.dumps(log, indent=2, default=str) + "\n", encoding="utf-8")
+    (workspace / LOG_FILE).write_text(json.dumps(log, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")

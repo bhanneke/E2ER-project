@@ -87,7 +87,7 @@ async def test_the_run_says_the_search_found_nothing_today(tmp_path: Path):
     n, events = await _acquire(tmp_path, _source("openalex", spent), _source("arxiv", SearchResult([], "arxiv", "q")))
     assert n == 0
     expected = "OpenAlex's free daily budget for this network is used up; the literature search found nothing today"
-    record = json.loads((tmp_path / "literature" / "web_search.json").read_text())
+    record = json.loads((tmp_path / "literature" / "web_search.json").read_text(encoding="utf-8"))
     assert record["notices"][0].startswith(expected)
     assert events == [("literature_search_notice", {"notice": record["notices"][0]})]
 
@@ -99,7 +99,7 @@ async def test_other_sources_still_count_and_the_notice_says_so(tmp_path: Path):
         tmp_path, _source("openalex", spent), _source("arxiv", SearchResult([hit], "arxiv", "q"))
     )
     assert n == 1
-    record = json.loads((tmp_path / "literature" / "web_search.json").read_text())
+    record = json.loads((tmp_path / "literature" / "web_search.json").read_text(encoding="utf-8"))
     assert "used the other sources only today" in record["notices"][0]
 
 
@@ -107,7 +107,7 @@ async def test_no_notice_when_openalex_answers(tmp_path: Path):
     hit = PaperMetadata(title="Weather words in English novels", authors=["Smith"], year=2020, doi="10.1/w")
     _n, events = await _acquire(tmp_path, _source("openalex", SearchResult([hit], "openalex", "q")))
     assert events == []
-    assert "notices" not in json.loads((tmp_path / "literature" / "web_search.json").read_text())
+    assert "notices" not in json.loads((tmp_path / "literature" / "web_search.json").read_text(encoding="utf-8"))
 
 
 async def test_the_literature_tool_passes_the_notice_to_the_specialist(monkeypatch, tmp_path: Path):

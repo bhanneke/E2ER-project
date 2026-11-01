@@ -251,22 +251,10 @@ def _key(entry: dict[str, Any]) -> tuple[Any, ...]:
 def _locked(path: Path) -> Iterator[None]:
     """An exclusive lock on ``.<name>.lock`` beside the file while the block runs (parallel loads of a study)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path.with_name(f".{path.name}.lock"), "a+b") as fh:
-        try:
-            import fcntl
+    from ...core.file_lock import exclusive
 
-            fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-        except ImportError:  # Windows
-            import msvcrt
-
-            fh.seek(0)
-            while True:
-                try:
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
-                    break
-                except OSError:
-                    time.sleep(0.05)
-        yield  # the lock goes with the file handle
+    with open(path.with_name(f".{path.name}.lock"), "a+b") as fh, exclusive(fh):
+        yield
 
 
 def _read_loads(path: Path) -> list[Any]:
@@ -328,7 +316,7 @@ def record_load(workspace: Path, record: dict[str, Any]) -> Path:
             "loads": [a for a in loads if not (isinstance(a, dict) and _key(a) == key)] + [record],
         }
         tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         if path.is_file():
             shutil.copyfile(path, path.with_name(f".{path.name}.bak"))
         os.replace(tmp, path)

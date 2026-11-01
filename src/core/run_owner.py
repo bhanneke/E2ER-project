@@ -73,11 +73,18 @@ def process_started(pid: int) -> str | None:
     """When process ``pid`` started, as ``ps`` prints it, or None when unknown."""
     if pid == os.getpid() and pid in _started_cache:
         return _started_cache[pid]
+    if os.name == "nt":
+        return _windows_started(pid)
     if os.name != "posix":
         return None
     try:
         out = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5, check=False
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return None
@@ -89,8 +96,10 @@ def process_started(pid: int) -> str | None:
 
 def pid_alive(pid: int) -> bool | None:
     """Does a process with this PID exist? None when it cannot be told (not POSIX)."""
+    if os.name == "nt":
+        return _windows_alive(pid)  # never os.kill(pid, 0): on Windows it ends the process
     if os.name != "posix":
-        return None  # os.kill(pid, 0) sends CTRL_C_EVENT on Windows
+        return None
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -100,6 +109,63 @@ def pid_alive(pid: int) -> bool | None:
     except OSError:
         return None
     return True
+
+
+# ── Windows: the same answers from the Win32 API (there is no ps and no signal 0) ──
+
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_STILL_ACTIVE = 259
+_ERROR_ACCESS_DENIED = 5
+
+
+def _windows_handle(pid: int) -> tuple[Any, Any]:
+    """(kernel32, a handle to process ``pid`` or 0) and the error when there is no handle."""
+    import ctypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    return kernel32, handle
+
+
+def _windows_alive(pid: int) -> bool | None:
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        kernel32, handle = _windows_handle(pid)
+    except (OSError, AttributeError):
+        return None
+    if not handle:
+        # Access denied: the process exists and belongs to another user. Otherwise no such process.
+        return True if ctypes.get_last_error() == _ERROR_ACCESS_DENIED else False  # type: ignore[attr-defined]
+    try:
+        code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return None
+        return code.value == _STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _windows_started(pid: int) -> str | None:
+    """The process's creation time (100-ns intervals since 1601, as Windows counts), or None."""
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        kernel32, handle = _windows_handle(pid)
+    except (OSError, AttributeError):
+        return None
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel32.GetProcessTimes(handle, *(ctypes.byref(x) for x in times)):
+            return None
+        created = times[0]
+        return f"windows:{(created.dwHighDateTime << 32) | created.dwLowDateTime}"
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def this_owner(port: int | None = None) -> dict[str, Any]:

@@ -545,7 +545,7 @@ def uv_lock(requirements: Path, python_minor: str, as_of: str) -> tuple[str | No
         if as_of:
             cmd += ["--exclude-newer", as_of]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            proc = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=600)
         except (OSError, subprocess.SubprocessError) as e:
             return None, f"the packages could not be resolved ({e})"
         if proc.returncode != 0 or not out.is_file():
@@ -585,7 +585,7 @@ def pip_download(requirements: Path, python_minor: str, dest: Path) -> tuple[lis
     if locked:
         cmd.append("--no-deps")  # the lock lists every package already
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        proc = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace", timeout=3600)
     except (OSError, subprocess.SubprocessError) as e:
         return [], f"the wheels could not be downloaded ({e})"
     if proc.returncode != 0:
@@ -756,12 +756,23 @@ def build(
 
     prov = _read_json(folder / "provenance.json") or {}
     files = study_files(folder)
+    clashes = case_collisions(files)
+    if clashes:
+        pairs = "; ".join(f"{a} and {b}" for a, b in clashes[:5])
+        raise PackageError(
+            f"names that differ only in case: {pairs}. macOS and Windows keep them as one, so the package could "
+            "not be opened there. Rename one of each pair and export again."
+        )
     recipe, why = _recipe(folder)
     left_out = left_out_data(folder, files, recipe, no_data=no_data, host=host, max_file_bytes=max_file_bytes)
     for item in left_out:
         files.pop(item["path"], None)
     rebuild = rebuild_for(folder, recipe, left_out)
     notes: list[str] = []
+    for name in files:
+        on_windows = windows_name_problem(name)
+        if on_windows:
+            notes.append(f"{name} {on_windows}: the package cannot be opened on Windows. Rename it and export again.")
     for item in left_out:
         if item["rebuilt_by"] is None and item["needed"]:
             notes.append(
@@ -790,7 +801,7 @@ def build(
                     + (f", with releases up to {as_of}" if as_of else "")
                     + ".\n"
                 )
-                lock.write_text(header + text, encoding="utf-8")
+                lock.write_text(header + text, encoding="utf-8", newline="\n")
                 extra[LOCK] = lock
                 environment.update(
                     lock=LOCK,
@@ -798,10 +809,15 @@ def build(
                     resolved_as_of=as_of or None,
                     note=f"{LOCK} pins every package with its hashes; `e2er reproduce` installs from it.",
                 )
+            elif text is not None and not note:
+                # Resolved to nothing: the study's code needs Python alone (uv writes an empty lock).
+                environment["note"] = (
+                    f"{recipe['requirements']} lists no packages: the study's code needs Python alone."
+                )
             else:
                 environment["note"] = (
-                    f"{note}. The package carries {recipe['requirements']} (the study's own pins, without hashes); "
-                    "`e2er reproduce` installs from it."
+                    f"{note or 'the packages could not be resolved'}. The package carries {recipe['requirements']} "
+                    "(the study's own pins, without hashes); `e2er reproduce` installs from it."
                 )
                 notes.append(environment["note"])
         elif recipe is None:
@@ -898,6 +914,68 @@ def build(
             os.replace(partial, target)
         finally:
             partial.unlink(missing_ok=True)
+    return Packed(path=target, manifest=manifest, size=target.stat().st_size, notes=notes)
+
+
+def repack(folder: Path, out: Path) -> Packed:
+    """An unpacked package written into its ``.e2er`` file again, from the folder's own e2er-package.json.
+
+    The folder of a study that ``e2er publish --github`` pushed is its package, opened: e2er-package.json
+    lists every file with its SHA-256 and size. That list is kept as it is (the same fingerprint, the same
+    files left out), every file it lists must be in the folder with exactly its SHA-256 and size, and the
+    entries are written in the list's order with the zip settings :func:`build` uses, so the file is the
+    package the folder was opened from (byte for byte where zlib compresses alike). Files of the folder the
+    list does not name (a README another tool added) are not taken, and are named in the notes.
+    """
+    folder = Path(folder).expanduser().resolve()
+    manifest_path = folder / MANIFEST
+    if not manifest_path.is_file():
+        raise PackageError(f"{folder} has no {MANIFEST}: it is not an unpacked package")
+    manifest_bytes = manifest_path.read_bytes()
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+        raise PackageError(f"{MANIFEST} is larger than e2er reads")
+    try:
+        manifest = json.loads(manifest_bytes)
+    except ValueError as e:
+        raise PackageError(f"{MANIFEST} is not JSON: {e}") from e
+    if not isinstance(manifest, dict) or not str(manifest.get("format") or "").startswith("e2er-package/"):
+        raise PackageError(f"{MANIFEST} is not the list of a .e2er package")
+    contents = manifest.get("contents")
+    if not isinstance(contents, list) or not contents:
+        raise PackageError(f"{MANIFEST} lists no files")
+    if fingerprint(contents) != manifest.get("fingerprint"):
+        raise PackageError(f"{MANIFEST}'s fingerprint does not match its own list of files")
+    entries: list[tuple[str, Path]] = []
+    problems: list[str] = []
+    for item in contents:
+        rel = item.get("path") if isinstance(item, dict) else None
+        if not isinstance(rel, str) or _name_problem(rel) or rel == MANIFEST:
+            raise PackageError(f"{MANIFEST} lists a path e2er does not write: {rel!r}")
+        src = folder / rel
+        if src.is_symlink() or not src.is_file():
+            problems.append(f"{rel}: missing")
+        elif src.stat().st_size != item.get("bytes") or _sha256(src) != item.get("sha256"):
+            problems.append(f"{rel}: not the file the list names (SHA-256 or size differs)")
+        entries.append((rel, src))
+    if problems:
+        raise PackageError(
+            "the folder is not the package its list describes; nothing was written:\n  " + "\n  ".join(problems[:20])
+        )
+    listed = {rel for rel, _ in entries} | {MANIFEST}
+    from .bundle_files import walk
+
+    extra = sorted(r for r in walk(folder).files if r not in listed)
+    notes = [f"{r} is in the folder but not in the package's list; it was not taken" for r in extra]
+    target = Path(out).expanduser().resolve()
+    if target.is_relative_to(folder):
+        raise PackageError("the package cannot be written into the folder it packs; choose another place")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(f".{target.name}.partial")
+    try:
+        _write_zip(partial, manifest_bytes, entries)
+        os.replace(partial, target)
+    finally:
+        partial.unlink(missing_ok=True)
     return Packed(path=target, manifest=manifest, size=target.stat().st_size, notes=notes)
 
 
@@ -1037,6 +1115,46 @@ def _folded(name: str) -> str:
     return unicodedata.normalize("NFC", name).casefold()
 
 
+#: Names Windows keeps for devices: ``NUL`` or ``con.txt`` opens the device, not a file.
+_WINDOWS_DEVICES = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
+_WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
+
+
+def windows_name_problem(rel: str) -> str | None:
+    """Why Windows cannot hold the file ``rel`` (a package path), or None.
+
+    ``a:b`` would write an NTFS stream of ``a``, ``NUL`` the null device, and a name ending in a dot or a
+    space loses it (``data.`` becomes ``data``): the file would not be the one the package lists.
+    """
+    for seg in rel.split("/"):
+        bad = sorted({c for c in seg if c in _WINDOWS_FORBIDDEN})
+        if bad:
+            return f"has {' '.join(bad)} in its name, which Windows does not allow"
+        if seg.endswith((".", " ")):
+            return "ends with a dot or a space, which Windows drops from a name"
+        if seg.split(".")[0].rstrip(" ").upper() in _WINDOWS_DEVICES:
+            return f"is named {seg.split('.')[0]}, a device on Windows"
+    return None
+
+
+def case_collisions(paths: Any) -> list[tuple[str, str]]:
+    """Pairs of paths that differ only in case (or Unicode form): one file on macOS and Windows."""
+    seen: dict[str, str] = {}
+    out: list[tuple[str, str]] = []
+    for rel in paths:
+        parts = rel.split("/")
+        # A folder counts too: Data/a.csv and data/b.csv are one folder on macOS and Windows.
+        for i in range(1, len(parts) + 1):
+            prefix = "/".join(parts[:i])
+            folded = _folded(prefix)
+            other = seen.setdefault(folded, prefix)
+            if other != prefix and (other, prefix) not in out:
+                out.append((other, prefix))
+    return out
+
+
 def check_entries(zf: zipfile.ZipFile, manifest: dict[str, Any], max_total: int = MAX_TOTAL_BYTES) -> None:
     """Refuse an unsafe or incomplete archive before anything is written (names, links, sizes, the list)."""
     infos = zf.infolist()
@@ -1055,6 +1173,8 @@ def check_entries(zf: zipfile.ZipFile, manifest: dict[str, Any], max_total: int 
             raise PackageError(f"the package holds a symbolic link ({name}); a package holds files only")
         if info.is_dir():
             continue
+        if sys.platform == "win32" and windows_name_problem(name):
+            raise PackageError(f"{name} cannot be written on Windows: it {windows_name_problem(name)}")
         folded = _folded(name)
         if folded in seen:
             raise PackageError(f"the package holds {name} twice (or two names that differ only in case)")
@@ -1113,7 +1233,10 @@ def open_package(path: Path, dest: Path, *, max_total: int = MAX_TOTAL_BYTES) ->
                 raise PackageError(
                     f"the package unpacks to {human_size(need)}, and {probe} has {human_size(free)} free; refused"
                 )
-            dest.mkdir(parents=True, exist_ok=True)
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                raise PackageError(_unwritable("the folder", dest, e)) from e
             root = dest.resolve()
             for item in sorted(manifest["contents"], key=lambda c: c["path"]):
                 _extract(zf, item, root)
@@ -1136,10 +1259,13 @@ def _extract(zf: zipfile.ZipFile, item: dict[str, Any], root: Path) -> None:
     target = root.joinpath(*rel.split("/"))
     if not target.resolve().is_relative_to(root):
         raise PackageError(f"unsafe name in the package: {rel!r} leaves the folder")
-    target.parent.mkdir(parents=True, exist_ok=True)
     h = hashlib.sha256()
     written = 0
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+    except OSError as e:
+        raise PackageError(_unwritable(rel, target, e)) from e
     with os.fdopen(fd, "wb") as fout, zf.open(rel) as fin:
         for chunk in iter(lambda: fin.read(1 << 20), b""):
             written += len(chunk)
@@ -1149,6 +1275,22 @@ def _extract(zf: zipfile.ZipFile, item: dict[str, Any], root: Path) -> None:
             fout.write(chunk)
     if written != item["bytes"] or h.hexdigest() != item["sha256"]:
         raise PackageError(f"{rel} does not match {MANIFEST}: it was changed after packing")
+
+
+#: The longest path Windows opens unless long paths are turned on (MAX_PATH, with its final NUL).
+WINDOWS_MAX_PATH = 260
+
+
+def _unwritable(rel: str, target: Path, e: OSError) -> str:
+    """Why ``rel`` could not be written at ``target``, in words (and what to do on Windows about a long path)."""
+    why = f"{rel} could not be written ({e.strerror or type(e).__name__})"
+    if sys.platform == "win32" and len(str(target)) >= WINDOWS_MAX_PATH:
+        why += (
+            f": its path has {len(str(target))} characters, and Windows opens at most {WINDOWS_MAX_PATH - 1} "
+            "unless you turn on long paths. Unpack into a short folder (C:\\e2er\\study), or turn on long "
+            "paths (docs/REVIEWING.md says how)"
+        )
+    return why
 
 
 # ── a package's own files in an unpacked folder ──────────────────────────────

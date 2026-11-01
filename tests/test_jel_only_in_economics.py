@@ -42,7 +42,7 @@ def template():
 def test_non_economics_drafts_with_a_jel_line_go_back(tmp_path: Path, template, name: str):
     template(name)
     assert not active_economics()
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
     c = check_draft_phrases(tmp_path, "paper_draft.tex")
     assert not c.ok
     assert '"JEL codes" in:' in c.reason and "C22, C53, Q54" in c.reason
@@ -53,12 +53,12 @@ def test_non_economics_drafts_with_a_jel_line_go_back(tmp_path: Path, template, 
 def test_economics_drafts_keep_their_jel_codes(tmp_path: Path, template, name: str):
     template(name)
     assert active_economics()
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
     assert check_draft_phrases(tmp_path, "paper_draft.tex").ok
 
 
 def test_without_a_template_jel_is_allowed(tmp_path: Path):
-    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8")
+    (tmp_path / "paper_draft.tex").write_text(DRAFT, encoding="utf-8", newline="\n")
     assert check_draft_phrases(tmp_path, "paper_draft.tex").ok
 
 
@@ -67,7 +67,7 @@ def test_a_revisor_edit_that_adds_a_jel_line_goes_back(tmp_path: Path, template)
 
     template("descriptive-study")
     edits = {"edits": [{"edit_type": "replace_text", "find": "x", "replace": "JEL: C22. Keywords: earthquakes."}]}
-    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8")
+    (tmp_path / "paper_draft.tex.edits.json").write_text(json.dumps(edits), encoding="utf-8", newline="\n")
     assert not check_patch_phrases(tmp_path).ok
 
 

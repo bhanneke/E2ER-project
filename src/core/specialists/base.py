@@ -266,6 +266,10 @@ async def run_specialist(
                 existing = (result.error or "").strip()
                 prefix = f"{existing} | " if existing else ""
                 result.error = f"{prefix}contract violation: {block_summary}"
+                if result.diagnostic:
+                    # Why the backend wrote nothing (Codex: its sandbox refused), for the researcher;
+                    # not in the feedback below, which goes to the model.
+                    result.error += f" | {result.diagnostic}"
                 # Persist the violation for the NEXT attempt's prompt (consumed
                 # once by read_contract_feedback above) — without this the retry
                 # is blind and just re-fails until the circuit breaker pauses.
@@ -1104,7 +1108,7 @@ def _keep_answer_as_markdown_output(workspace: Path, specialist: str, expected: 
     if _find_output_file(workspace, specialist, target):  # written, but under a subfolder
         return False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text + "\n", encoding="utf-8")
+    path.write_text(text + "\n", encoding="utf-8", newline="\n")
     logger.warning("%s: wrote no %s; its final answer (%d chars) was saved as that file", specialist, target, len(text))
     return True
 

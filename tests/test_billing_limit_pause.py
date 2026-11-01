@@ -159,7 +159,9 @@ async def test_the_run_pauses_with_the_sentence(tmp_path, events):
     paper_id = str(uuid.uuid4())
     ws = tmp_path / paper_id
     ws.mkdir()
-    (ws / "manifest.json").write_text(json.dumps({"paper_id": paper_id, "title": "T", "research_question": "Q?"}))
+    (ws / "manifest.json").write_text(
+        json.dumps({"paper_id": paper_id, "title": "T", "research_question": "Q?"}), encoding="utf-8", newline="\n"
+    )
     runner = PipelineRunner(
         paper_id=paper_id, workspace=ws, backend=MagicMock(), model="m", mode="single_pass", backend_name="openrouter"
     )

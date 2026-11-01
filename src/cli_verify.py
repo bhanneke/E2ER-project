@@ -44,6 +44,9 @@ Everything in the folder can be rewritten consistently by whoever holds it,
 provenance.json and e2er.json included. ``--against <e2er.org address>``
 compares the folder with what e2er.org published (GET only): the one anchor
 outside the folder. Without it, verify says it verified against the folder only.
+A .e2er file verified ``--against`` is also compared with the study package
+e2er.org records for that version (``package published``): the same fingerprint
+means the same files; the SHA-256 says whether it is the recorded file itself.
 """
 
 from __future__ import annotations
@@ -103,6 +106,23 @@ def _load_provenance(bundle: Path) -> tuple[dict[str, Any] | None, str | None]:
     return prov, None
 
 
+def _only_line_endings(path: Path, meta: dict[str, Any]) -> bool:
+    """Whether ``path`` is the listed file with its LF line endings turned into CRLF (and nothing else).
+
+    Hashes stay byte-based: such a file still fails. This only says why, for a reader on Windows whose Git
+    converted line endings on checkout.
+    """
+    try:
+        if path.stat().st_size > 64 * 1024 * 1024:
+            return False
+        data = path.read_bytes()
+    except OSError:
+        return False
+    if b"\r\n" not in data:
+        return False
+    return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest() == meta.get("sha256")
+
+
 def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] | None = None) -> Check:
     """Every file against provenance.json: listed, same bytes, same size; nothing else; no links.
 
@@ -150,7 +170,16 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     if listing.collisions:
         bits.append(f"names that differ only in Unicode normalisation ({', '.join(listing.collisions[:3])})")
     if mismatched:
+        crlf = [rel for rel in mismatched if _only_line_endings(on_disk[rel], files[rel])]
         bits.append(f"{len(mismatched)} modified ({', '.join(mismatched[:3])})")
+        if crlf:
+            bits.append(
+                f"{len(crlf)} of them {'differs' if len(crlf) == 1 else 'differ'} only in line endings "
+                f"({', '.join(crlf[:3])}): the bytes are "
+                "compared as they are, and something wrote Windows line endings (CRLF) into the files, usually Git "
+                "on Windows (core.autocrlf). Fetch the .e2er package instead (`e2er fetch`), or clone again with "
+                "`git clone -c core.autocrlf=false`"
+            )
     if resized and set(resized) - set(mismatched):
         odd = sorted(set(resized) - set(mismatched))
         bits.append(f"{len(odd)} with a size other than provenance.json lists ({', '.join(odd[:3])})")
@@ -483,7 +512,7 @@ def _anchor_before_redactions(bundle: Path) -> Check | None:
     for text in texts:
         with tempfile.TemporaryDirectory() as td:
             scratch = Path(td)
-            (scratch / "provenance.json").write_text(text, encoding="utf-8")
+            (scratch / "provenance.json").write_text(text, encoding="utf-8", newline="\n")
             if (bundle / "e2er.json").is_file():
                 shutil.copy2(bundle / "e2er.json", scratch / "e2er.json")
             if (bundle / ".e2er" / "link.json").is_file():
@@ -622,6 +651,80 @@ def _check_against(bundle: Path, kind: str, record: Any, source: str, short: str
     return Check("published", PASS, f"the folder's content id is the one {source} names")
 
 
+def _published_package(kind: str, record: Any, bundle: Path, against: str | None) -> tuple[Any, str]:
+    """(the package record e2er.org keeps for the version this folder is, what it was read from).
+
+    A study record: the matching version's ``package``. A dossier: its own record
+    (``/api/v1/dossiers/<id>/package``, a GET; the dossier document itself never carries it, since the
+    package holds the dossier). A saved e2er.json: its ``package``. None when nothing is recorded.
+    """
+    if not isinstance(record, dict):
+        return None, ""
+    if kind == "study":
+        content_id = _content_id(bundle)
+        hit = next(
+            (v for v in record.get("versions") or [] if isinstance(v, dict) and v.get("content_id") == content_id),
+            None,
+        )
+        if hit is None:
+            return None, ""
+        return hit.get("package"), f"version {hit.get('number')}"
+    if kind == "manifest":
+        return record.get("package"), "the saved e2er.json"
+    if kind == "dossier" and against:
+        from urllib.parse import urlparse
+
+        from .core import platform_client as pc
+
+        u = urlparse(against)
+        parts = [p for p in u.path.split("/") if p]
+        short = parts[1] if len(parts) >= 2 and parts[0] == "d" else (parts[3] if len(parts) >= 4 else None)
+        if not short:
+            return None, ""
+        try:
+            with pc.client_factory(f"{u.scheme}://{u.netloc}") as client:
+                resp = client.get(f"/api/v1/dossiers/{short}/package", headers={"accept": "application/json"})
+        except Exception as e:  # noqa: BLE001 - network errors are the user's to see
+            raise AgainstError(f"could not ask {u.netloc} for the dossier's package: {e}") from e
+        if resp.status_code == 404:
+            return None, "the dossier"
+        if resp.status_code != 200:
+            raise AgainstError(f"{u.netloc} answered {resp.status_code} for the dossier's package")
+        try:
+            body = resp.json()
+        except ValueError as e:
+            raise AgainstError(f"{u.netloc} did not answer with JSON for the dossier's package") from e
+        return (body or {}).get("package") if isinstance(body, dict) else None, "the dossier"
+    return None, ""
+
+
+def _check_package_against(file: Path, fingerprint: Any, rec: Any, where: str, source: str) -> Check:
+    """The .e2er file against the package e2er.org records: its fingerprint (the same files), and its bytes."""
+    from .core import study_package as sp
+
+    if rec is None:
+        return Check("package published", SKIP, f"{source} records no study package for {where or 'this folder'}")
+    bad = sp.record_problems(rec)
+    if bad:
+        return Check("package published", FAIL, f"the package record of {source} is malformed: {'; '.join(bad)}")
+    if fingerprint != rec["fingerprint"]:
+        return Check(
+            "package published",
+            FAIL,
+            f"this package (fingerprint {str(fingerprint)[:19]}…) is not the one {source} records for {where} "
+            f"({rec['fingerprint'][:19]}…): its files differ",
+        )
+    same_bytes = sp.sha256_file(file) == rec["sha256"] and file.stat().st_size == rec["bytes"]
+    tail = (
+        "the file is the one recorded, byte for byte (SHA-256)"
+        if same_bytes
+        else "the file's bytes are not the recorded file's (packed again), its list of files is the same"
+    )
+    return Check(
+        "package published", PASS, f"its fingerprint is the one {source} records for {where} ({rec['host']}); {tail}"
+    )
+
+
 # ── workspace reconstruction for the reuse-based checks ──────────────────────
 
 
@@ -652,7 +755,7 @@ def _reconstruct_workspace(bundle: Path, ws: Path) -> None:
         shutil.copy2(bundle / "data" / "data_dictionary.json", ws / "data_dictionary.json")
     template = ((_load_json(bundle / "provenance.json") or {}).get("run") or {}).get("template")
     if template and not (ws / "manifest.json").exists():
-        (ws / "manifest.json").write_text(json.dumps({"pipeline": template}), encoding="utf-8")
+        (ws / "manifest.json").write_text(json.dumps({"pipeline": template}), encoding="utf-8", newline="\n")
     # A text study's checks recount the corpus: its design, the corpus (data.db) and
     # the word lists the design names (stop words, lemmas, dictionaries, lexicons).
     if (bundle / "design" / "corpus_design.json").is_file():
@@ -1740,6 +1843,7 @@ def verify(
     with contextlib.ExitStack() as stack:
         pre: list[Check] = []
         left_out: dict[str, dict[str, Any]] | None = None
+        package: tuple[Path, Any] | None = None
         if pkg.is_package(bundle_path):
             # A .e2er package: unpacked into a temporary folder, every file checked against its manifest first.
             tmp = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="e2er-verify-")))
@@ -1767,6 +1871,7 @@ def verify(
                     f"{opened.files} file(s) match {pkg.MANIFEST}; fingerprint {opened.manifest.get('fingerprint')}",
                 )
             )
+            package = (bundle_path, opened.manifest.get("fingerprint"))
             bundle_path = opened.root
             # The manifest's declarations are the packer's word: only those the study's own records support
             # count (a source's terms, larger than the host takes), as in a folder.
@@ -1774,7 +1879,7 @@ def verify(
         elif not bundle_path.is_dir():
             print(f"e2er verify: {bundle} is not a folder or a .e2er package", file=sys.stderr)
             return 2
-        return _verify_folder(bundle_path, pre, online, json_output, against, against_file, left_out)
+        return _verify_folder(bundle_path, pre, online, json_output, against, against_file, left_out, package)
     return 2  # not reached
 
 
@@ -1786,6 +1891,7 @@ def _verify_folder(
     against: str | None,
     against_file: str | None,
     package_left_out: dict[str, dict[str, Any]] | None = None,
+    package: tuple[Path, Any] | None = None,
 ) -> int:
     checks = pre + _run_checks(bundle_path, online, package_left_out)
     if against or against_file:
@@ -1797,6 +1903,13 @@ def _verify_folder(
                 kind, record = _read_published_file(str(against_file))
                 source, short = str(against_file), None
             checks.append(_check_against(bundle_path, kind, record, source, short))
+            if package is not None:
+                # A .e2er file: its fingerprint against the package e2er.org records for this version.
+                try:
+                    rec, where = _published_package(kind, record, bundle_path, against)
+                    checks.append(_check_package_against(package[0], package[1], rec, where, source))
+                except AgainstError as e:
+                    checks.append(Check("package published", FAIL, str(e)))
         except AgainstError as e:
             checks.append(Check("published", FAIL, str(e)))
     banner, code = _verdict(checks)

@@ -22,7 +22,7 @@ from src.modules.data.byod_import import import_corpus_into_data_db
 def _write_csv(ws: Path, rel: str, text: str) -> None:
     p = ws / "data" / rel
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8", newline="\n")
 
 
 def test_sanitize_table_name():

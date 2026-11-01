@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 import sysconfig
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -179,7 +180,9 @@ async def test_study_dotenv_reaches_the_wrappers(cfg, tmp_path, monkeypatch):
     wrappers, which read the .env of their own cwd."""
     monkeypatch.delenv("E2ER_TEST_ONLY_IN_DOTENV", raising=False)
     monkeypatch.setenv("E2ER_TEST_ALREADY_SET", "from-env")
-    (tmp_path / ".env").write_text("E2ER_TEST_ONLY_IN_DOTENV=yes\nE2ER_TEST_ALREADY_SET=from-file\n")
+    (tmp_path / ".env").write_text(
+        "E2ER_TEST_ONLY_IN_DOTENV=yes\nE2ER_TEST_ALREADY_SET=from-file\n", encoding="utf-8", newline="\n"
+    )
     fake, calls = _fake_proc(_OK_EVENTS)
     with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
         await _call(CodexBackend(), paper_id="p1")
@@ -204,7 +207,7 @@ async def test_claude_code_uses_the_same_environment(cfg, tmp_path):
 
 async def test_codex_reads_the_last_message_file_and_records_usage(cfg):
     def write_last(cmd, _kw):
-        Path(cmd[cmd.index("-o") + 1]).write_text("FINAL ANSWER\n")
+        Path(cmd[cmd.index("-o") + 1]).write_text("FINAL ANSWER\n", encoding="utf-8", newline="\n")
 
     fake, _ = _fake_proc(_OK_EVENTS, on_call=write_last)
     with patch("src.modules.llm.codex.asyncio.create_subprocess_exec", new=fake):
@@ -327,6 +330,11 @@ async def test_codex_does_not_retry_a_usage_limit(cfg):
     assert not r.success and n["i"] == 1
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX process groups (os.getpgid/os.killpg); Windows ends the process tree with taskkill /T, "
+    "tests/test_cross_platform.py::test_kill_tree_ends_a_process_and_its_children runs it there",
+)
 @pytest.mark.parametrize("backend_cls", [CodexBackend, GeminiBackend])
 async def test_timeout_kills_the_whole_process_group(cfg, backend_cls):
     cfg(CODEX_TIMEOUT="1", GEMINI_TIMEOUT="1")
@@ -342,8 +350,8 @@ async def test_timeout_kills_the_whole_process_group(cfg, backend_cls):
     with (
         patch(f"src.modules.llm.{mod}.asyncio.create_subprocess_exec", new=AsyncMock(return_value=proc)),
         patch("src.modules.llm.gemini._probe_gemini_flags", return_value=(True, True)),
-        patch("src.modules.llm.cli_support.os.getpgid", return_value=31337) as getpgid,
-        patch("src.modules.llm.cli_support.os.killpg") as killpg,
+        patch("src.core.child_env.os.getpgid", return_value=31337) as getpgid,
+        patch("src.core.child_env.os.killpg") as killpg,
     ):
         r = await _call(backend_cls())
     assert not r.success and "timed out" in (r.error or "")
@@ -365,7 +373,9 @@ def _write_models_cache(home: Path) -> None:
                     {"slug": "big-one", "priority": 2, "visibility": "list", "description": "Frontier."},
                 ]
             }
-        )
+        ),
+        encoding="utf-8",
+        newline="\n",
     )
 
 
@@ -412,7 +422,7 @@ def test_a_per_paper_model_reaches_the_backend(cfg, backend):
 def test_resolve_cli_honours_the_configured_path(cfg, tmp_path):
     exe = tmp_path / "bin" / "my-codex"
     exe.parent.mkdir()
-    exe.write_text("#!/bin/sh\n")
+    exe.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     exe.chmod(0o755)
     cfg(CODEX_PATH=str(exe))
     assert cli_support.resolve_cli("codex", get_settings()) == str(exe)
@@ -422,7 +432,7 @@ def test_resolve_cli_honours_the_configured_path(cfg, tmp_path):
 def test_resolve_cli_finds_the_chatgpt_apps_codex(cfg, tmp_path, monkeypatch):
     app = tmp_path / "ChatGPT.app" / "Contents" / "Resources" / "codex"
     app.parent.mkdir(parents=True)
-    app.write_text("#!/bin/sh\n")
+    app.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     app.chmod(0o755)
     monkeypatch.setattr(cli_support, "_EXTRA_LOCATIONS", {"codex": (str(app),)})
     with patch("src.modules.llm.cli_support.shutil.which", return_value=None):
@@ -431,7 +441,7 @@ def test_resolve_cli_finds_the_chatgpt_apps_codex(cfg, tmp_path, monkeypatch):
 
 def test_a_wrong_configured_path_is_not_papered_over(cfg, tmp_path, monkeypatch):
     app = tmp_path / "codex"
-    app.write_text("#!/bin/sh\n")
+    app.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     app.chmod(0o755)
     monkeypatch.setattr(cli_support, "_EXTRA_LOCATIONS", {"codex": (str(app),)})
     cfg(CODEX_PATH=str(tmp_path / "nope" / "codex"))
@@ -444,11 +454,11 @@ async def test_doctor_uses_the_configured_cli_path(cfg, tmp_path, monkeypatch):
     # A signed-in Codex home, so the check does not depend on the machine's ~/.codex.
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
-    (codex_home / "auth.json").write_text("{}")
+    (codex_home / "auth.json").write_text("{}", encoding="utf-8", newline="\n")
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     exe = tmp_path / "codex-bin"
-    exe.write_text("#!/bin/sh\n")
+    exe.write_text("#!/bin/sh\n", encoding="utf-8", newline="\n")
     exe.chmod(0o755)
     cfg(CODEX_PATH=str(exe), LLM_BACKEND="codex")
     with patch("src.modules.llm.cli_support.shutil.which", return_value=None):

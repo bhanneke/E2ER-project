@@ -30,7 +30,7 @@ from src.doctor import FAIL, render_human, run_provider_checks  # noqa: E402
 async def _amain() -> int:
     checks = await run_provider_checks(get_settings())
     report = {"checks": [asdict(c) for c in checks]}
-    Path("live_check_report.json").write_text(json.dumps(report, indent=2))
+    Path("live_check_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8", newline="\n")
 
     if "--json" in sys.argv:
         print(json.dumps(report, indent=2))

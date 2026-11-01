@@ -67,7 +67,7 @@ def test_several_texts_are_all_or_nothing(study: Path, capsys):  # noqa: F811
 
 def test_check_matches_each_amendment_to_its_own_text(study: Path, capsys):  # noqa: F811
     plan = study / "design" / "paper_plan.md"
-    plan.write_text(f"Plan by {EMAIL}\nPhone {PHONE}\n", encoding="utf-8")
+    plan.write_text(f"Plan by {EMAIL}\nPhone {PHONE}\n", encoding="utf-8", newline="\n")
     from src.core.export.provenance import write_provenance
 
     write_provenance(study, {"paper_id": "p1", "governance": "full"}, exported_at="20261001")

@@ -20,7 +20,9 @@ from src.core import platform_client as pc
 from tests.run_db import make_run_db, paper_id_of
 from tests.test_publish_integrity import ARGS, bundle  # noqa: F401  (fixture)
 
-SCHEMA = json.loads((Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text())
+SCHEMA = json.loads(
+    (Path(__file__).parent.parent / "docs/schemas/research-object.schema.json").read_text(encoding="utf-8")
+)
 
 
 def test_the_published_description_matches_the_sites_format(bundle: Path, tmp_path: Path, monkeypatch):  # noqa: F811
@@ -52,7 +54,7 @@ def test_the_published_description_matches_the_sites_format(bundle: Path, tmp_pa
     jsonschema.Draft202012Validator(SCHEMA).validate(
         {**manifest, "dossier": {"id": d["id"], "url": manifest["dossier"]["url"], "doc": d["doc"]}}
     )
-    prov = json.loads((bundle / "provenance.json").read_text())
+    prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     assert "amendments" not in manifest and isinstance(prov.get("amendments", []), list)
 
 
@@ -79,8 +81,8 @@ def test_publishing_to_another_platform_names_its_dossier_address(
     assert publish(str(bundle), **ARGS, to_url="https://e2er.example", site="https://e2er.example", yes=True) == 0
     url = sent[0]["manifest"]["dossier"]["url"]
     assert url.startswith("https://e2er.example/d/")
-    assert json.loads((bundle / "e2er.json").read_text())["dossier"]["url"] == url
-    assert f"\\url{{{url}}}" in (bundle / "paper" / "paper.tex").read_text()
+    assert json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))["dossier"]["url"] == url
+    assert f"\\url{{{url}}}" in (bundle / "paper" / "paper.tex").read_text(encoding="utf-8")
     out = capsys.readouterr().out
     assert "https://e2er.org/d/" not in out and url in out
 
@@ -152,7 +154,7 @@ def test_left_out_files_carry_only_the_kinds_the_site_knows():
     item_schema = SCHEMA["properties"]["repository"]["properties"]["left_out"]["items"]
     kinds = set(item_schema["properties"]["kind"]["enum"])
     assert kinds == {"terms", "size", "no_data"}
-    source = (Path(__file__).parent.parent / "src/core/export/package.py").read_text()
+    source = (Path(__file__).parent.parent / "src/core/export/package.py").read_text(encoding="utf-8")
     made = set(re.findall(r'"kind": "(\w+)"', source[source.index("def left_out_data") :]))
     assert made and made <= kinds, made - kinds
     for kind in sorted(kinds):

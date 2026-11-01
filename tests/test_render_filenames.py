@@ -38,9 +38,11 @@ def test_plain_names_pass():
 def test_render_tables_writes_no_table_with_a_backslash_name(tmp_path):
     from src.core.renderer.tables import render_tables
 
-    (tmp_path / "estimation_results.json").write_text(json.dumps({"main": {"coefficients": {"x": 1.0}}}))
+    (tmp_path / "estimation_results.json").write_text(
+        json.dumps({"main": {"coefficients": {"x": 1.0}}}), encoding="utf-8", newline="\n"
+    )
     spec = {"tables": [{"filename": "..\\paper_draft.tex", "caption": "c", "columns": [], "rows": []}]}
-    (tmp_path / "table_spec.json").write_text(json.dumps(spec))
+    (tmp_path / "table_spec.json").write_text(json.dumps(spec), encoding="utf-8", newline="\n")
     report = render_tables(tmp_path)
     assert report.rendered == [] and any("invalid table filename" in e for e in report.errors)
     assert not any(p.name.endswith("paper_draft.tex") for p in tmp_path.rglob("*"))

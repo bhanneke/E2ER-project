@@ -528,8 +528,8 @@ def merge_patch_file(
     result.failed = result.failed + out_of_scope
 
     if persist:
-        draft_path.write_text(result.patched_text, encoding="utf-8")
-        diff_path.write_text(result.diff, encoding="utf-8")
+        draft_path.write_text(result.patched_text, encoding="utf-8", newline="\n")
+        diff_path.write_text(result.diff, encoding="utf-8", newline="\n")
 
     return result
 

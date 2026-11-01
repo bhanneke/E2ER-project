@@ -459,13 +459,13 @@ def check_reproduction(workspace: Path, *, minor_rel_tolerance: float = DEFAULT_
     if text is not None and doc["passed"]:
         new = with_summary(text, render_summary(report, log))
         if new != text:
-            md_path.write_text(new, encoding="utf-8")
+            md_path.write_text(new, encoding="utf-8", newline="\n")
             text, written = new, True
     md_reasons = report_text_reasons(text, report, log)
     doc["reasons"] = [*doc["reasons"], *md_reasons]
     doc["passed"] = not doc["reasons"]
     doc["report_text"] = {"file": MD_FILE, "agrees": not md_reasons, "summary_written": written}
-    (workspace / CHECK_FILE).write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8")
+    (workspace / CHECK_FILE).write_text(json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
     stats = doc["stats"]
     flat = {k: v for k, v in stats.items() if not isinstance(v, dict)}
     for tier in TARGET_LEVELS:

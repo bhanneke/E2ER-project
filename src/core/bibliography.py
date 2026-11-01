@@ -64,11 +64,13 @@ def unresolved_citations(work_dir: Path, stem: str = "paper") -> list[str]:
     if not aux.is_file():
         return []
     cited = {
-        k.strip() for c in re.findall(r"\\citation\{([^}]*)\}", aux.read_text(errors="replace")) for k in c.split(",")
+        k.strip()
+        for c in re.findall(r"\\citation\{([^}]*)\}", aux.read_text(errors="replace", encoding="utf-8"))
+        for k in c.split(",")
     }
     cited.discard("*")
     have = (
-        set(re.findall(r"\\bibitem(?:\[[^\]]*\])?\{([^}]*)\}", bbl.read_text(errors="replace")))
+        set(re.findall(r"\\bibitem(?:\[[^\]]*\])?\{([^}]*)\}", bbl.read_text(errors="replace", encoding="utf-8")))
         if bbl.is_file()
         else set()
     )
