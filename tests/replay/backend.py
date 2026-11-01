@@ -224,6 +224,7 @@ class ReplayBackend(LLMBackend):
                 continue
             self._write(workspace, folder, rel, paper_id or "", replace.get(rel) or [])
             written.append(rel)
+        _times_in_order(workspace, written)
         u = rec.get("usage") or {}
         return ToolLoopResult(
             success=True,
@@ -367,3 +368,18 @@ def _merge(src: Path, dest: Path) -> None:
         dest.write_text(json.dumps(mine, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         return
     raise AssertionError(f"replay: no merge for {dest.name}")
+
+
+def _times_in_order(workspace: Path, written: list[str]) -> None:
+    """Give a call's files increasing modification times (1 ms apart, ending now) in the order the recording lists
+    them, as the recorded run wrote them, seconds apart.
+
+    The replay writes them within a millisecond, and Windows takes a file's time from a clock that advances every
+    ~16 ms: files written in one tick had the same time, and e2er's order by file times (a workspace with no script
+    log, reproduce_recipe.chain_of) left out revise_estimation.py, written in the tick of run_estimation.py (Windows
+    CI, 2026-10-30). ``os.utime`` sets the time exactly, whatever the clock's tick.
+    """
+    end = time.time_ns()
+    for i, rel in enumerate(written):
+        t = end - (len(written) - 1 - i) * 1_000_000
+        os.utime(workspace / rel, ns=(t, t))

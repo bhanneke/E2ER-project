@@ -530,7 +530,21 @@ def _new_outputs(folder: Path, script_rel: str) -> list[str]:
 
 def is_output(rel: str) -> bool:
     """A file of an exported folder that a script may have written with data in it (OUTPUT_SUFFIXES/DIRS)."""
-    return rel.startswith(OUTPUT_DIRS) and rel not in DATA_RECORDS and Path(rel).suffix.lower() in OUTPUT_SUFFIXES
+    return (
+        rel.startswith(OUTPUT_DIRS)
+        and rel not in DATA_RECORDS
+        and not _e2er_record(rel)
+        and Path(rel).suffix.lower() in OUTPUT_SUFFIXES
+    )
+
+
+def _e2er_record(rel: str) -> bool:
+    """One of e2er's own records as the export files it, at the top of an output folder
+    (``results/number_verification.json``): written by e2er, never by a study's script, so never data. In an
+    exported folder every file has the time of the checkout (``git archive``), so a record was taken for an output
+    of every script (the EU regional GDP demo's ``number_verification.json``, 2026-11-01)."""
+    head, _, name = rel.partition("/")
+    return bool(head) and "/" not in name and name in _WORKSPACE_RECORDS
 
 
 def derived(folder: Path, restricted: set[str] | None = None, known: set[str] | None = None) -> list[Derived]:

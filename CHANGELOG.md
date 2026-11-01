@@ -32,6 +32,8 @@ Fixes for Windows and macOS, found by the new CI jobs (2026-10-30).
 - **`publish --github` sends the files byte for byte** whatever line-ending conversion the computer's Git is set to (Git for Windows converts by default: a data file with CRLF line endings went up changed). `e2er export` also finds a study's folder in its scripts when they spell it the Windows way (`C:/Users/…`, `C:\\Users\\…`).
 - **Recorded paths use forward slashes** on Windows too (`saved_to`, result files, skill names), and `gh` and `git` start by their full path.
 - A study whose code needs no package no longer says ". The package carries code/requirements.txt" (`inspect`, `pack`); it says the code needs Python alone.
+- **e2er's own records are never taken for data built from a source with terms.** In a folder checked out from Git every file has the same time, so `results/number_verification.json` (e2er's record of the paper's table values) counted as an output of a script that read restricted data, and `e2er verify` and the package check listed it as restricted (the EU regional GDP demo at its published commit). The records e2er files at the top of `results/`, `misc/`, `paper/` or `data/` are now never a script's output.
+- Tests: the replay of a recorded run gives the files of one call increasing times in the recorded order. On Windows, whose file times advance in steps of about 16 ms, the scripts written in one step had the same time, the results check's order by file times left out `revise_estimation.py`, and the FOMC replay tests failed now and then (12 of 162 values differed; the same 12 differ on every system when that script is left out).
 
 Fixes from the tester reports of 2026-10-27.
 

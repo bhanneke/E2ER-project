@@ -301,3 +301,37 @@ def test_a_no_data_package_is_not_verified_and_neither_is_its_unpacked_folder(tm
     dest = tmp_path / "unpacked"
     pkg.open_package(packed.path, dest)
     assert _check_integrity(dest).status == "FAIL", "in a folder, --no-data is not a record of the study's"
+
+
+def test_e2er_records_in_an_exported_folder_are_never_derived_data(tmp_path):
+    """The EU regional GDP demo at its published commit (2026-11-01): `git archive` gives every file one time, so
+    results/number_verification.json, e2er's own record of the paper's table values, counted as an output of the
+    script that read the restricted data ("a list of 65 records at matched_cells"). e2er's records are no data."""
+    import os
+
+    (tmp_path / "data").mkdir()
+    (tmp_path / "code").mkdir()
+    (tmp_path / "results").mkdir()
+    loads = [{"connector": "yfinance", "saved_to": "data/prices.csv"}]
+    (tmp_path / "data" / "data_sources.json").write_text(json.dumps({"loads": loads}), encoding="utf-8", newline="\n")
+    (tmp_path / "data" / "prices.csv").write_text("p\n1\n2\n", encoding="utf-8", newline="\n")
+    (tmp_path / "code" / "a.py").write_text(
+        'import pandas as pd\nimport json\nd = pd.read_csv("data/prices.csv")\n'
+        'json.dump([{"p": float(x)} for x in d.p], open(OUT, "w"))\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    cells = [{"draft_value": str(i), "source_key": f"estimation_results.json.v{i}"} for i in range(65)]
+    (tmp_path / "results" / "number_verification.json").write_text(
+        json.dumps({"passed": True, "matched_cells": cells}), encoding="utf-8", newline="\n"
+    )
+    (tmp_path / "results" / "rows.json").write_text(
+        json.dumps([{"p": float(i)} for i in range(65)]), encoding="utf-8", newline="\n"
+    )
+    t = 1_761_955_200_000_000_000  # one time for every file, as a checkout gives them
+    for p in tmp_path.rglob("*"):
+        os.utime(p, ns=(t, t))
+    assert dd.is_output("results/rows.json") and not dd.is_output("results/number_verification.json")
+    restricted = data_terms.restricted_paths(tmp_path)
+    assert "results/number_verification.json" not in restricted
+    assert "results/rows.json" in restricted  # a script's output with the rows stays restricted

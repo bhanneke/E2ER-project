@@ -58,6 +58,33 @@ async def test_a_specialist_writes_the_files_the_recorded_run_wrote(tmp_path: Pa
     assert (tmp_path / "data.db").read_bytes() == (FIXTURES / "fomc/files/data_analyst/data.db").read_bytes()
 
 
+async def test_the_recorded_scripts_keep_their_order_when_the_clock_does_not_advance(tmp_path: Path, monkeypatch):
+    """The replay writes a call's files within a millisecond; Windows takes a file's time from a clock that advances
+    every ~16 ms, so files written in one tick had the same time. e2er's order by file times (no script log yet)
+    then left out revise_estimation.py, written in the tick of run_estimation.py, and the results check ran the
+    chain without it: 12 of 162 values differed (Windows CI, 2026-10-30). The replay now gives a call's files
+    increasing times in the order the recording lists them."""
+    from src.core.export.reproduce_recipe import chain_of
+
+    ReplayBackend._attempts.clear()
+    b = ReplayBackend("fomc")
+    write = ReplayBackend._write
+    tick = time.time_ns()
+
+    def one_tick(self, workspace, specialist, rel, paper_id, replace):  # a clock that did not advance
+        write(self, workspace, specialist, rel, paper_id, replace)
+        os.utime(workspace / rel, ns=(tick, tick))
+
+    monkeypatch.setattr(ReplayBackend, "_write", one_tick)
+    assert (await _call(b, tmp_path, "econometrics_specialist")).success
+    assert [p.name for p in chain_of(tmp_path).scripts] == [
+        "run_estimation.py",
+        "revise_estimation.py",
+        "compute_h2_final.py",
+        "compute_h2_v2.py",
+    ]
+
+
 async def test_a_call_without_a_recording_fails_visibly(tmp_path: Path):
     r = await _call(ReplayBackend("fomc"), tmp_path, "theory_specialist")
     assert not r.success and "no recording for theory_specialist" in (r.error or "")
