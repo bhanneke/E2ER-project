@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-11-01
+
 ### Added
 
 - **Every study published with `--github` or `--zenodo` gets its study package.** `e2er publish` builds the `.e2er` file with `e2er pack`'s own logic (the same files and left-out rules; data a source's terms keep out are never in it) and keeps it next to the study's files: with `--github` as the file of a release of the study's repository, one per study version (tag `<project>-v<N>`, file `<project>-v<N>.e2er`, at the pushed commit, never marked latest; an existing tag is used only at the same commit and an existing file only with the same bytes: nothing is moved, forced or overwritten), with `--zenodo` as one more file in the code deposit (only with a public paper and public code; without the data when they are private). The publish request and `e2er.json` record `package: {url, sha256, bytes, host, fingerprint}`; e2er.org records it next to the dossier (the dossier document holds the package's own e2er.json, so it cannot name it) and stores no file. In double-blind mode nothing is hosted. Needs e2er.org with the `package` field (e2er-site branch `study-package`): an older e2er.org refuses a request that carries it, so the site goes first.
@@ -4035,7 +4037,8 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.0
 [0.19.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.1
 [0.19.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.0
 [0.18.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.18.0
