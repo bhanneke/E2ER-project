@@ -24,12 +24,15 @@ from pathlib import Path
 from typing import Any
 
 PASS, SKIP, FAIL = "PASS", "SKIP", "FAIL"
+#: A service that answered, but with a server error (5xx) or "too many requests" (429): its side, for
+#: now. Not a failure of this computer's setup; `e2er doctor` exits 0 when only warnings remain.
+WARN = "WARN"
 
 
 @dataclass
 class Check:
     name: str
-    status: str  # PASS | SKIP | FAIL
+    status: str  # PASS | SKIP | FAIL | WARN
     detail: str = ""
 
 
@@ -668,6 +671,12 @@ async def gmd_check(_settings) -> Check:
     return Check("data.gmd.versions", PASS, f"newest release {env['latest']} ({env['row_count']} releases)")
 
 
+def _source_budget(source: Any) -> float:
+    """How long the doctor waits for ``source``: its own ``Doctor.timeout`` (slow archives), else CHECK_TIMEOUT."""
+    own = getattr(getattr(source, "doctor", None), "timeout", 0) or 0
+    return max(float(own), CHECK_TIMEOUT) if own else CHECK_TIMEOUT
+
+
 def _source_jobs() -> list[tuple[str, Any]]:
     """(check name, source) for every connector-kit source whose check is the kit's generic one."""
     from .modules.data.sources import all_sources
@@ -680,9 +689,15 @@ def _source_jobs() -> list[tuple[str, Any]]:
 
 
 async def _source_check(source: Any, settings: Any) -> Check | None:
+    from .modules.data.sources.http import reachability
     from .modules.data.sources.runtime import doctor_check
 
+    budget = _source_budget(source)
     try:
+        if budget > CHECK_TIMEOUT:
+            # A slow archive (a TAP query on Gaia): the request itself may wait as long as the check.
+            with reachability(connect=CONNECT_TIMEOUT, read=budget):
+                return await doctor_check(source, settings)
         return await doctor_check(source, settings)
     except Exception as e:  # noqa: BLE001 — reported as the check's result
         return Check(source.doctor.check, FAIL, repr(e)[:200])
@@ -698,7 +713,7 @@ async def source_checks(settings) -> list[Check]:
     with _reachability():
         results = await asyncio.gather(
             *(
-                _bounded(sem, name, partial(_source_check, source, settings), CHECK_TIMEOUT)
+                _bounded(sem, name, partial(_source_check, source, settings), _source_budget(source))
                 for name, source in _source_jobs()
             )
         )
@@ -782,8 +797,39 @@ CHECK_TIMEOUT = 5.0
 #: The checks that do a little more than one small request: the literature search (OpenAlex, then
 #: arXiv), the PDF download, Yahoo Finance (its own client), the GMD's release list, Allium, Zotero.
 SLOW_CHECK_TIMEOUT = 6.0
+#: Archives that answer a query slowly (Gaia's and the NASA Exoplanet Archive's TAP services, NASA
+#: POWER): their sources set ``Doctor.timeout`` to this. The checks run side by side, so a round of
+#: checks takes at most about this long (tester report, 2026-11-02: Gaia "timed out" after 5 s).
+SLOW_SERVICE_TIMEOUT = 20.0
 #: The most checks that run at the same time.
 MAX_CONCURRENT_CHECKS = 16
+
+#: A service's own trouble in a check's text: an HTTP status 5xx (its server) or 429 (too many requests).
+_SERVICE_STATUS = re.compile(
+    r"\bHTTP (5\d\d|429)\b|\bstatus(?: code)?:? (5\d\d|429)\b|'(5\d\d|429) [A-Z][a-z]", re.IGNORECASE
+)
+
+
+def service_trouble(check: Check) -> Check:
+    """A failed check whose service answered 5xx or 429, as a warning in plain words; any other check as it is.
+
+    The service is up but answered with an error for now: nothing on this computer is wrong, and the
+    raw answer (an HTML error page) says nothing more (WHO's "Server Error 500"; tester report, 2026-11-02).
+    """
+    if check.status != FAIL:
+        return check
+    m = _SERVICE_STATUS.search(check.detail or "")
+    if not m:
+        return check
+    from .core.labels import check as check_label
+
+    code = next(g for g in m.groups() if g)
+    what = check_label(check.name)
+    if code == "429":
+        detail = f"{what}: their service is busy and asked e2er to wait (429); try again later"
+    else:
+        detail = f"{what}: their service answered with a server error ({code}); try again later"
+    return Check(check.name, WARN, detail)
 
 
 def _reachability() -> Any:
@@ -798,7 +844,8 @@ async def _bounded(
     """Run one check when a slot is free; a check that takes longer than ``budget`` fails as timed out."""
     async with sem:
         try:
-            return await asyncio.wait_for(run(), timeout=budget)
+            result = await asyncio.wait_for(run(), timeout=budget)
+            return service_trouble(result) if result is not None else None
         except TimeoutError:
             return Check(name, FAIL, f"timed out: no answer within {budget:g} s")
         except Exception as e:  # noqa: BLE001 — a broken check is its own result, never the preflight's end
@@ -819,7 +866,7 @@ async def run_provider_checks(settings) -> list[Check]:
         ("data.yfinance.history", partial(yfinance_check, settings), SLOW_CHECK_TIMEOUT),
         ("data.fred.observations", partial(fred_check, settings), CHECK_TIMEOUT),
         ("data.gmd.versions", partial(gmd_check, settings), SLOW_CHECK_TIMEOUT),
-        *((name, partial(_source_check, source, settings), CHECK_TIMEOUT) for name, source in _source_jobs()),
+        *((name, partial(_source_check, source, settings), _source_budget(source)) for name, source in _source_jobs()),
         ("data.allium.list_tables", partial(allium_check, settings), SLOW_CHECK_TIMEOUT),
         ("lit.search_papers", partial(openalex_check, settings), SLOW_CHECK_TIMEOUT),
         ("lit.read_reference (OA PDF)", partial(read_reference_check, settings), SLOW_CHECK_TIMEOUT),
@@ -903,12 +950,13 @@ _BLOCKERS_PREFIXES = ("python", "backend.", "db", "skills.", "workspace.")
 def render_human(checks: list[Check]) -> str:
     width = max((len(c.name) for c in checks), default=0)
     out = []
-    sym = {PASS: "✓", SKIP: "·", FAIL: "✗"}
+    sym = {PASS: "✓", SKIP: "·", FAIL: "✗", WARN: "!"}
     for c in checks:
-        out.append(f"  {sym[c.status]} [{c.status}] {c.name.ljust(width)}  {c.detail}")
+        out.append(f"  {sym.get(c.status, '?')} [{c.status}] {c.name.ljust(width)}  {c.detail}")
     n_pass = sum(c.status == PASS for c in checks)
     n_skip = sum(c.status == SKIP for c in checks)
     n_fail = sum(c.status == FAIL for c in checks)
+    n_warn = sum(c.status == WARN for c in checks)
     blocker_failed = any(
         c.status == FAIL and (c.name == "backend" or c.name.startswith(_BLOCKERS_PREFIXES)) for c in checks
     )
@@ -921,7 +969,15 @@ def render_human(checks: list[Check]) -> str:
         verdict = "❌ Blocked — fix the backend / DB / skills failure above before running a paper."
     else:
         verdict = "⚠️  Partial — paper runs will work, but some providers/sources are unavailable (see fails above)."
-    out.append(f"\n{verdict}\n   {n_pass} passed, {n_skip} skipped, {n_fail} failed")
+    if n_warn:
+        verdict += (
+            f"\n   {n_warn} data source{'s' if n_warn != 1 else ''} answered with an error on their side; "
+            "try again later (marked !)."
+        )
+    counts = f"{n_pass} passed, {n_skip} skipped, {n_fail} failed" + (
+        f", {n_warn} to try again later" if n_warn else ""
+    )
+    out.append(f"\n{verdict}\n   {counts}")
     return "\n".join(out)
 
 

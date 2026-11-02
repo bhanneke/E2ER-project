@@ -364,6 +364,7 @@ ol.phases {
 .pf-mark { font-weight: 700; color: var(--muted); }
 .pf-pass .pf-mark { color: var(--ok); }
 .pf-fail .pf-mark { color: var(--danger); }
+.pf-warn .pf-mark { color: var(--warn, #b26b00); font-weight: 600; }
 .pf-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .pf-detail { font-size: 13px; color: var(--muted); }
 .pf-fail .pf-detail { color: var(--danger); }

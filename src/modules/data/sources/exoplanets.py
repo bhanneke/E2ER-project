@@ -297,5 +297,7 @@ SOURCE = Source(
         "data.exoplanets.planets",
         operation="planets",
         params={"columns": "pl_name,pl_rade,pl_orbper", "where": "pl_name = 'Kepler-22 b'"},
+        # A slow archive: the doctor waits up to doctor.SLOW_SERVICE_TIMEOUT for it.
+        timeout=20.0,
     ),
 )

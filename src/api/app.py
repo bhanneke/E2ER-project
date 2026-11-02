@@ -2079,7 +2079,7 @@ def forget_preflight() -> None:
 
 async def _run_preflight() -> dict[str, Any]:
     """Run the same checks `e2er doctor` runs, as the view the templates show."""
-    from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, run_doctor
+    from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, WARN, run_doctor
 
     try:
         checks = await run_doctor(get_settings())
@@ -2096,6 +2096,8 @@ async def _run_preflight() -> dict[str, Any]:
         "n_pass": sum(1 for c in checks if c.status == PASS),
         "n_skip": sum(1 for c in checks if c.status == SKIP),
         "n_fail": sum(1 for c in checks if c.status == FAIL),
+        # A service that answered with an error on its side (5xx, 429): try again later, nothing to fix here.
+        "n_warn": sum(1 for c in checks if c.status == WARN),
         "error": "",
     }
 
