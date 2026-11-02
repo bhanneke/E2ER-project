@@ -875,6 +875,27 @@ def workspace_writable_check(settings) -> Check:
     return Check("workspace.writable", PASS, f"{root} is outside the {backend} config tree")
 
 
+async def codex_sandbox_check(settings) -> Check | None:
+    """Codex only: can it write a file in the study folder's sandbox? One short Codex call.
+
+    The check of a run's start (llm/codex.py ``check_sandbox``): Codex on Linux and Windows
+    could sign in and answer, yet write nothing (tester reports 2026-10-27, 2026-11-02).
+    None when Codex is not the backend, or not installed or signed in (the backend check says so).
+    """
+    if getattr(settings, "llm_backend", "") != "codex" or not resolve_backend_cli("codex", settings):
+        return None
+    if cli_signed_in("codex")[0] is False:
+        return None
+    from .modules.llm.codex import CodexBackend
+    from .modules.llm.plan_limit import PlanLimitReachedError
+
+    try:
+        ok, detail = await CodexBackend().check_sandbox()
+    except PlanLimitReachedError as e:
+        return Check("workspace.codex_sandbox", SKIP, f"not checked: {e.status}")
+    return Check("workspace.codex_sandbox", SKIP if ok is None else PASS if ok else FAIL, detail)
+
+
 async def run_doctor(settings) -> list[Check]:
     """Full preflight: setup (backend, skills, DB) + BYOD corpus + provider probes.
 
@@ -890,6 +911,9 @@ async def run_doctor(settings) -> list[Check]:
         await byod_local_data_check(settings),
         await byod_literature_check(settings),
     ]
+    sandbox = await codex_sandbox_check(settings)
+    if sandbox is not None:
+        setup.append(sandbox)
     providers = await run_provider_checks(settings)
     return [*setup, await docker, *providers]
 

@@ -320,6 +320,11 @@ async def run_specialist(
     except Exception as e:
         logger.debug("Contribution log skipped (no DB?): %s", e)
 
+    if violations and getattr(result, "sandbox_blocked", False):
+        # The backend's sandbox refused this call's writes (Codex on Linux or Windows): every
+        # further attempt meets the same sandbox, so the run pauses now instead of retrying.
+        raise _sandbox_blocked(specialist, backend_name, result.error or "", result.diagnostic)
+
     if not result.success and getattr(result, "stop_reason", "") == "timeout":
         # The call ran out of time: the run pauses (dispatcher/runner), Resume gives a fresh attempt.
         raise _timed_out(specialist, backend_name, result.error or "", duration)
@@ -1149,6 +1154,19 @@ def _find_output_file(workspace: Path, specialist: str, expected: str) -> str:
     canonical.parent.mkdir(parents=True, exist_ok=True)
     found.rename(canonical)
     return str(canonical)
+
+
+def _sandbox_blocked(specialist: str, backend_name: str, error: str, diagnostic: str) -> Exception:
+    """The pause for a call whose writes the backend's sandbox refused, with the sentence the researcher reads."""
+    from ...modules.llm.plan_limit import SandboxBlockedError
+    from .. import labels
+
+    status = (
+        f"Paused: the sandbox of the AI command-line tool refused to let {labels.specialist(specialist)} write "
+        f"its files, and every further attempt would meet the same refusal. {diagnostic} "
+        "Press Resume once this is fixed."
+    ).strip()
+    return SandboxBlockedError(backend_name, error, status, specialist=specialist)
 
 
 def _timed_out(specialist: str, backend_name: str, error: str, seconds: float) -> Exception:

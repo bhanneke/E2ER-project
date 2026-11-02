@@ -26,12 +26,14 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any
 
 from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 from .cli_support import (
+    audit_journal,
     cli_name,
     cli_path_or_setting,
     cli_version,
@@ -144,6 +146,19 @@ class GeminiBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
+        # The wrappers' audit rows go to a journal in the workspace (cli_support.audit_journal).
+        async with audit_journal(paper_id, cwd if paper_id else None):
+            return await self._invoke(prompt, cwd, root, settings, paper_id, specialist)
+
+    async def _invoke(
+        self,
+        prompt: str,
+        cwd: str,
+        root: Path | None,
+        settings: Any,
+        paper_id: str | None,
+        specialist: str | None,
+    ) -> ToolLoopResult:
         env = run_env(
             settings,
             paper_id=paper_id,

@@ -589,6 +589,11 @@ class PipelineRunner:
             return result
 
         try:
+            # A backend that can check itself first does so before any specialist runs: Codex writes one
+            # test file in its sandbox, and a sandbox that refuses pauses the run here (SandboxBlockedError).
+            from ...modules.llm.base import run_preflight
+
+            await run_preflight(getattr(self, "_backend", None))
             # The sequence, the mode conditions and the resume rules come from
             # the pipeline spec (pipelines/empirical.toml by default). The phase
             # bodies do not: each still has its own bookkeeping, described in
@@ -744,9 +749,11 @@ class PipelineRunner:
             await self._update_status(PaperStatus.PAUSED, error=text)
             return {
                 "status": "paused",
-                "reason": {"paused_billing_limit": "billing_limit", "paused_timeout": "timeout"}.get(
-                    getattr(pl, "event", ""), "plan_limit"
-                ),
+                "reason": {
+                    "paused_billing_limit": "billing_limit",
+                    "paused_timeout": "timeout",
+                    "paused_sandbox": "sandbox",
+                }.get(getattr(pl, "event", ""), "plan_limit"),
                 "backend": pl.backend,
                 "resets": pl.resets,
                 "specialist": pl.specialist,

@@ -68,6 +68,9 @@ _home_is_home_on_windows()
 # Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
 # default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
 os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
+# No real Codex call: a run on the codex backend first asks Codex to write a test file in its
+# sandbox (llm/codex.py check_sandbox). The tests of that check clear this themselves.
+os.environ.setdefault("E2ER_SKIP_SANDBOX_PREFLIGHT", "1")
 
 # ---------------------------------------------------------------------------
 # Deterministic specialist outputs (filename, content)

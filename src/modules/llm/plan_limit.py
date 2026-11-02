@@ -126,6 +126,26 @@ class CallTimedOutError(PlanLimitReachedError):
         self.args = (status,)
 
 
+class SandboxBlockedError(PlanLimitReachedError):
+    """The CLI's sandbox does not let the model write the study's files; every call would fail the same way.
+
+    Tester reports 2026-10-27 and 2026-11-02 (Codex on Windows and Ubuntu): every
+    specialist "succeeded" without writing a file, failed its contract three times,
+    and the run paused after about ten specialists and one to two million tokens.
+    Raised by Codex's sandbox check before the first specialist and by the
+    specialist runner when the sandbox refused a call's writes: the run pauses
+    (``paused_sandbox``) at once, with ``status`` saying what failed and what helps,
+    and no further attempt is made. Resume checks again.
+    """
+
+    event = "paused_sandbox"
+
+    def __init__(self, backend: str, message: str, status: str, specialist: str | None = None) -> None:
+        super().__init__(backend, message, None, specialist)
+        self.status = status
+        self.args = (status,)
+
+
 def _norm(text: str) -> str:
     return text.replace("’", "'").replace("‘", "'").lower()
 

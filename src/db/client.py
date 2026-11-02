@@ -22,7 +22,9 @@ Limitations on SQLite:
 
 from __future__ import annotations
 
+import os
 import re
+from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
@@ -267,10 +269,17 @@ async def _sqlite_connect():
     from ..config import get_settings
 
     path = _sqlite_path(get_settings().resolved_database_url)
-    if not _sqlite_bootstrapped:
-        await _ensure_sqlite_schema()
-        _sqlite_bootstrapped = True
-    conn = await aiosqlite.connect(path)
+    if os.environ.get("E2ER_AUDIT_JOURNAL"):
+        # A wrapper inside a specialist's call: it writes its audit rows to the call's journal
+        # (modules/data/audit_journal.py) and only reads the run database, which may lie outside
+        # the AI CLI's sandbox. Read-only, and no schema bootstrap: the runner did that.
+        uri = Path(path).expanduser().resolve().as_uri() + "?mode=ro"
+        conn = await aiosqlite.connect(uri, uri=True)
+    else:
+        if not _sqlite_bootstrapped:
+            await _ensure_sqlite_schema()
+            _sqlite_bootstrapped = True
+        conn = await aiosqlite.connect(path)
     await conn.execute("PRAGMA foreign_keys = ON")
 
     # Return rows as dicts for parity with psycopg's dict_row.

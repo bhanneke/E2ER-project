@@ -34,6 +34,7 @@ from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 from .cli_support import (
+    audit_journal,
     cli_name,
     cli_path_or_setting,
     cli_version,
@@ -339,6 +340,22 @@ class ClaudeCodeBackend(LLMBackend):
             workspace_root_abs = Path(settings.workspace_root).resolve()
             cwd = str(find_workspace(paper_id, workspace_root_abs).resolve())
 
+        # The wrappers' audit rows go to a journal in the workspace (cli_support.audit_journal).
+        async with audit_journal(paper_id, cwd if paper_id else None):
+            return await self._invoke_with_retries(
+                prompt, allowed_tools, cwd, max_turns, paper_id, specialist, workspace_root_abs
+            )
+
+    async def _invoke_with_retries(
+        self,
+        prompt: str,
+        allowed_tools: list[str],
+        cwd: str,
+        max_turns: int,
+        paper_id: str | None,
+        specialist: str | None,
+        workspace_root_abs: Path | None,
+    ) -> ToolLoopResult:
         # Retry transient Anthropic API errors. The CLI surfaces these in
         # its JSON output as is_error=true + api_error_status set (e.g.
         # 429, 500, 502, 503, 504, 529). They're not bugs in our code or
@@ -376,7 +393,8 @@ class ClaudeCodeBackend(LLMBackend):
                 (result.error or "")[:200],
             )
             await asyncio.sleep(delay)
-        return last_result if last_result is not None else result
+        assert last_result is not None  # the loop runs at least once
+        return last_result
 
 
 def _is_transient_api_error(error: str) -> bool:

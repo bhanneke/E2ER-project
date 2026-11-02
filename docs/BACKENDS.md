@@ -42,8 +42,9 @@ forbid a command but cannot forbid everything outside a list. e2er does not
 change the user's Codex settings, so under Codex the model can run any shell
 command. What does hold:
 
-- Writes are confined by Codex's sandbox (`workspace-write`) to the study's
-  workspace folder, the run database's folder and the temporary folder.
+- Codex's sandbox (`workspace-write`) confines writes to the study's
+  workspace folder and the temporary folder. e2er gives Codex no other
+  writable folder.
   `CODEX_SANDBOX=danger-full-access` (no sandbox) runs only with
   `CODEX_ALLOW_FULL_ACCESS=true` as well, and with a warning; otherwise e2er
   uses `workspace-write`.
@@ -106,12 +107,29 @@ your ChatGPT plan offers (read from `~/.codex/models_cache.json`).
 
 e2er's Codex runs were validated on macOS, where Codex sandboxes with Seatbelt.
 A specialist writes its files with Codex's `apply_patch` inside the
-`workspace-write` sandbox, and e2er makes one more folder writable with
-`--add-dir`: the run database's folder (`~/.e2er`), because `e2er-data` and
-`e2er-lit` record what they fetched there. When the sandbox refuses the writes,
-Codex still ends without an error and the step fails with
-"contract violation: …: file not written"; e2er now adds what Codex's sandbox
-refused and the remedy for your system to that message.
+`workspace-write` sandbox. When the sandbox refuses the writes, Codex still
+ends without an error, and every step fails with "contract violation: …: file
+not written". Three things keep that from costing a whole run:
+
+- **No extra writable folder.** Up to 0.20 e2er gave Codex the run database's
+  folder (`~/.e2er`) with `--add-dir`, so that `e2er-data` could record its
+  queries there. On Windows any extra writable folder makes Codex refuse
+  `apply_patch` (openai/codex issue #30009). Now `e2er-data` writes those
+  records to a journal file in the study's folder, and e2er copies them into
+  the run database during and after each call. Claude Code and Gemini work the
+  same way, on every system.
+- **A test write before the first step.** Before the first specialist of a run,
+  e2er asks Codex to write one small file in a temporary folder. When the file
+  is missing, e2er stops the run before any specialist starts and says what
+  failed, on which system, and what helps. A check that passed is not repeated
+  for the same Codex version while e2er keeps running. `e2er doctor` runs the
+  same check (`workspace.codex_sandbox`). Set `E2ER_SKIP_SANDBOX_PREFLIGHT=1`
+  to skip it.
+- **No retries against a refusing sandbox.** When Codex reports that its
+  sandbox refused a write and the step's files are missing, e2er pauses the run
+  after that first attempt, with the reason, instead of trying twice more.
+
+What helps:
 
 - **Linux.** Codex's sandbox uses bubblewrap, which needs unprivileged user
   namespaces. Install it (`sudo apt install bubblewrap`). Ubuntu 23.10 and later
@@ -119,17 +137,14 @@ refused and the remedy for your system to that message.
   kernel.apparmor_restrict_unprivileged_userns` prints 1): allow them for
   `bwrap` with an AppArmor profile, or for the whole system with
   `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`.
-- **Windows.** Codex's sandbox refuses `apply_patch` under `workspace-write`
-  when extra writable folders are given (openai/codex issue #30009), which
-  e2er does whenever the run database lies outside the study's folder (by
-  default it does). Run e2er inside WSL2, where Codex uses its Linux sandbox.
-- **Without a sandbox.** `CODEX_SANDBOX=danger-full-access` together with
+- **Windows.** Codex's own sandbox can still refuse file edits (openai/codex
+  issue #30009). Update Codex (`npm install -g @openai/codex@latest`) and start
+  the run again, or use the Claude Code backend (`LLM_BACKEND=claude_code`).
+- **Last resort: no sandbox.** `CODEX_SANDBOX=danger-full-access` together with
   `CODEX_ALLOW_FULL_ACCESS=true`, in your studies folder's `.env`, runs Codex
   without any sandbox: every shell command the model chooses then runs as you,
-  with your files. e2er warns at every call. Use it only on a machine or account
-  set aside for it.
-
-On macOS nothing changes.
+  with your files. e2er warns at every call. Use it only when nothing above
+  helps, and only on a machine or account set aside for it.
 
 Each run records which backend, model, reasoning effort and CLI version
 answered its calls (the `backend_identity` event, kept with the study).

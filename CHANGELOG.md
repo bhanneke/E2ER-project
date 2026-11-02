@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+Fixes from the tester report of 2026-11-02 (Codex CLI 0.165 and 0.166 on Windows and Ubuntu: every specialist "succeeded" without writing a file, failed its contract three times, and the run paused after about ten specialists and one to two million tokens).
+
+- **Codex gets no writable folder outside the study's folder.** e2er gave Codex the run database's folder (`~/.e2er`) with `--add-dir`, so that `e2er-data` could record its queries there; on Windows any extra writable folder makes Codex refuse every file edit (openai/codex issue #30009). Inside a specialist's call `e2er-data` (and `e2er-allium-query`) now write their audit records to a journal file in the study's folder (`.e2er-audit-journal-<call>.jsonl`); e2er reads it every two seconds while the call runs and once after it, checks every line, writes the records into the run database with its own statements and removes the file. Claude Code, Codex and Gemini all work this way, on macOS, Linux and Windows. The records, their tables and the audit export are the same as before. A wrapper inside a call now opens the run database read-only. The model can write the journal, as it could write the database's folder before; e2er takes from it only the four kinds of audit record with fixed fields, always under the call's own study, never SQL to run or a path, and never an approval of a production query.
+- **e2er checks Codex's sandbox before the first specialist.** A run on Codex with `workspace-write` first asks Codex to write one small file in a temporary folder. When the file is missing, the run stops before any specialist starts, and the reason says what failed, on which system, and what helps. A check that passed is kept for the same Codex version and sandbox mode while e2er runs. `e2er doctor` shows the same check (`workspace.codex_sandbox`); `E2ER_SKIP_SANDBOX_PREFLIGHT=1` skips it.
+- **No second and third attempt against a sandbox that refused.** When Codex reports that its sandbox refused a write and the step's files are missing, the run pauses after that first attempt with the reason (`paused_sandbox`); Resume checks again.
+- **The Codex sandbox message no longer advises WSL2** (Ubuntu fails the same way). It names the fix for Linux (bubblewrap, AppArmor) and Windows (update Codex, or use the Claude Code backend), and `CODEX_SANDBOX=danger-full-access` only as the last resort. docs/BACKENDS.md (Codex on Linux and Windows) says the same.
+
 ## [0.20.0] — 2026-11-01
 
 ### Added

@@ -10,7 +10,7 @@ from typing import Any
 
 from ...logging_config import get_logger
 from ...modules.llm.base import LLMBackend, ToolHandler
-from ...modules.llm.plan_limit import CallTimedOutError, PlanLimitReachedError
+from ...modules.llm.plan_limit import CallTimedOutError, PlanLimitReachedError, SandboxBlockedError
 from ..governance import DEFAULT_REGIME
 from ..specialists.base import run_specialist
 from ..specialists.contracts import Contribution, WorkOrder
@@ -306,6 +306,18 @@ async def execute_work_order(
             )
         timed_out.specialist = timed_out.specialist or work_order.specialist
         logger.warning("Specialist %s paused: %s", work_order.specialist, timed_out.message)
+        raise
+    except SandboxBlockedError as blocked:
+        # The backend's sandbox refused this call's writes: recorded once, then the run pauses with the
+        # reason (no second and third attempt against the same sandbox; tester report 2026-11-02).
+        await log_event(
+            work_order.paper_id,
+            "specialist_failed",
+            specialist=work_order.specialist,
+            payload={"error": blocked.message[:2000], "sandbox_blocked": True},
+        )
+        blocked.specialist = blocked.specialist or work_order.specialist
+        logger.warning("Specialist %s paused: %s", work_order.specialist, blocked.status[:300])
         raise
     except PlanLimitReachedError as limit:
         # The subscription plan's usage limit: not this specialist's failure. No
