@@ -6,6 +6,7 @@ status. Each invocation produces a fresh versioned folder (``…-NN``).
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -55,6 +56,46 @@ def expand_paper_id(ref: str) -> str:
     if len(hits) > 1:
         raise ExportLookupError(f"{ref!r} matches {len(hits)} papers; give more of the id.")
     return hits[0] if hits else ref
+
+
+def _study_latest_run(key: str) -> tuple[str, str] | None:
+    """(run id, plain note) of the latest run of the study ``key`` (as `e2er list` shows it), else None."""
+    import asyncio
+
+    from .db import studies as st
+
+    try:
+        studies = asyncio.run(st.load())
+    except Exception:  # noqa: BLE001 — no database: the key cannot be looked up
+        return None
+    study = studies.get(key)
+    if study is None or not study.attempts:
+        return None
+    latest = study.latest() or study.latest(show_archived=True)
+    if latest is None:  # pragma: no cover — a study has at least one attempt
+        return None
+    runs = len(study.attempts)
+    which = "its only run" if runs == 1 else f"its latest run (v{latest['version']} of {runs})"
+    return latest["id"], f"Study {study.key}: {which} is {latest['short_id']}."
+
+
+#: A study key as `e2er list` prints it (10 hex characters; a run id has a dash after 8).
+_STUDY_KEY = re.compile(r"[0-9a-f]{10}")
+
+
+def expand_paper_ref(ref: str) -> tuple[str, str]:
+    """The run id for a run id, a unique prefix of one, or a study key; and a note when it was a study key.
+
+    `e2er list` prints each study's key (``b33f3ad47b``); `e2er status`, `cancel`,
+    `resume`, `review` and `rerun` take it and act on the study's latest run. A
+    key never collides with a run id prefix: a run id has a dash after 8 characters.
+    """
+    ref = ref.strip()
+    if _STUDY_KEY.fullmatch(ref.casefold()):
+        found = _study_latest_run(ref.casefold())
+        if found is not None:
+            return found
+    return expand_paper_id(ref), ""
 
 
 def resolve_workspace(ref: str, settings) -> tuple[str, Path]:

@@ -1,6 +1,6 @@
 """``e2er run`` — one-command submit-a-paper.
 
-Replaces the multi-step "start uvicorn, curl POST, open dashboard, watch
+Replaces the multi-step "start uvicorn, POST the question, open dashboard, watch
 events" flow with a single CLI command. Designed as the FIRST thing a
 new user runs after ``pip install e2er``.
 
@@ -323,6 +323,34 @@ def _submit_paper(
     return r.json()
 
 
+def short_reason(text: object, max_sentences: int = 3, max_chars: int = 400) -> str:
+    """A run's ``last_error`` in a few sentences: whitespace collapsed, the first sentences kept.
+
+    A paused or failed run says why in its ``last_error``; that text can run to a
+    paragraph with a raw error after the sentence that matters.
+    """
+    flat = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not flat:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+(?=[A-Z0-9`\"'(])", flat)
+    out = " ".join(sentences[:max_sentences])
+    if len(out) > max_chars:
+        out = out[: max_chars - 1].rstrip() + "…"
+    return out
+
+
+def _fetch_paper(paper_id: str) -> dict:
+    """The run as GET /api/papers/{id} returns it; {} when the server does not answer."""
+    import httpx
+
+    try:
+        r = httpx.get(f"{_api_root()}/api/papers/{paper_id}", headers=api_headers(), timeout=10.0)
+        d = r.json() if r.status_code == 200 else {}
+    except Exception:  # noqa: BLE001 — the hint below stands without the reason
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
 def _poll_status(paper_id: str, total_seconds: float, poll_interval: float = 15.0) -> str:
     """Tail status until terminal. Returns the final status."""
     import httpx
@@ -466,12 +494,11 @@ def run(
         print(f"  {workspace}/abstract.tex", file=sys.stderr)
         return 0
     if final in {"failed", "paused", "stopped"}:
-        print(f"\n⚠ Paper {status_words(final)}. Diagnose with:", file=sys.stderr)
-        # The API needs the session token (~/.e2er/session-<port>.json); never print the token itself.
-        print(
-            f'  curl -s -H "X-E2ER-Token: $(jq -r .token ~/.e2er/session-{_api_port()}.json)" '
-            f"{_api_root()}/api/papers/{paper_id}/failure-bundle | jq",
-            file=sys.stderr,
-        )
+        print(f"\n⚠ Paper {status_words(final)}.", file=sys.stderr)
+        reason = short_reason(_fetch_paper(paper_id).get("last_error"))
+        if reason:
+            print(f"  Why: {reason}", file=sys.stderr)
+        # A command that works the same in PowerShell, cmd, bash and zsh.
+        print(f"  Next: e2er status {paper_id}", file=sys.stderr)
         return 1
     return 0

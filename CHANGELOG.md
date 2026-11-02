@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+Fixes from the tester report of 2026-11-02 (Windows PowerShell and Ubuntu).
+
+- **A paused or failed run says why.** `e2er run` ended with "Final status: paused" and a `curl … | jq` command that PowerShell cannot run. It now prints the reason in a few sentences and `e2er status <id>` as the next command. `e2er status` prints the whole reason of a paused, failed, stopped or cancelled run (wrapped, not cut at 120 characters).
+- **`e2er status`, `cancel`, `resume`, `review` and `rerun` take the study key `e2er list` prints** (`b33f3ad47b`) and act on the study's latest run; they said "paper … not found" before. `e2er list` shows the id of each study's latest run, and says that both ids work.
+- **`e2er status` shows the methodology on a line of its own.** "Template: empirical (single pass, theoretical)" read as if the empirical template had run as a theoretical one; the run had been started with the methodology "theoretical" (More options on the new-study page) and recorded it correctly.
+
 ## [0.20.0] — 2026-11-01
 
 ### Added

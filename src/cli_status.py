@@ -29,7 +29,7 @@ import time
 # Reused from cli_run to avoid duplicating connection logic. These
 # helpers are also used by tests; importing here keeps the module
 # graph flat.
-from .cli_run import _api_reachable, _api_root, _poll_status, api_headers
+from .cli_run import _api_reachable, _api_root, _poll_status, api_headers, short_reason
 from .core.run_outcome import score_words, status_words
 from .modules.llm.plan_limit import is_plan_limit_status
 
@@ -54,6 +54,28 @@ def _format_money(value) -> str:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
         return str(value)
+
+
+#: The words of the new-study form (new.html) for the run's mode and methodology. The methodology is
+#: a choice of its own, next to the template: "empirical (single pass, theoretical)" read as if the
+#: empirical template had run as a theoretical one (tester report, 2026-11-02).
+_MODE_WORDS = {"single_pass": "one pass", "iterative": "iterative"}
+_METHOD_WORDS = {
+    "empirical": "empirical: data, identification, estimation",
+    "theoretical": "theoretical: a formal model, no data",
+    "mixed": "mixed: a model and an empirical test",
+}
+
+#: Statuses of a run that stopped before it finished: `e2er status` says why.
+_STOPPED = {"paused", "failed", "stopped", "rejected", "cancelled"}
+
+
+def _wrapped(label: str, text: str, width: int = 100) -> list[str]:
+    """``label`` and ``text`` as lines of at most ``width`` characters, the text aligned after the label."""
+    import textwrap
+
+    pad = " " * 12
+    return textwrap.wrap(text, width=width, initial_indent=f"{label:<12}", subsequent_indent=pad) or [label]
 
 
 def _format_status_summary(d: dict) -> str:
@@ -92,7 +114,8 @@ def _format_status_summary(d: dict) -> str:
         ),
         f"Title:      {_truncate(title, 90)}",
         f"RQ:         {_truncate(rq, 90)}",
-        f"Template:   {template} ({mode.replace('_', ' ')}, {methodology})",
+        f"Template:   {template} ({_MODE_WORDS.get(mode, mode.replace('_', ' '))})",
+        f"Method:     {_METHOD_WORDS.get(methodology, methodology)}",
         f"Cost:       ${_format_money(spent)} / ${_format_money(cap)} cap"
         + (" (estimate — CLI backend)" if cost_is_estimate else ""),
         f"Specialists: {calls} calls, {tokens:,} tokens",
@@ -103,11 +126,20 @@ def _format_status_summary(d: dict) -> str:
         # The plan's usage limit: the whole sentence (it says when it resets), and the command.
         lines.append(f"Paused:     {last_error}")
         lines.append(f"Resume:     e2er resume {d.get('id', '')}")
+    elif last_error and (d.get("shown_status") or d.get("status")) in _STOPPED:
+        # Why the run stopped, in a few sentences (tester report, 2026-11-02: `e2er run` ended at
+        # "paused" and said nothing about why).
+        lines.extend(_wrapped("Why:", short_reason(last_error)))
     elif last_error:
         lines.append(f"Last error: {_truncate(str(last_error), 120)}")
     for note in d.get("notes") or []:
         lines.append(f"Note:       {note}")
     return "\n".join(lines)
+
+
+def _not_found(ref: str) -> str:
+    """The sentence for a run id the server does not know."""
+    return f"run or study {ref} not found. `e2er list --attempts` shows your studies, their keys and their runs' ids."
 
 
 def _format_unreachable_error() -> str:
@@ -149,7 +181,7 @@ def status(paper_id: str, tail: bool = False, monitor_seconds: float = 1800.0) -
         return 3
 
     if r.status_code == 404:
-        print(f"e2er status: paper {paper_id} not found", file=sys.stderr)
+        print(f"e2er status: {_not_found(paper_id)}", file=sys.stderr)
         return 4
     if r.status_code != 200:
         print(
@@ -268,7 +300,7 @@ def cancel(paper_id: str, yes: bool = False) -> int:
         print(f"e2er cancel: lookup failed: {e}", file=sys.stderr)
         return 3
     if r.status_code == 404:
-        print(f"e2er cancel: paper {paper_id} not found", file=sys.stderr)
+        print(f"e2er cancel: {_not_found(paper_id)}", file=sys.stderr)
         return 4
 
     payload = r.json()
@@ -383,7 +415,7 @@ def resume(
         print(f"e2er resume: lookup failed: {e}", file=sys.stderr)
         return 3
     if r.status_code == 404:
-        print(f"e2er resume: paper {paper_id} not found", file=sys.stderr)
+        print(f"e2er resume: {_not_found(paper_id)}", file=sys.stderr)
         return 4
 
     payload = r.json()

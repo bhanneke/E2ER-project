@@ -303,7 +303,10 @@ def main() -> None:
     )
     status_p.add_argument(
         "paper_id",
-        help="The paper UUID returned by `e2er run` (its first characters suffice), or a published study folder.",
+        help=(
+            "The run id from `e2er run` (its first characters suffice), a study key from `e2er list` "
+            "(its latest run), or a published study folder."
+        ),
     )
     status_p.add_argument(
         "--url", default=None, help="For a study folder: platform address (default: its .e2er/link.json)."
@@ -348,7 +351,9 @@ def main() -> None:
         "cancel",
         help="Cancel a running or paused paper. Workspace + completed phases are preserved.",
     )
-    cancel_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
+    cancel_p.add_argument(
+        "paper_id", help="The run id from `e2er run` (its first characters suffice), or a study key from `e2er list`."
+    )
     cancel_p.add_argument(
         "--yes",
         "-y",
@@ -363,7 +368,9 @@ def main() -> None:
             "already produced their canonical artifact, so completed work isn't repeated."
         ),
     )
-    resume_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
+    resume_p.add_argument(
+        "paper_id", help="The run id from `e2er run` (its first characters suffice), or a study key from `e2er list`."
+    )
     resume_p.add_argument(
         "--max-cost",
         type=float,
@@ -386,7 +393,9 @@ def main() -> None:
         "review",
         help="Act at a researcher step: approve, edit a file, give an instruction, or send a step back.",
     )
-    review_p.add_argument("paper_id", help="The paper UUID returned by `e2er run` (its first characters suffice).")
+    review_p.add_argument(
+        "paper_id", help="The run id from `e2er run` (its first characters suffice), or a study key from `e2er list`."
+    )
     review_p.add_argument(
         "--approve",
         action="store_true",
@@ -1298,13 +1307,16 @@ def main() -> None:
         args.command == "status" and Path(args.paper_id).expanduser().is_dir()
     ):
         # The first characters of the id suffice, as for `export` and `archive`.
-        from .cli_export import ExportLookupError, expand_paper_id
+        # A study key from `e2er list` names the study's latest run.
+        from .cli_export import ExportLookupError, expand_paper_ref
 
         try:
-            args.paper_id = expand_paper_id(args.paper_id)
+            args.paper_id, note = expand_paper_ref(args.paper_id)
         except ExportLookupError as e:
             print(f"e2er {args.command}: {e}", file=sys.stderr)
             sys.exit(1)
+        if note:
+            print(note, file=sys.stderr)
 
     if args.command == "install-skills":
         from .cli_install_skills import install_skills as _install
