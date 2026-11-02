@@ -128,15 +128,23 @@ def _windows_drives() -> list[str]:
     return [f"{letter}:\\" for letter in string.ascii_uppercase if os.path.isdir(f"{letter}:\\")]
 
 
+def _home_drive() -> str:
+    """The home folder's drive letter, upper case with its colon (``"C:"``); empty when it has none."""
+    return (Path.home().drive or os.environ.get("SystemDrive", ""))[:2].upper()
+
+
 def drive_roots() -> list[Path]:
     """The roots of this computer's drives the folder browser may open besides the home folder.
 
-    Windows: every drive letter (``D:\\Projects`` is where many researchers keep their work;
-    tester report, 2026-11-02). macOS: ``/Volumes`` (external disks). Linux: ``/mnt`` and
-    ``/media``, when they exist. A link inside them that leads elsewhere is still not followed.
+    Windows: every drive letter except the one that holds the home folder (``D:\\Projects`` is
+    where many researchers keep their work; tester report, 2026-11-02). On that drive only the
+    home folder stays open: its root would also open ``C:\\Windows`` and every other user's
+    folder. macOS: ``/Volumes`` (external disks). Linux: ``/mnt`` and ``/media``, when they
+    exist. A link inside them that leads elsewhere is still not followed.
     """
     if sys.platform == "win32":
-        return [Path(d) for d in _windows_drives()]
+        home_drive = _home_drive()
+        return [Path(d) for d in _windows_drives() if d[:2].upper() != home_drive]
     folders = _POSIX_DRIVE_FOLDERS.get("linux" if sys.platform.startswith("linux") else sys.platform, ())
     return [Path(os.path.realpath(f)) for f in folders if os.path.isdir(f)]
 

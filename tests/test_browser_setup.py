@@ -1051,10 +1051,12 @@ def test_windows_drive_letters_are_allowed(home, monkeypatch):
     from src.api import setup as setup_mod
 
     monkeypatch.setattr(setup_mod.sys, "platform", "win32")
-    monkeypatch.setattr(setup_mod, "_windows_drives", lambda: ["C:\\", "D:\\"])
+    monkeypatch.setattr(setup_mod, "_windows_drives", lambda: ["C:\\", "D:\\", "e:\\"])
+    monkeypatch.setattr(setup_mod, "_home_drive", lambda: "C:")
     roots = setup_mod.allowed_roots()
     assert roots[0] == Path(os.path.realpath(home)), "the home folder stays first: the browser opens there"
-    assert Path("D:\\") in roots and Path("C:\\") in roots
+    assert Path("D:\\") in roots and Path("e:\\") in roots
+    assert Path("C:\\") not in roots, "the home folder's drive stays closed above the home folder"
 
 
 def test_windows_drives_without_listdrives_are_probed(monkeypatch):
