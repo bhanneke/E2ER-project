@@ -84,9 +84,44 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+
+class _RevalidatedStaticFiles(StaticFiles):
+    """Static files the browser asks for again on every page (``no-cache``; a 304 when unchanged).
+
+    Without a Cache-Control header a browser caches a file by guesswork (a tenth of its age since
+    Last-Modified, which is the install time): after an upgrade it kept running the e2er.js of the
+    version before, and the panels the new e2er.js keeps open folded shut on every poll (tester
+    report, 2026-11-02, on 0.20.0). The pages also name each file with a fingerprint of its
+    contents (:func:`static_url`), so a changed file is a new address.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Any:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+_static_fingerprints: dict[str, str] = {}
+
+
+def static_url(name: str) -> str:
+    """``/static/<name>?v=<fingerprint>``: the address changes whenever the file does (in a dev checkout too)."""
+    fp = _static_fingerprints.get(name)
+    if fp is None:
+        import hashlib
+
+        try:
+            fp = hashlib.sha256((_STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+        except OSError:
+            fp = _version
+        _static_fingerprints[name] = fp
+    return f"/static/{name}?v={fp}"
+
+
 # Server-rendered dashboard. Static files (htmx, css) and Jinja2 templates.
-app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+app.mount("/static", _RevalidatedStaticFiles(directory=str(_STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+templates.env.globals["static_url"] = static_url
 
 
 def _ticks(text: object) -> Any:

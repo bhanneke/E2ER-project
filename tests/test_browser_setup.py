@@ -1019,6 +1019,31 @@ def test_the_live_panel_keeps_open_details_open_across_polls():
     assert "details[id][open]" in js and "d.open = true" in js
 
 
+def test_the_dashboard_scripts_are_never_served_stale_after_an_upgrade():
+    """0.20.0 kept the panels open, yet the tester's browser ran the e2er.js of the version before.
+
+    Starlette sent no Cache-Control, so the browser cached /static/e2er.js by guesswork (a tenth of
+    the time since Last-Modified, the install time) and did not ask again after the upgrade. Now each
+    page names the files with a fingerprint of their contents, and the server says to revalidate.
+    """
+    import hashlib
+    import re
+
+    from src.api.app import _STATIC_DIR
+
+    c = TestClient(app, base_url=BASE)
+    page = c.get("/papers/new").text
+    for name in ("e2er.js", "style.css", "htmx.min.js"):
+        fp = hashlib.sha256((_STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+        assert f"/static/{name}?v={fp}" in page, name
+        r = c.get(f"/static/{name}?v={fp}")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache", name
+        again = c.get(f"/static/{name}", headers={"if-none-match": r.headers["etag"]})
+        assert again.status_code == 304 and again.headers["cache-control"] == "no-cache"
+    assert not re.search(r'(src|href)="/static/[^"?]+"', page), "an unversioned static address"
+
+
 # ── the computer's drives (tester report, 2026-11-02: D:\Projects was refused) ──
 
 
