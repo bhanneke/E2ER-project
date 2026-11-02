@@ -2254,6 +2254,9 @@ def _skills_view(message: str = "") -> dict[str, Any]:
             "notes": p.notes,
             "count": len(p.skills),
             "redistributable": p.redistributable,
+            # Listed, not installable: its repository is private (the 100xOS pack).
+            "private": p.private,
+            "owner": p.owner,
         }
         for p in packs
     ]
@@ -2280,7 +2283,14 @@ async def install_skill_pack(pack: str = Form(...)) -> Any:
     try:
         found = sc.find_pack(pack)
         report = await sc.install_pack(found)
-        note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
+        if report.get("reason"):
+            note = report["reason"]
+        elif not report["installed"]:
+            note = f"Could not install {found.name}: none of its {report['failed']} files could be fetched."
+        else:
+            note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
+    except sc.PrivatePackError as e:
+        note = str(e)
     except sc.CatalogueError as e:
         from ..core.labels import NETWORK_ERROR
 

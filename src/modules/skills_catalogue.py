@@ -38,6 +38,10 @@ class CatalogueError(RuntimeError):
     """The catalogue could not be read, or a pack could not be installed."""
 
 
+class PrivatePackError(CatalogueError):
+    """The pack lives in a private repository; the message says whom to ask for access."""
+
+
 @dataclass
 class CatalogueSkill:
     slug: str
@@ -74,6 +78,21 @@ class SkillPack:
         """
         lic = (self.license or "").lower()
         return any(k in lic for k in ("mit", "apache", "bsd", "cc0", "cc by 4", "public domain")) and "nc" not in lic
+
+    @property
+    def private(self) -> bool:
+        """The pack lives in a repository e2er cannot download from: the catalogue says it is private,
+        or names no file to fetch (the 100xOS pack: ``source_url: 'private (…)'``, every ``details_url`` empty).
+        """
+        src = (self.source_url or "").strip().lower()
+        if src.startswith("private") or (self.license or "").strip().lower().startswith("private"):
+            return True
+        return bool(self.skills) and not any(s.details_url for s in self.skills)
+
+    @property
+    def owner(self) -> str:
+        """Who can give access: the maintainers, else "its owner"."""
+        return ", ".join(self.maintainers) or "its owner"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -337,20 +356,47 @@ def _candidate_urls(details_url: str) -> list[str]:
     return urls + cased
 
 
+def private_message(pack: SkillPack) -> str:
+    """Why a pack cannot be installed when its repository is private or gone, and what to do."""
+    return (
+        f"“{pack.name}” lives in a repository that is private or no longer available, so e2er cannot download it. "
+        f"To install it, ask {pack.owner} for access."
+    )
+
+
+#: GitHub's answers for a repository the caller may not see (private) or that is gone.
+_NO_ACCESS = frozenset({401, 403, 404, 410, 451})
+
+
+def _status_of(error: BaseException) -> int | None:
+    response = getattr(error, "response", None)
+    code = getattr(response, "status_code", None)
+    return code if isinstance(code, int) else None
+
+
 async def install_pack(
     pack: SkillPack,
     *,
     dest: Path | None = None,
     on_event: Any = None,
 ) -> dict[str, Any]:
-    """Fetch a pack's skill files. Returns a report; never raises for one bad file."""
+    """Fetch a pack's skill files. Returns a report; never raises for one bad file.
+
+    A pack the catalogue marks as private raises CatalogueError with :func:`private_message`
+    before anything is written. When GitHub refuses every file (401, 403, 404: a private or deleted
+    repository), the report's ``reason`` says so in plain words and no empty pack folder is left.
+    """
     from .fetch.http import fetch_bytes
 
+    if pack.private:
+        raise PrivatePackError(private_message(pack))
     root = dest or install_root()
     root.mkdir(parents=True, exist_ok=True)
     # A catalogue entry is someone else's YAML: "../../.claude" as a slug wrote CLAUDE.md into ~/.claude.
     target = _inside(root, pack.slug)
+    existed = target.is_dir()
     target.mkdir(parents=True, exist_ok=True)
+    statuses: list[int | None] = []
 
     written: list[dict[str, str]] = []
     failed: list[dict[str, str]] = []
@@ -364,9 +410,11 @@ async def install_pack(
         candidates = _candidate_urls(skill.details_url) if skill.details_url else []
         if not candidates:
             failed.append({"skill": skill.slug, "error": "no source URL in the catalogue"})
+            if on_event:
+                on_event("fail", skill.slug, "no source URL in the catalogue")
             continue
 
-        data, url, last_error = None, "", ""
+        data, url, last_error, status = None, "", "", None
         for candidate in candidates:
             try:
                 data = await fetch_bytes(candidate, max_bytes=2 * 1024 * 1024)
@@ -374,8 +422,10 @@ async def install_pack(
                 break
             except Exception as e:  # noqa: BLE001 — a private repo or moved file is normal
                 last_error = str(e)[:200]
+                status = _status_of(e) if status is None or status == 404 else status
 
         if data is None:
+            statuses.append(status)
             failed.append({"skill": skill.slug, "error": last_error})
             if on_event:
                 on_event("fail", skill.slug, last_error[:120])
@@ -389,6 +439,23 @@ async def install_pack(
         written.append({"skill": skill.slug, "file": out.name, "url": url})
         if on_event:
             on_event("ok", skill.slug, out.name)
+
+    reason = ""
+    if not written and statuses and all(code in _NO_ACCESS for code in statuses):
+        reason = private_message(pack)
+    if not written and not existed:
+        # Nothing came: no folder that reads as an installed pack with 0 files.
+        import shutil
+
+        shutil.rmtree(target, ignore_errors=True)
+        return {
+            "pack": pack.slug,
+            "installed": 0,
+            "failed": len(failed),
+            "path": str(target),
+            "reason": reason,
+            "failures": failed,
+        }
 
     # The provenance of an installed tree. Without this, six months later
     # nobody can say whose file this is or what licence it arrived under.
@@ -406,7 +473,14 @@ async def install_pack(
         newline="\n",
     )
 
-    return {"pack": pack.slug, "installed": len(written), "failed": len(failed), "path": str(target)}
+    return {
+        "pack": pack.slug,
+        "installed": len(written),
+        "failed": len(failed),
+        "path": str(target),
+        "reason": reason,
+        "failures": failed,
+    }
 
 
 def installed_packs(dest: Path | None = None) -> list[dict[str, Any]]:

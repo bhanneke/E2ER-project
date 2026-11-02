@@ -204,11 +204,12 @@ async def test_failures_are_recorded_not_just_counted(catalogue, tmp_path, monke
     monkeypatch.setattr("src.modules.fetch.http.fetch_bytes", _fetch)
     dest = tmp_path / "installed"
 
-    await install_pack(find_pack("demo", catalogue), dest=dest)
-    manifest = json.loads((dest / "demo" / "pack.json").read_text(encoding="utf-8"))
+    report = await install_pack(find_pack("demo", catalogue), dest=dest)
 
-    assert len(manifest["failed"]) == 2
-    assert "410" in manifest["failed"][0]["error"]
+    assert len(report["failures"]) == 2
+    assert "410" in report["failures"][0]["error"]
+    # Nothing came: no folder that would read as an installed pack with 0 files (and hide Install).
+    assert not (dest / "demo").exists()
 
 
 async def test_installed_then_removed(catalogue, tmp_path, monkeypatch):
@@ -349,3 +350,69 @@ def test_the_rise_download_is_capped_while_it_streams(monkeypatch):
     with pytest.raises(CatalogueError, match="larger than expected"):
         sc._fetch_tarball("https://codeload.github.com/x", max_bytes=10 * 1024)
     assert len(sent) < 100
+
+
+# ---------------------------------------------------------------------------
+# Private packs (tester report, 2026-11-02: "100xOS" did not install, with no reason given)
+# ---------------------------------------------------------------------------
+
+PRIVATE_YML = """
+pack:
+  slug: hundredx-os
+  name: '100xOS shared skills'
+  source_url: 'private (Björn Hanneke, 100xOS ecosystem)'
+  maintainers:
+    - 'Björn Hanneke'
+  license: 'private (curator-owned)'
+skills:
+  - slug: 'base-economist'
+    name: 'economist'
+    source_path: 'base/economist.md'
+    details_url: ''
+"""
+
+
+def test_a_private_pack_is_marked_and_says_whom_to_ask(catalogue, tmp_path, monkeypatch):
+    from src.modules.skills_catalogue import PrivatePackError
+
+    (catalogue / "skills" / "hundredx-os.yml").write_text(PRIVATE_YML, encoding="utf-8", newline="\n")
+    packs = {p.slug: p for p in read_catalogue(catalogue)}
+    assert packs["hundredx-os"].private and not packs["demo"].private
+
+    async def never(*a, **k):  # pragma: no cover - must not be called
+        raise AssertionError("a private pack is not fetched")
+
+    monkeypatch.setattr("src.modules.fetch.http.fetch_bytes", never)
+    import asyncio
+
+    with pytest.raises(PrivatePackError) as err:
+        asyncio.run(install_pack(packs["hundredx-os"], dest=tmp_path / "installed"))
+    assert "private or no longer available" in str(err.value)
+    assert "ask Björn Hanneke for access" in str(err.value)
+    assert not (tmp_path / "installed" / "hundredx-os").exists()
+
+
+async def test_github_refusing_every_file_reads_as_a_private_repository(catalogue, tmp_path, monkeypatch):
+    import httpx
+
+    async def _fetch(url, headers=None, max_bytes=None):
+        request = httpx.Request("GET", url)
+        raise httpx.HTTPStatusError("404 Not Found", request=request, response=httpx.Response(404, request=request))
+
+    monkeypatch.setattr("src.modules.fetch.http.fetch_bytes", _fetch)
+    report = await install_pack(find_pack("demo", catalogue), dest=tmp_path / "installed")
+    assert report["installed"] == 0
+    assert "private or no longer available" in report["reason"] and "A. Person" in report["reason"]
+
+
+def test_the_cli_says_why_without_a_traceback(catalogue, tmp_path, monkeypatch, capsys):
+    from src import cli_skills
+
+    (catalogue / "skills" / "hundredx-os.yml").write_text(PRIVATE_YML, encoding="utf-8", newline="\n")
+    monkeypatch.setattr("src.modules.skills_catalogue.install_root", lambda: tmp_path / "installed")
+    code = cli_skills.main(["--catalogue", str(catalogue), "install", "hundredx-os"])
+    err = capsys.readouterr().err
+    assert code == 2
+    assert "ask Björn Hanneke for access" in err and "Traceback" not in err
+    cli_skills.main(["--catalogue", str(catalogue), "list"])
+    assert "private: ask its owner for access" in capsys.readouterr().out
