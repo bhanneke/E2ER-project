@@ -1017,3 +1017,100 @@ def test_the_live_panel_keeps_open_details_open_across_polls():
     js = (root / "static" / "e2er.js").read_text(encoding="utf-8")
     assert "htmx:beforeSwap" in js and "htmx:afterSwap" in js
     assert "details[id][open]" in js and "d.open = true" in js
+
+
+def test_the_dashboard_scripts_are_never_served_stale_after_an_upgrade():
+    """0.20.0 kept the panels open, yet the tester's browser ran the e2er.js of the version before.
+
+    Starlette sent no Cache-Control, so the browser cached /static/e2er.js by guesswork (a tenth of
+    the time since Last-Modified, the install time) and did not ask again after the upgrade. Now each
+    page names the files with a fingerprint of their contents, and the server says to revalidate.
+    """
+    import hashlib
+    import re
+
+    from src.api.app import _STATIC_DIR
+
+    c = TestClient(app, base_url=BASE)
+    page = c.get("/papers/new").text
+    for name in ("e2er.js", "style.css", "htmx.min.js"):
+        fp = hashlib.sha256((_STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+        assert f"/static/{name}?v={fp}" in page, name
+        r = c.get(f"/static/{name}?v={fp}")
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache", name
+        again = c.get(f"/static/{name}", headers={"if-none-match": r.headers["etag"]})
+        assert again.status_code == 304 and again.headers["cache-control"] == "no-cache"
+    assert not re.search(r'(src|href)="/static/[^"?]+"', page), "an unversioned static address"
+
+
+# ── the computer's drives (tester report, 2026-11-02: D:\Projects was refused) ──
+
+
+def test_windows_drive_letters_are_allowed(home, monkeypatch):
+    from src.api import setup as setup_mod
+
+    monkeypatch.setattr(setup_mod.sys, "platform", "win32")
+    monkeypatch.setattr(setup_mod, "_windows_drives", lambda: ["C:\\", "D:\\"])
+    roots = setup_mod.allowed_roots()
+    assert roots[0] == Path(os.path.realpath(home)), "the home folder stays first: the browser opens there"
+    assert Path("D:\\") in roots and Path("C:\\") in roots
+
+
+def test_windows_drives_without_listdrives_are_probed(monkeypatch):
+    from src.api import setup as setup_mod
+
+    monkeypatch.delattr(setup_mod.os, "listdrives", raising=False)
+    monkeypatch.setattr(setup_mod.os.path, "isdir", lambda p: p in {"C:\\", "D:\\"})
+    assert setup_mod._windows_drives() == ["C:\\", "D:\\"]
+
+
+def test_windows_drives_from_listdrives(monkeypatch):
+    from src.api import setup as setup_mod
+
+    monkeypatch.setattr(setup_mod.os, "listdrives", lambda: ["C:\\", "E:\\"], raising=False)
+    assert setup_mod._windows_drives() == ["C:\\", "E:\\"]
+
+
+def test_linux_mounts_only_when_they_exist(monkeypatch, tmp_path):
+    from src.api import setup as setup_mod
+
+    mnt = tmp_path / "mnt"
+    mnt.mkdir()
+    monkeypatch.setattr(setup_mod.sys, "platform", "linux")
+    monkeypatch.setattr(setup_mod, "_POSIX_DRIVE_FOLDERS", {"linux": (str(mnt), str(tmp_path / "media"))})
+    assert setup_mod.drive_roots() == [Path(os.path.realpath(mnt))]
+
+
+def test_an_external_disk_can_be_browsed_but_links_out_of_it_are_not_followed(home, session, tmp_path, monkeypatch):
+    from src.api import setup as setup_mod
+
+    volumes = tmp_path / "Volumes"
+    disk = volumes / "Research Disk" / "e2er-studies"
+    disk.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (volumes / "Research Disk" / "escape").symlink_to(outside)
+    monkeypatch.setattr(setup_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(setup_mod, "_POSIX_DRIVE_FOLDERS", {"darwin": (str(volumes),)})
+    c = _client()
+    r = c.get("/api/local/browse", params={"path": str(volumes / "Research Disk"), "kind": "folder"})
+    assert r.status_code == 200
+    d = r.json()
+    assert {x["name"] for x in d["dirs"]} == {"e2er-studies"}, "the link out of the disk is not listed"
+    assert str(Path(os.path.realpath(volumes))) in d["roots"], "the page offers the disks as a place to go"
+    assert c.get("/api/local/browse", params={"path": str(volumes / "Research Disk" / "escape")}).status_code == 403
+    refused = c.get("/api/local/browse", params={"path": str(outside)})
+    assert refused.status_code == 403
+    assert "home folder or on one of this computer's drives" in refused.json()["detail"]
+
+
+def test_the_setup_checkboxes_say_what_they_do(home, session, tmp_path, monkeypatch):
+    """The tester did not understand "Keep this folder's settings and studies in … instead"."""
+    page = (Path(__file__).resolve().parents[1] / "src" / "api" / "templates" / "setup.html").read_text(
+        encoding="utf-8"
+    )
+    assert "Use this folder for all my studies, wherever I start e2er." in page
+    assert "only for the studies I start from it" in page
+    assert "Started anywhere else, e2er keeps using the studies folder below." in page
+    assert "instead\n            (your studies folder stays in use" not in page

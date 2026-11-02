@@ -220,3 +220,26 @@ def test_the_message_survives_a_url_round_trip(client, catalogue, monkeypatch):
     assert r.status_code == 200
     assert "y=2" in r.text, "the message was truncated at the ampersand"
     assert "frag failed" in r.text, "and at the fragment marker"
+
+
+PRIVATE_PACK = """
+pack:
+  slug: hundredx-os
+  name: '100xOS shared skills'
+  source_url: 'private (Björn Hanneke, 100xOS ecosystem)'
+  maintainers: ['Björn Hanneke']
+  license: 'private (curator-owned)'
+skills:
+  - slug: base-economist
+    details_url: ''
+"""
+
+
+def test_a_private_pack_is_listed_as_private_and_says_why_it_cannot_be_installed(client, catalogue):
+    (catalogue / "skills" / "hundredx-os.yml").write_text(PRIVATE_PACK, encoding="utf-8", newline="\n")
+    page = client.get("/skills").text
+    assert "100xOS shared skills" in page, "listed, not removed"
+    assert "Private: ask" in page
+    r = client.post("/skills/install", data={"pack": "hundredx-os"}, follow_redirects=True)
+    assert r.status_code == 200
+    assert "private or no longer available" in r.text and "Traceback" not in r.text

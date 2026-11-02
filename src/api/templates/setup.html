@@ -31,19 +31,19 @@
         <code class="path">{{ studies_folder }}</code>; start e2er from any other folder to use it.{% endif %}</p>
       <label class="check">
         <input type="checkbox" name="make_studies_folder">
-        <span>Make this folder my studies folder, so e2er uses it from any folder I start it in</span>
+        <span>Use this folder for all my studies, wherever I start e2er.</span>
       </label>
     {% else %}
-      <p class="card-note">Your settings, your studies and the folders you export are kept here. e2er uses this
-        folder from any folder you start it in.{% if proposed_is_launch %} It is the folder you started e2er in;
+      <p class="card-note">e2er keeps your settings, your studies and the folders you export here, and uses this
+        folder wherever you start it.{% if proposed_is_launch %} It is the folder you started e2er in;
         choose another one to keep your studies elsewhere.{% endif %}</p>
       {% if launch_folder %}
         <p class="card-note" id="launch-note">You started e2er in <code class="path">{{ launch_folder }}</code>, which has no
           settings of its own, so e2er uses your studies folder.</p>
         <label class="check">
           <input type="checkbox" name="use_launch_folder">
-          <span>Keep this folder's settings and studies in <code class="path">{{ launch_folder }}</code> instead
-            (your studies folder stays in use from every other folder)</span>
+          <span>Use <code class="path">{{ launch_folder }}</code> only for the studies I start from it, with its
+            own settings. Started anywhere else, e2er keeps using the studies folder below.</span>
         </label>
       {% endif %}
       <div class="picked">
@@ -330,9 +330,14 @@
       ? 'Open a folder and click a .bib file, or use the whole folder (a Zotero export or a folder of PDFs).'
       : c.kind === 'folder' ? 'Open the folder for your studies, then use it. An empty folder is fine.'
       : 'Open the folder that holds your data files, then use it.';
+    // The places the browser may open: the home folder and this computer's drives (D:\, /Volumes, /mnt).
+    const places = (d.roots || []).length > 1
+      ? '<div class="fb-places"><span class="muted">Go to:</span> ' + d.roots.map((r, i) =>
+          '<button type="button" class="crumb" data-go="' + esc(r) + '">' + esc(i === 0 ? 'Home folder' : r) + '</button>').join(' ') + '</div>'
+      : '';
     box.innerHTML =
       '<div class="fb-top"><div class="crumbs">' + crumbs + '</div>' +
-      '<button type="button" class="btn-ghost" data-close>Close</button></div>' +
+      '<button type="button" class="btn-ghost" data-close>Close</button></div>' + places +
       '<p class="muted fb-hint">' + hint + '</p>' +
       '<ul class="fb-list">' + rows.join('') + '</ul>' +
       '<div class="fb-foot"><code class="path">' + esc(d.path) + '</code>' +

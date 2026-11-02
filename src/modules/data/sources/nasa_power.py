@@ -430,5 +430,7 @@ SOURCE = Source(
         "data.nasa_power.point",
         operation="point",
         params={"lat": 50.11, "lon": 8.68, "parameters": "T2M", "start": "2024-01-01", "end": "2024-01-02"},
+        # A slow archive: the doctor waits up to doctor.SLOW_SERVICE_TIMEOUT for it.
+        timeout=20.0,
     ),
 )

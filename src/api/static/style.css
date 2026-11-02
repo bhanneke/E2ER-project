@@ -364,6 +364,7 @@ ol.phases {
 .pf-mark { font-weight: 700; color: var(--muted); }
 .pf-pass .pf-mark { color: var(--ok); }
 .pf-fail .pf-mark { color: var(--danger); }
+.pf-warn .pf-mark { color: var(--warn, #b26b00); font-weight: 600; }
 .pf-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
 .pf-detail { font-size: 13px; color: var(--muted); }
 .pf-fail .pf-detail { color: var(--danger); }
@@ -466,6 +467,7 @@ ul.filelist { margin: 6px 0 0; padding-left: 18px; font-family: ui-monospace, SF
 .crumb { border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; cursor: pointer; padding: 2px 3px; }
 .crumbs .sep { color: var(--muted); font-size: 12px; }
 .fb-hint { margin: 8px 12px 4px; }
+.fb-places { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
 ul.fb-list { list-style: none; margin: 0; padding: 4px 0; max-height: 300px; overflow-y: auto; }
 .fb-row { display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit; font-size: 14px; padding: 6px 14px; cursor: pointer; color: var(--fg); overflow-wrap: anywhere; }
 .fb-row:hover, .fb-row:focus-visible { background: #f3f8fe; outline: none; }

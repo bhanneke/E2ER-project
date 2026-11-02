@@ -225,6 +225,9 @@ class Doctor:
     params: dict[str, Any] = field(default_factory=dict)
     #: A connector written before the kit: its own check function (``async (settings) -> doctor.Check``).
     run: Callable[[Any], Awaitable[Any]] | None = None
+    #: Seconds the doctor waits for the answer; 0: its default (``doctor.CHECK_TIMEOUT``). A slow archive
+    #: (a TAP service) sets ``doctor.SLOW_SERVICE_TIMEOUT``.
+    timeout: float = 0.0
 
 
 @dataclass(frozen=True)

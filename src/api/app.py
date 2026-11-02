@@ -84,9 +84,44 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+
+class _RevalidatedStaticFiles(StaticFiles):
+    """Static files the browser asks for again on every page (``no-cache``; a 304 when unchanged).
+
+    Without a Cache-Control header a browser caches a file by guesswork (a tenth of its age since
+    Last-Modified, which is the install time): after an upgrade it kept running the e2er.js of the
+    version before, and the panels the new e2er.js keeps open folded shut on every poll (tester
+    report, 2026-11-02, on 0.20.0). The pages also name each file with a fingerprint of its
+    contents (:func:`static_url`), so a changed file is a new address.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Any:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+_static_fingerprints: dict[str, str] = {}
+
+
+def static_url(name: str) -> str:
+    """``/static/<name>?v=<fingerprint>``: the address changes whenever the file does (in a dev checkout too)."""
+    fp = _static_fingerprints.get(name)
+    if fp is None:
+        import hashlib
+
+        try:
+            fp = hashlib.sha256((_STATIC_DIR / name).read_bytes()).hexdigest()[:12]
+        except OSError:
+            fp = _version
+        _static_fingerprints[name] = fp
+    return f"/static/{name}?v={fp}"
+
+
 # Server-rendered dashboard. Static files (htmx, css) and Jinja2 templates.
-app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+app.mount("/static", _RevalidatedStaticFiles(directory=str(_STATIC_DIR)), name="static")
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+templates.env.globals["static_url"] = static_url
 
 
 def _ticks(text: object) -> Any:
@@ -2079,7 +2114,7 @@ def forget_preflight() -> None:
 
 async def _run_preflight() -> dict[str, Any]:
     """Run the same checks `e2er doctor` runs, as the view the templates show."""
-    from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, run_doctor
+    from ..doctor import _BLOCKERS_PREFIXES, FAIL, PASS, SKIP, WARN, run_doctor
 
     try:
         checks = await run_doctor(get_settings())
@@ -2096,6 +2131,8 @@ async def _run_preflight() -> dict[str, Any]:
         "n_pass": sum(1 for c in checks if c.status == PASS),
         "n_skip": sum(1 for c in checks if c.status == SKIP),
         "n_fail": sum(1 for c in checks if c.status == FAIL),
+        # A service that answered with an error on its side (5xx, 429): try again later, nothing to fix here.
+        "n_warn": sum(1 for c in checks if c.status == WARN),
         "error": "",
     }
 
@@ -2252,6 +2289,9 @@ def _skills_view(message: str = "") -> dict[str, Any]:
             "notes": p.notes,
             "count": len(p.skills),
             "redistributable": p.redistributable,
+            # Listed, not installable: its repository is private (the 100xOS pack).
+            "private": p.private,
+            "owner": p.owner,
         }
         for p in packs
     ]
@@ -2278,7 +2318,14 @@ async def install_skill_pack(pack: str = Form(...)) -> Any:
     try:
         found = sc.find_pack(pack)
         report = await sc.install_pack(found)
-        note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
+        if report.get("reason"):
+            note = report["reason"]
+        elif not report["installed"]:
+            note = f"Could not install {found.name}: none of its {report['failed']} files could be fetched."
+        else:
+            note = f"{found.name}: {report['installed']} installed, {report['failed']} failed."
+    except sc.PrivatePackError as e:
+        note = str(e)
     except sc.CatalogueError as e:
         from ..core.labels import NETWORK_ERROR
 

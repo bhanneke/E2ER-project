@@ -46,7 +46,11 @@ def format_list(studies: list[st.Study], n_archived: int, *, attempts: bool, arc
     for s in studies:
         d = s.as_dict(archived)
         lines.append(s.title)
-        latest = f"{status_words(d['latest_status'])} {str(d['latest_date'] or '')[:16]}" if d["latest_status"] else "—"
+        latest = (
+            f"{status_words(d['latest_status'])} {str(d['latest_date'] or '')[:16]} (run {d['latest_id'][:8]})"
+            if d["latest_status"]
+            else "—"
+        )
         extra = f" · {d['archived']} archived" if d["archived"] and not archived else ""
         lines.append(f"  {s.key} · {s.template} · {_plural(d['attempts'], 'attempt')}{extra} · latest: {latest}")
         lines.append(f"  {d['summary']}")
@@ -59,6 +63,8 @@ def format_list(studies: list[st.Study], n_archived: int, *, attempts: bool, arc
                     f"    v{a['version']:<3} {a['short_id']}  {shown:<10} {a['created_at'][:16]}  {model}{flag}"
                 )
         lines.append("")
+    # The key and the run id both work with `e2er status`, `cancel` and `resume` (tester report, 2026-11-02).
+    lines.append("e2er status <key or run id> shows a run: a study's key stands for its latest run.")
     return "\n".join(lines).rstrip() + "\n"
 
 

@@ -7,12 +7,12 @@
   {% else %}
     <strong>Not ready yet.</strong> Fix the red lines below first.
   {% endif %}
-  <span class="muted">{{ n_pass }} passed · {{ n_skip }} not set up (optional) · {{ n_fail }} failed</span>
+  <span class="muted">{{ n_pass }} passed · {{ n_skip }} not set up (optional) · {{ n_fail }} failed{% if n_warn %} · {{ n_warn }} to try again later{% endif %}</span>
 </div>
 <div class="pf-list">
   {% for c in checks %}
     <div class="pf pf-{{ c.status | lower }}">
-      <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% else %}·{% endif %}</span>
+      <span class="pf-mark">{% if c.status == "PASS" %}✓{% elif c.status == "FAIL" %}✗{% elif c.status == "WARN" %}!{% else %}·{% endif %}</span>
       <span class="pf-name">{{ c.name | check_label }}</span>
       <span class="pf-detail">{{ c.detail | check_detail(c.name) | ticks }}</span>
     </div>

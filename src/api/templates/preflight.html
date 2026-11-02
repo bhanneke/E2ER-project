@@ -10,7 +10,7 @@
 
 <div id="pf-checks" {% if pending %}hx-get="/htmx/preflight-checks" hx-trigger="load" hx-swap="innerHTML"{% endif %}>
   {% if pending %}
-    <p class="muted">Running the checks. Each data source gets a few seconds to answer.</p>
+    <p class="muted">Running the checks. Each data source gets a few seconds to answer, a slow archive up to 20 seconds.</p>
   {% else %}
     {% include "_preflight_checks.html" %}
   {% endif %}
