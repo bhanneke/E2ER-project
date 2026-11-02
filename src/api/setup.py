@@ -9,13 +9,14 @@ it asks for the studies folder (it offers the folder e2er was started in, else
 The folder browser lists folders on this computer, so it and the save endpoint
 sit behind :func:`local_session.require_local_session` (token, loopback, local
 Host header, same origin). Listing starts at the home folder and never leaves
-it (or the extra roots named in ``E2ER_BROWSE_ROOTS``), and does not follow a
-symlink that points outside them.
+it, the computer's drives (:func:`drive_roots`) or the extra roots named in
+``E2ER_BROWSE_ROOTS``, and does not follow a symlink that points outside them.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -110,11 +111,46 @@ def _read_env() -> dict[str, str]:
 # ── folder browser ──────────────────────────────────────────────────────────
 
 
+#: Where a computer's other drives appear: external disks on macOS, mounted drives on Linux.
+_POSIX_DRIVE_FOLDERS = {"darwin": ("/Volumes",), "linux": ("/mnt", "/media")}
+
+
+def _windows_drives() -> list[str]:
+    """The drive roots of this Windows computer (``C:\\``, ``D:\\``, …)."""
+    listdrives = getattr(os, "listdrives", None)  # Python 3.12+
+    if listdrives is not None:
+        try:
+            return list(listdrives())
+        except OSError:
+            pass
+    import string
+
+    return [f"{letter}:\\" for letter in string.ascii_uppercase if os.path.isdir(f"{letter}:\\")]
+
+
+def drive_roots() -> list[Path]:
+    """The roots of this computer's drives the folder browser may open besides the home folder.
+
+    Windows: every drive letter (``D:\\Projects`` is where many researchers keep their work;
+    tester report, 2026-11-02). macOS: ``/Volumes`` (external disks). Linux: ``/mnt`` and
+    ``/media``, when they exist. A link inside them that leads elsewhere is still not followed.
+    """
+    if sys.platform == "win32":
+        return [Path(d) for d in _windows_drives()]
+    folders = _POSIX_DRIVE_FOLDERS.get("linux" if sys.platform.startswith("linux") else sys.platform, ())
+    return [Path(os.path.realpath(f)) for f in folders if os.path.isdir(f)]
+
+
 def allowed_roots() -> list[Path]:
+    """The home folder first, then the drives (:func:`drive_roots`), then ``E2ER_BROWSE_ROOTS``."""
     roots = [Path(os.path.realpath(Path.home()))]
+    extra = [*drive_roots()]
     for raw in (os.environ.get(ROOTS_ENV) or "").split(os.pathsep):
         if raw.strip():
-            roots.append(Path(os.path.realpath(os.path.expanduser(raw.strip()))))
+            extra.append(Path(os.path.realpath(os.path.expanduser(raw.strip()))))
+    for r in extra:
+        if r not in roots:
+            roots.append(r)
     return roots
 
 
@@ -128,7 +164,11 @@ def safe_resolve(raw: str | None) -> Path:
     s = clean_path_input(raw) if raw else ""
     target = Path(os.path.realpath(s)) if s else roots[0]
     if not _inside(target, roots):
-        raise HTTPException(status_code=403, detail="That folder is outside your home folder.")
+        raise HTTPException(
+            status_code=403,
+            detail="e2er does not open this folder. Choose a folder in your home folder or on one of this "
+            "computer's drives.",
+        )
     return target
 
 
