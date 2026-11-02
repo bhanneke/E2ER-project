@@ -129,7 +129,7 @@ def test_localhost_pages_go_to_127_0_0_1():
 
 def test_every_page_loads_the_error_handler():
     html = _client().get("/library").text
-    assert '<script src="/static/e2er.js"></script>' in html
+    assert '<script src="/static/e2er.js?v=' in html  # with its fingerprint: never a stale copy
     js = (Path(__file__).parents[1] / "src" / "api" / "static" / "e2er.js").read_text(encoding="utf-8")
     assert "htmx:responseError" in js and "htmx:sendError" in js and "e2er is not reachable" in js
 
