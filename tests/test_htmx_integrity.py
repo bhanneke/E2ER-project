@@ -26,7 +26,7 @@ def test_the_shipped_file_matches_the_pinned_hashes():
     sri = "sha384-" + base64.b64encode(hashlib.sha384(body).digest()).decode()
     base = (ROOT / "src/api/templates/base.html").read_text(encoding="utf-8")
     # The address carries a fingerprint of the file (static_url), so a browser never keeps an old copy.
-    assert f"src=\"{{{{ static_url('htmx.min.js') }}}}\" integrity=\"{sri}\"" in base
+    assert f'src="{{{{ static_url(\'htmx.min.js\') }}}}" integrity="{sri}"' in base
 
 
 @pytest.mark.skipif(os.name == "nt", reason="a bash script")
