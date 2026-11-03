@@ -263,7 +263,13 @@ def test_other_origins_are_refused_and_never_get_cors(home, session):
     assert c.get("/api/local/browse", headers={"origin": BASE}).status_code == 200
 
 
-def test_no_listing_outside_home(home, session, tmp_path):
+def test_no_listing_outside_home(home, session, tmp_path, monkeypatch):
+    from src.api import setup as setup_mod
+
+    # The rule for the home folder alone: other drives are opened on purpose (their own tests
+    # below). On a Windows machine whose working drive is not the home folder's, "/" is that
+    # other drive's root and would be allowed.
+    monkeypatch.setattr(setup_mod, "drive_roots", lambda: [])
     c = _client()
     outside = tmp_path / "outside"
     outside.mkdir()
