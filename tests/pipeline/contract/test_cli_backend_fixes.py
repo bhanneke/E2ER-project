@@ -105,8 +105,10 @@ async def test_codex_command_line_runs_writable_outside_git_with_network(cfg, tm
     # W3: the allowlisted environment reaches the shell; Codex's default excludes (KEY/SECRET/TOKEN) apply.
     assert 'shell_environment_policy.inherit="all"' in cmd
     assert "shell_environment_policy.ignore_default_excludes=true" not in cmd
-    # W4: the run database's folder is writable.
-    assert cmd[cmd.index("--add-dir") + 1] == str((tmp_path / "db").resolve())
+    # W4 (tester report 2026-11-02): no extra writable folder, not even the run database's: on Windows any extra folder
+    # makes Codex refuse every file edit (openai/codex#30009); the wrappers write a journal in the workspace.
+    assert "--add-dir" not in cmd
+    assert calls["kwargs"]["env"]["E2ER_AUDIT_JOURNAL"].startswith(str((tmp_path / "workspaces" / "p1").resolve()))
     # W5: none of the user's own Codex config, rules or session history.
     for flag in ("--ignore-user-config", "--ignore-rules", "--ephemeral"):
         assert flag in cmd
@@ -386,13 +388,13 @@ def test_codex_without_a_model_setting_uses_and_records_the_clis_first_listed_mo
     codex.default_codex_model.cache_clear()
     assert CodexBackend().model == "big-one"
     assert get_settings().default_model_for("codex") == "big-one"
-    cmd = CodexBackend().build_cmd(cwd="/w", last_message_file="/f", extra_dirs=[])
+    cmd = CodexBackend().build_cmd(cwd="/w", last_message_file="/f")
     assert cmd[cmd.index("-m") + 1] == "big-one"
 
 
 def test_codex_label_without_any_model_list_stays_honest(cfg):
     assert get_settings().default_model_for("codex") == "codex-cli-default"
-    assert "-m" not in CodexBackend().build_cmd(cwd="/w", last_message_file="/f", extra_dirs=[])
+    assert "-m" not in CodexBackend().build_cmd(cwd="/w", last_message_file="/f")
 
 
 def test_identity_records_model_effort_and_cli_version(cfg):

@@ -12,17 +12,22 @@ Validated live on codex-cli 0.155 (October 2026). What each flag is for:
   which a specialist cannot write a single file.
 * ``sandbox_workspace_write.network_access=true``: the sandbox has no network
   by default; ``e2er-data`` and ``e2er-lit`` need it.
-* ``--add-dir <run database folder>``: writes outside the workspace are
-  blocked, and the wrappers write their audit rows to the run database. Only
-  given when the database is outside the workspace (the default
-  ``~/.e2er/papers.db`` is).
+* No ``--add-dir``: Codex may write the study's workspace and nothing else.
+  Up to 0.20 e2er gave it the run database's folder as well, so the wrappers
+  could write their audit rows there; on Windows any extra writable folder
+  makes Codex refuse every file edit under workspace-write (openai/codex#30009,
+  tester report 2026-11-02). The wrappers now write those rows to a journal in
+  the workspace, which e2er imports (cli_support.audit_journal).
 
-The sandbox was validated on macOS (Seatbelt) only. On Linux Codex sandboxes
-with bubblewrap, which needs unprivileged user namespaces (Ubuntu restricts
-them with AppArmor); on Windows ``apply_patch`` fails under workspace-write
-when extra writable folders are given (openai/codex#30009). Codex then exits 0
-with nothing written; :func:`sandbox_diagnostic` turns its refusals into a
-message that names the remedy (tester report, 2026-10-27).
+The sandbox was validated on macOS (Seatbelt). On Linux Codex sandboxes with
+bubblewrap, which needs unprivileged user namespaces (Ubuntu 23.10 and later
+restrict them with AppArmor); on Windows it uses its own sandbox. When the
+sandbox refuses, Codex still exits 0 with nothing written. So before the first
+specialist of a run e2er asks Codex to write one small test file in a
+temporary folder (:meth:`CodexBackend.preflight`) and stops the run with a
+plain reason when the file is missing; :func:`sandbox_diagnostic` names a
+refusal during a run, and the dispatcher does not retry a call the sandbox
+refused (tester reports 2026-10-27 and 2026-11-02).
 * ``shell_environment_policy``: pass the whole environment to shell commands,
   so FRED/Allium keys reach the wrappers (some Codex versions drop variables
   whose names contain KEY/TOKEN/SECRET).
@@ -40,8 +45,8 @@ with ``--allowedTools`` so its shell can run only the e2er-* wrappers. Codex
 has no per-run equivalent: its command rules (execpolicy) are read only from
 ``$CODEX_HOME/rules`` or a trusted project, and a rule can forbid a command but
 not forbid everything except a list. So under Codex the model can run any
-shell command; the sandbox confines its writes to the paper's workspace (plus
-the run database folder), but network access is on. See docs/BACKENDS.md.
+shell command; the sandbox confines its writes to the paper's workspace, but
+network access is on. See docs/BACKENDS.md.
 """
 
 from __future__ import annotations
@@ -61,11 +66,12 @@ from ...config import get_settings
 from ...logging_config import get_logger
 from .base import LLMBackend, TokenUsage, ToolHandler, ToolLoopResult
 from .cli_support import (
+    audit_journal,
+    call_timeout,
     cli_name,
     cli_path_or_setting,
     cli_version,
     clip,
-    db_path,
     effective_timeout,
     flatten_prompt,
     kill_process_group,
@@ -73,6 +79,7 @@ from .cli_support import (
     stop_on_cancel,
     workspace_cwd,
 )
+from .plan_limit import SandboxBlockedError
 from .plan_limit import detect as detect_plan_limit
 
 logger = get_logger(__name__)
@@ -134,16 +141,43 @@ _SANDBOX_REMEDY = {
         "them for bwrap with an AppArmor profile or `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0`."
     ),
     "win32": (
-        "On Windows, Codex's sandbox refuses apply_patch under workspace-write when extra writable folders are "
-        "given (openai/codex issue #30009), and e2er gives one, the run database's folder. Run e2er inside WSL2, "
-        "where Codex uses its Linux sandbox."
+        "On Windows, Codex's own sandbox can refuse file edits (openai/codex issue #30009). Update Codex "
+        "(`npm install -g @openai/codex@latest`) and start the run again, or use the Claude Code backend "
+        "(LLM_BACKEND=claude_code in your studies folder's .env)."
     ),
 }
 _FULL_ACCESS_REMEDY = (
-    "Or, knowing that every command of the model then runs as you without any sandbox, set "
-    "CODEX_SANDBOX=danger-full-access and CODEX_ALLOW_FULL_ACCESS=true in your studies folder's .env. "
-    "See docs/BACKENDS.md (Codex on Linux and Windows)."
+    "Last resort, only if nothing else helps: set CODEX_SANDBOX=danger-full-access and "
+    "CODEX_ALLOW_FULL_ACCESS=true in your studies folder's .env. Codex then runs every command of the model "
+    "as you, with no sandbox. See docs/BACKENDS.md (Codex on Linux and Windows)."
 )
+
+_GENERIC_REMEDY = (
+    "Update Codex (`npm install -g @openai/codex@latest`) and start the run again, or use the Claude Code "
+    "backend (LLM_BACKEND=claude_code in your studies folder's .env)."
+)
+#: Operating system names for the researcher.
+_OS_NAME = {"darwin": "macOS", "linux": "Linux", "win32": "Windows"}
+
+
+#: The sandbox check (CodexBackend.preflight): the file Codex is asked to write, and what it must hold.
+SANDBOX_CHECK_FILE = "e2er-sandbox-check.txt"
+SANDBOX_CHECK_TEXT = "e2er sandbox check"
+_SANDBOX_CHECK_PROMPT = (
+    f"Create a file named {SANDBOX_CHECK_FILE} in the current folder whose whole content is the single line: "
+    f"{SANDBOX_CHECK_TEXT}\nUse your file editing tool. Do nothing else, read nothing else, and then answer: done."
+)
+#: The time limit of the check's call, in seconds.
+SANDBOX_CHECK_TIMEOUT = 300
+#: Set to 1 to skip the check (the test suite does; so can a researcher who knows the sandbox works).
+SKIP_SANDBOX_CHECK = "E2ER_SKIP_SANDBOX_PREFLIGHT"
+#: Checks that passed in this process, by (Codex version, sandbox mode): a session checks once.
+_SANDBOX_PASSED: set[tuple[str, str]] = set()
+
+
+def _platform() -> str:
+    """``sys.platform``, behind a function so a test can name another system for the messages alone."""
+    return sys.platform
 
 
 def _codex_home() -> Path:
@@ -229,7 +263,7 @@ class CodexBackend(LLMBackend):
             "sandbox": self._sandbox,
         }
 
-    def build_cmd(self, *, cwd: str, last_message_file: str, extra_dirs: list[str]) -> list[str]:
+    def build_cmd(self, *, cwd: str, last_message_file: str) -> list[str]:
         cmd: list[str] = [
             self._cli_path,
             "exec",
@@ -255,15 +289,76 @@ class CodexBackend(LLMBackend):
             'shell_environment_policy.inherit="all"',
         ]
         if self._sandbox == "workspace-write":
+            # No --add-dir: an extra writable folder breaks file edits on Windows (module docstring).
             cmd += ["-c", f"sandbox_workspace_write.network_access={'true' if self._network else 'false'}"]
-            for d in extra_dirs:
-                cmd += ["--add-dir", d]
         if self._model:
             cmd += ["-m", self._model]
         if self._effort:
             cmd += ["-c", f'model_reasoning_effort="{self._effort}"']
         cmd.append("-")  # prompt on stdin
         return cmd
+
+    async def check_sandbox(self) -> tuple[bool | None, str]:
+        """Ask Codex to write one small file in a temporary folder: (True, …) it did, (False, reason) it did not.
+
+        (None, why) when there is nothing to check (another sandbox mode, skipped) or the check
+        could not decide (its call timed out). A pass is kept for this process, per Codex version
+        and sandbox mode. A plan's usage limit is raised as PlanLimitReachedError.
+        """
+        if self._sandbox != "workspace-write":
+            return None, f"not checked: Codex runs with CODEX_SANDBOX={self._sandbox}"
+        if os.environ.get(SKIP_SANDBOX_CHECK) == "1":
+            return None, f"not checked: {SKIP_SANDBOX_CHECK}=1"
+        version = await asyncio.to_thread(cli_version, self._cli_path) or "unknown version"
+        key = (version, self._sandbox)
+        if key in _SANDBOX_PASSED:
+            return True, f"Codex wrote a test file in its sandbox ({version}, checked earlier in this session)"
+        system = _platform()
+        os_name = _OS_NAME.get(system, system)
+        folder = Path(tempfile.mkdtemp(prefix="e2er-sandbox-check-"))
+        try:
+            limit = call_timeout.set((SANDBOX_CHECK_TIMEOUT, False))
+            try:
+                result = await self._run_in(
+                    _SANDBOX_CHECK_PROMPT, str(folder.resolve()), get_settings(),
+                    paper_id=None, specialist="sandbox_check", root=None,
+                )  # fmt: skip
+            finally:
+                call_timeout.reset(limit)
+            target = folder / SANDBOX_CHECK_FILE
+            try:
+                written = target.read_text(encoding="utf-8", errors="replace").strip() if target.is_file() else None
+            except OSError:
+                written = None
+        finally:
+            import shutil
+
+            shutil.rmtree(folder, ignore_errors=True)
+        if result.stop_reason == "timeout":
+            return None, f"not checked: Codex's test call did not finish within {SANDBOX_CHECK_TIMEOUT} s"
+        if not result.success:
+            return False, f"Codex's test call failed on {os_name}: {clip(result.error or 'no error given', 400)}"
+        if written == SANDBOX_CHECK_TEXT:
+            _SANDBOX_PASSED.add(key)
+            return True, f"Codex wrote a test file in its sandbox ({version}, {os_name}, workspace-write)"
+        what = "wrote the test file with other content" if written is not None else "did not write the test file"
+        answer = f" Codex answered: {clip(result.output.strip(), 200)!r}." if result.output.strip() else ""
+        remedy = _SANDBOX_REMEDY.get("linux" if system.startswith("linux") else system, _GENERIC_REMEDY)
+        return False, (
+            f"Codex {what} in a test folder on {os_name} (sandbox mode workspace-write, {version}), so every "
+            f"specialist would fail to write its files.{answer} {remedy} {_FULL_ACCESS_REMEDY}"
+        )
+
+    async def preflight(self) -> None:
+        """Before a run's first specialist: stop the run when Codex cannot write files in its sandbox."""
+        ok, detail = await self.check_sandbox()
+        if ok is None:
+            logger.info("Codex sandbox check: %s", detail)
+        elif ok:
+            logger.info("Codex sandbox check passed: %s", detail)
+        else:
+            logger.error("Codex sandbox check failed: %s", detail)
+            raise SandboxBlockedError("codex", detail, f"Stopped before the first step: {detail}")
 
     async def tool_loop(
         self,
@@ -279,6 +374,21 @@ class CodexBackend(LLMBackend):
         settings = get_settings()
         prompt = flatten_prompt(system, messages)
         cwd, root = workspace_cwd(settings, paper_id, self._cwd)
+        # The wrappers' audit rows go to a journal in the workspace (cli_support.audit_journal).
+        async with audit_journal(paper_id, cwd if paper_id else None):
+            return await self._run_in(prompt, cwd, settings, paper_id=paper_id, specialist=specialist, root=root)
+
+    async def _run_in(
+        self,
+        prompt: str,
+        cwd: str,
+        settings: Any,
+        *,
+        paper_id: str | None,
+        specialist: str | None,
+        root: Path | None,
+    ) -> ToolLoopResult:
+        """One Codex call in ``cwd``: the wrappers' environment, an empty HOME for the model's shell."""
         env = run_env(
             settings,
             paper_id=paper_id,
@@ -297,26 +407,20 @@ class CodexBackend(LLMBackend):
         for var in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
             env[var] = str(home)
         try:
-            return await self._call(prompt, cwd, env, settings)
+            return await self._call(prompt, cwd, env)
         finally:
             import shutil
 
             shutil.rmtree(home, ignore_errors=True)
 
-    async def _call(self, prompt: str, cwd: str, env: dict[str, str], settings: Any) -> ToolLoopResult:
-        extra_dirs: list[str] = []
-        db = db_path(settings)
-        if db is not None and not _inside(db.parent, Path(cwd)):
-            db.parent.mkdir(parents=True, exist_ok=True)
-            extra_dirs.append(str(db.parent))
-
+    async def _call(self, prompt: str, cwd: str, env: dict[str, str]) -> ToolLoopResult:
         retry_delays = [5.0, 20.0]
         result: ToolLoopResult | None = None
         # Every attempt's usage counts (a retried call used tokens too); the result carries the sum.
         spent = TokenUsage()
         calls = 0
         for attempt in range(len(retry_delays) + 1):
-            result = await self._invoke_once(prompt, cwd, env, extra_dirs)
+            result = await self._invoke_once(prompt, cwd, env)
             spent = spent + result.usage
             calls += result.tool_calls_made
             result = replace(result, usage=spent, tool_calls_made=calls)
@@ -339,12 +443,12 @@ class CodexBackend(LLMBackend):
         assert result is not None
         return result
 
-    async def _invoke_once(self, prompt: str, cwd: str, env: dict[str, str], extra_dirs: list[str]) -> ToolLoopResult:
+    async def _invoke_once(self, prompt: str, cwd: str, env: dict[str, str]) -> ToolLoopResult:
         start = time.monotonic()
         fd, last_file = tempfile.mkstemp(prefix="e2er-codex-", suffix=".txt")
         os.close(fd)
         try:
-            cmd = self.build_cmd(cwd=cwd, last_message_file=last_file, extra_dirs=extra_dirs)
+            cmd = self.build_cmd(cwd=cwd, last_message_file=last_file)
             logger.info("Codex: invoking %s (model=%s, prompt=%d chars)", self._cli_path, self._model, len(prompt))
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -437,15 +541,9 @@ class CodexBackend(LLMBackend):
             duration_seconds=duration,
             stop_reason="end_turn",
             diagnostic=diagnostic,
+            # The sandbox refused a write or command: another attempt meets the same sandbox.
+            sandbox_blocked=bool(parsed["sandbox_denials"]) and self._sandbox == "workspace-write",
         )
-
-
-def _inside(path: Path, root: Path) -> bool:
-    try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return True
 
 
 def parse_codex_events(stdout: str) -> dict[str, Any]:

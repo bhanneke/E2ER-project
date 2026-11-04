@@ -259,3 +259,74 @@ def test_the_page_opens_before_the_checks_and_shows_them_once_kept(fresh_cache):
     assert "FRED could not be reached" in again and "Running the checks" not in again and len(runs) == 1
     client.get("/htmx/preflight-checks?fresh=1")
     assert len(runs) == 2
+
+
+# ── a service's own trouble, and slow archives (tester report, 2026-11-02) ────
+
+
+async def test_a_server_error_is_a_warning_in_plain_words_without_the_html(monkeypatch):
+    html = (
+        "https://ghoapi.azureedge.net/api/WHOSIS_000001?%24filter=x: HTTP 500: <html><head><title>Server Error"
+        "</title></head><body>Server Error 500</body></html>"
+    )
+
+    async def run(name):
+        if name == "data.src1.probe":
+            return Check("data.who_gho.data", FAIL, html)
+        if name == "data.src2.probe":
+            return Check("data.src2.probe", FAIL, "https://x/y: HTTP 429: slow down")
+        if name == "data.src3.probe":
+            return Check("data.src3.probe", FAIL, "https://x/y: HTTP 404: no such indicator")
+        return Check(name, PASS, "ok")
+
+    _patch_checks(monkeypatch, run)
+    checks = {c.name: c for c in await doctor.run_provider_checks(_settings())}
+    who = checks["data.who_gho.data"]
+    assert who.status == doctor.WARN
+    assert who.detail == (
+        "WHO Global Health Observatory: their service answered with a server error (500); try again later"
+    )
+    assert "<html" not in who.detail
+    assert checks["data.src2.probe"].status == doctor.WARN and "(429)" in checks["data.src2.probe"].detail
+    assert checks["data.src3.probe"].status == FAIL, "a 404 is the request's problem, not the service's"
+
+
+def test_warnings_do_not_fail_the_doctor():
+    out = doctor.render_human(
+        [
+            Check("db", PASS, "SQLite default"),
+            Check("data.who_gho.data", doctor.WARN, "WHO Global Health Observatory: their service answered …"),
+        ]
+    )
+    assert "✅ Ready" in out and "1 to try again later" in out and "  ! [WARN]" in out
+
+
+async def test_a_slow_archive_gets_its_own_budget(monkeypatch):
+    """Gaia's TAP service answered after 5 s and failed as timed out; a slow archive gets SLOW_SERVICE_TIMEOUT."""
+    monkeypatch.setattr(doctor, "CHECK_TIMEOUT", 0.1)
+    slow = SimpleNamespace(name="gaia", doctor=SimpleNamespace(check="data.gaia.cone", timeout=0.6))
+    quick = SimpleNamespace(name="quick", doctor=SimpleNamespace(check="data.quick.probe", timeout=0.0))
+    monkeypatch.setattr(doctor, "_source_jobs", lambda: [("data.gaia.cone", slow), ("data.quick.probe", quick)])
+    seen: dict[str, object] = {}
+
+    async def answers_after(source, _settings):
+        from src.modules.data.sources.http import _REACHABILITY
+
+        seen[source.name] = _REACHABILITY.get()
+        await asyncio.sleep(0.3)
+        return Check(source.doctor.check, PASS, "1 rows")
+
+    monkeypatch.setattr("src.modules.data.sources.runtime.doctor_check", answers_after)
+    checks = {c.name: c for c in await doctor.source_checks(_settings())}
+    assert checks["data.gaia.cone"].status == PASS
+    assert checks["data.quick.probe"].status == FAIL and "within 0.1 s" in checks["data.quick.probe"].detail
+    assert seen["gaia"] == (doctor.CONNECT_TIMEOUT, 0.6), "the request may wait as long as the check"
+
+
+def test_the_tap_archives_declare_the_slow_budget():
+    from src.modules.data.sources import all_sources
+
+    budgets = {s.name: s.doctor.timeout for s in all_sources() if s.doctor is not None}
+    for name in ("gaia", "exoplanets", "nasa_power"):
+        assert budgets[name] == doctor.SLOW_SERVICE_TIMEOUT, name
+    assert budgets["worldbank"] == 0.0

@@ -120,6 +120,14 @@ class QueryValidator:
             {"pid": paper_id, "table_pattern": f"%{table}%"},
         )
         if not row:
+            # Inside a specialist's call the feasibility query of a moment ago may still sit in the
+            # call's audit journal, not yet imported into the run database (audit_journal.py). The model
+            # can write that journal, as it could write the run database's folder before; either way a
+            # production query still waits for the researcher's sealed approval in the dashboard.
+            from .audit_journal import journal_has_approved_feasibility
+
+            if journal_has_approved_feasibility(paper_id, table):
+                return ValidationResult(valid=True)
             return ValidationResult(
                 valid=False,
                 rejection_reason=(

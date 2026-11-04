@@ -1,10 +1,12 @@
-"""Data module — audit log for all Allium queries."""
+"""Data module — audit log for all Allium queries (and the local data.db queries of `e2er-data query sql`)."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from .audit_journal import active_journal, append
 
 
 async def log_query(
@@ -17,17 +19,60 @@ async def log_query(
     estimated_rows: int | None = None,
     validation_warnings: list[str] | None = None,
 ) -> str:
-    """Create a data_query_record and return its ID."""
-    import json
-    import uuid
+    """Create a data_query_record and return its ID.
 
-    from ...db.client import execute
+    Inside a specialist's call (a wrapper in the AI CLI's shell) the row goes to the call's
+    audit journal, which e2er imports into the run database (audit_journal.py).
+    """
+    import uuid
 
     # Generate the id app-side. Postgres has a uuid default, but SQLite's
     # schema does not — relying on the default there left `id` NULL, which
     # silently broke the approval-request join (NULL = NULL is never true),
     # so pending production queries never surfaced for approval on SQLite.
+    # The journal needs it too: the model reads the id before e2er imports the row.
     record_id = str(uuid.uuid4())
+    if active_journal() is not None:
+        append(
+            "query",
+            id=record_id,
+            paper_id=paper_id,
+            specialist=specialist,
+            query_sql=query_sql,
+            query_type=query_type,
+            fields_requested=list(fields_requested),
+            aggregation_level=aggregation_level,
+            estimated_rows=estimated_rows,
+        )
+        return record_id
+    await _insert_query_record(
+        record_id=record_id,
+        paper_id=paper_id,
+        specialist=specialist,
+        query_sql=query_sql,
+        query_type=query_type,
+        fields_requested=fields_requested,
+        aggregation_level=aggregation_level,
+        estimated_rows=estimated_rows,
+    )
+    return record_id
+
+
+async def _insert_query_record(
+    *,
+    record_id: str,
+    paper_id: str,
+    specialist: str,
+    query_sql: str,
+    query_type: str,
+    fields_requested: list[str],
+    aggregation_level: str,
+    estimated_rows: int | None,
+) -> None:
+    import json
+
+    from ...db.client import execute
+
     await execute(
         """
         INSERT INTO data_query_records
@@ -47,10 +92,16 @@ async def log_query(
             "est_rows": estimated_rows,
         },
     )
-    return record_id
 
 
 async def mark_approved(query_id: str, approved_by: str = "auto") -> None:
+    if active_journal() is not None:
+        append("approved", id=query_id, approved_by=approved_by)
+        return
+    await _update_approved(query_id, approved_by)
+
+
+async def _update_approved(query_id: str, approved_by: str) -> None:
     from ...db.client import execute
 
     await execute(
@@ -64,6 +115,13 @@ async def mark_approved(query_id: str, approved_by: str = "auto") -> None:
 
 
 async def mark_executed(query_id: str, actual_rows: int) -> None:
+    if active_journal() is not None:
+        append("executed", id=query_id, actual_rows=actual_rows)
+        return
+    await _update_executed(query_id, actual_rows)
+
+
+async def _update_executed(query_id: str, actual_rows: int) -> None:
     from ...db.client import execute
 
     await execute(
@@ -75,11 +133,19 @@ async def mark_executed(query_id: str, actual_rows: int) -> None:
 async def create_approval_request(query_record_id: str, paper_id: str) -> str:
     import uuid
 
-    from ...db.client import execute
-
     # App-side id (see log_query) so the approval row has a non-NULL id on
     # SQLite and get_pending_queries' join works.
     request_id = str(uuid.uuid4())
+    if active_journal() is not None:
+        append("approval_request", id=request_id, query_record_id=query_record_id, paper_id=paper_id)
+        return request_id
+    await _insert_approval_request(request_id, query_record_id, paper_id)
+    return request_id
+
+
+async def _insert_approval_request(request_id: str, query_record_id: str, paper_id: str) -> None:
+    from ...db.client import execute
+
     await execute(
         """
         INSERT INTO data_approval_requests (id, query_record_id, paper_id)
@@ -87,7 +153,6 @@ async def create_approval_request(query_record_id: str, paper_id: str) -> str:
         """,
         {"id": request_id, "qid": query_record_id, "pid": paper_id},
     )
-    return request_id
 
 
 async def get_approval_status(query_id: str) -> str:

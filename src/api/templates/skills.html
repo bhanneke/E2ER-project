@@ -54,6 +54,8 @@ export RISE_PATH=/path/to/RISE</code></pre>
           <td>
             {% if p.slug in installed %}
               <span class="muted">{{ installed[p.slug].files }} files installed</span>
+            {% elif p.private %}
+              <span class="muted private-pack">Private: ask <span class="quoted">{{ p.owner }}</span> for access</span>
             {% else %}
               <form method="post" action="/skills/install" class="inline">
                 <input type="hidden" name="pack" value="{{ p.slug }}">

@@ -291,5 +291,7 @@ SOURCE = Source(
         "data.gaia.cone",
         operation="cone",
         params={"ra": 56.75, "dec": 24.12, "radius": 0.1, "max_mag": 10, "columns": "source_id,phot_g_mean_mag"},
+        # A slow archive: the doctor waits up to doctor.SLOW_SERVICE_TIMEOUT for it.
+        timeout=20.0,
     ),
 )

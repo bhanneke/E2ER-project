@@ -53,6 +53,9 @@ class ToolLoopResult:
     #: What the backend saw that explains a missing output file (Codex: its sandbox refused writes),
     #: added to the error when the output contract fails; empty when there is nothing to say.
     diagnostic: str = ""
+    #: The backend's sandbox refused writes in this call (Codex: refused file changes or commands), so
+    #: another attempt would meet the same refusal: the dispatcher pauses the run instead of retrying.
+    sandbox_blocked: bool = False
 
 
 class ToolHandler(ABC):
@@ -114,6 +117,19 @@ class LLMBackend(ABC):
         specialist's prompt doesn't have to remember its own paper_id.
         """
         ...
+
+
+async def run_preflight(backend: Any) -> None:
+    """Run the backend's own check before a run's first specialist, if it has one (Codex: its sandbox).
+
+    Only an ``async def preflight`` defined on the backend's class counts, so the test doubles and
+    the SDK backends are left alone. The check raises to stop the run (SandboxBlockedError pauses it).
+    """
+    import inspect
+
+    check = getattr(type(backend), "preflight", None)
+    if check is not None and inspect.iscoroutinefunction(check):
+        await backend.preflight()
 
 
 def extract_json(text: str) -> dict[str, Any] | None:

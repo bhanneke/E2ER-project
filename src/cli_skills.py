@@ -52,7 +52,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
         return 0
 
     if args.json:
-        _out([p.to_dict() | {"skills": len(p.skills)} for p in packs], as_json=True)
+        _out([p.to_dict() | {"skills": len(p.skills), "private": p.private} for p in packs], as_json=True)
         return 0
 
     total = 0
@@ -61,7 +61,11 @@ def _cmd_list(args: argparse.Namespace) -> int:
         total += len(p.skills)
         # "bundleable" answers the question that made this an installer rather
         # than a copy: could E2ER ship this? For most of the catalogue, no.
-        print(f"{p.slug:<26} {len(p.skills):>6}  {(p.license or '?')[:22]:<22} {'yes' if p.redistributable else 'no'}")
+        mark = "  (private: ask its owner for access)" if p.private else ""
+        print(
+            f"{p.slug:<26} {len(p.skills):>6}  {(p.license or '?')[:22]:<22} "
+            f"{'yes' if p.redistributable else 'no'}{mark}"
+        )
     print(f"\n{len(packs)} pack(s), {total} skills. Install one with: e2er skills install <pack>")
     return 0
 
@@ -85,9 +89,14 @@ def _cmd_install(args: argparse.Namespace) -> int:
 
     _out(report, as_json=args.json)
     if not args.json:
-        print(f"\n{report['installed']} installed, {report['failed']} failed → {report['path']}")
-        if report["failed"]:
-            print("Failures are normal for private or relocated repositories.")
+        if report.get("reason"):
+            print(f"\n{report['reason']}")
+        elif not report["installed"]:
+            print(f"\nNothing was installed: {report['failed']} skill file(s) could not be fetched.")
+        else:
+            print(f"\n{report['installed']} installed, {report['failed']} failed → {report['path']}")
+            if report["failed"]:
+                print("Some files could not be fetched: their repository moved them or keeps them private.")
     return 0 if report["installed"] else 1
 
 

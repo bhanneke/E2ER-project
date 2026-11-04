@@ -9,11 +9,14 @@ two backends; keeping one copy here stops the copies drifting apart again.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import re
 import shutil
 import subprocess
 import sysconfig
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from functools import lru_cache
 from pathlib import Path
@@ -24,6 +27,40 @@ from typing import Any
 #: ``at_least`` the backend's own setting wins when it is longer (a built-in default for
 #: slow specialists); without, the template's value is the limit. None: the setting.
 call_timeout: ContextVar[tuple[int, bool] | None] = ContextVar("e2er_call_timeout", default=None)
+
+
+#: This call's audit journal (modules/data/audit_journal.py), set by :func:`audit_journal` and
+#: passed to the wrappers by :func:`run_env` as ``E2ER_AUDIT_JOURNAL``.
+_journal: ContextVar[Path | None] = ContextVar("e2er_audit_journal", default=None)
+
+
+@asynccontextmanager
+async def audit_journal(paper_id: str | None, workspace: str | Path | None) -> AsyncIterator[Path | None]:
+    """One CLI call's audit journal: the wrappers write their audit rows into the workspace, e2er imports them.
+
+    Every CLI backend wraps its call in this, on every operating system. No CLI gets a writable folder
+    outside the workspace (Codex's ``--add-dir`` broke file edits on Windows, openai/codex#30009): the
+    wrappers append to ``<workspace>/.e2er-audit-journal-<call>.jsonl``, e2er reads it every few seconds
+    while the call runs and once after it, writes the checked rows into the run database and removes the
+    journal. Without a paper (a strategist call) there is no journal.
+    """
+    if not paper_id or not workspace:
+        yield None
+        return
+    from ..data.audit_journal import JournalImporter, new_journal_path
+
+    path = new_journal_path(Path(workspace))
+    importer = JournalImporter(path, paper_id)
+    token = _journal.set(path)
+    follower = asyncio.create_task(importer.follow())
+    try:
+        yield path
+    finally:
+        _journal.reset(token)
+        follower.cancel()
+        with contextlib.suppress(BaseException):
+            await follower
+        await importer.finish()
 
 
 def effective_timeout(configured: int) -> int:
@@ -262,6 +299,12 @@ def run_env(
         env["E2ER_PAPER_ID"] = paper_id
     if specialist:
         env["E2ER_SPECIALIST"] = specialist
+    journal = _journal.get()
+    if journal is not None:
+        # The wrappers' audit rows go to this call's journal in the workspace, not the run database
+        # (audit_journal above). The model can write that file, as it could write the database's folder
+        # up to 0.20; e2er checks every line before it writes a row (modules/data/audit_journal.py).
+        env["E2ER_AUDIT_JOURNAL"] = str(journal)
     # Marks every AI CLI call, tool-less strategist calls included: `e2er`
     # itself refuses to run under it (src/__main__.py).
     env["E2ER_AI_STEP"] = specialist or "strategist"

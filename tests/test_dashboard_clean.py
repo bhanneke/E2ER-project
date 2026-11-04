@@ -129,7 +129,7 @@ def test_localhost_pages_go_to_127_0_0_1():
 
 def test_every_page_loads_the_error_handler():
     html = _client().get("/library").text
-    assert '<script src="/static/e2er.js"></script>' in html
+    assert '<script src="/static/e2er.js?v=' in html  # with its fingerprint: never a stale copy
     js = (Path(__file__).parents[1] / "src" / "api" / "static" / "e2er.js").read_text(encoding="utf-8")
     assert "htmx:responseError" in js and "htmx:sendError" in js and "e2er is not reachable" in js
 
@@ -273,7 +273,7 @@ def test_a_folder_with_its_own_settings_keeps_working_as_before(home, tmp_path, 
     assert get_settings().llm_backend == "codex" and get_settings().workspace_root == "workspaces"
     monkeypatch.setenv(ls.ENV_TOKEN, TOKEN)
     page = _client().get("/setup").text
-    assert "Make this folder my studies folder" in page and str(studies) in page
+    assert "Use this folder for all my studies" in page and str(studies) in page
     r = _client().post(
         "/api/setup/save", json={"backend": "codex", "make_studies_folder": True}, headers={"origin": BASE}
     )

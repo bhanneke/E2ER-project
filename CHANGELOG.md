@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-11-04
+
+### Fixed
+
+Fixes from the tester report of 2026-11-02 (Codex CLI 0.165 and 0.166 on Windows and Ubuntu: every specialist "succeeded" without writing a file, failed its contract three times, and the run paused after about ten specialists and one to two million tokens).
+
+- **Codex gets no writable folder outside the study's folder.** e2er gave Codex the run database's folder (`~/.e2er`) with `--add-dir`, so that `e2er-data` could record its queries there; on Windows any extra writable folder makes Codex refuse every file edit (openai/codex issue #30009). Inside a specialist's call `e2er-data` (and `e2er-allium-query`) now write their audit records to a journal file in the study's folder (`.e2er-audit-journal-<call>.jsonl`); e2er reads it every two seconds while the call runs and once after it, checks every line, writes the records into the run database with its own statements and removes the file. Claude Code, Codex and Gemini all work this way, on macOS, Linux and Windows. The records, their tables and the audit export are the same as before. A wrapper inside a call now opens the run database read-only. The model can write the journal, as it could write the database's folder before; e2er takes from it only the four kinds of audit record with fixed fields, always under the call's own study, never SQL to run or a path, and never an approval of a production query.
+- **e2er checks Codex's sandbox before the first specialist.** A run on Codex with `workspace-write` first asks Codex to write one small file in a temporary folder. When the file is missing, the run stops before any specialist starts, and the reason says what failed, on which system, and what helps. A check that passed is kept for the same Codex version and sandbox mode while e2er runs. `e2er doctor` shows the same check (`workspace.codex_sandbox`); `E2ER_SKIP_SANDBOX_PREFLIGHT=1` skips it.
+- **No second and third attempt against a sandbox that refused.** When Codex reports that its sandbox refused a write and the step's files are missing, the run pauses after that first attempt with the reason (`paused_sandbox`); Resume checks again.
+- **The Codex sandbox message no longer advises WSL2** (Ubuntu fails the same way). It names the fix for Linux (bubblewrap, AppArmor) and Windows (update Codex, or use the Claude Code backend), and `CODEX_SANDBOX=danger-full-access` only as the last resort. docs/BACKENDS.md (Codex on Linux and Windows) says the same.
+
+- **A paused or failed run says why.** `e2er run` ended with "Final status: paused" and a `curl … | jq` command that PowerShell cannot run. It now prints the reason in a few sentences and `e2er status <id>` as the next command. `e2er status` prints the whole reason of a paused, failed, stopped or cancelled run (wrapped, not cut at 120 characters).
+- **`e2er status`, `cancel`, `resume`, `review` and `rerun` take the study key `e2er list` prints** (`b33f3ad47b`) and act on the study's latest run; they said "paper … not found" before. `e2er list` shows the id of each study's latest run, and says that both ids work.
+- **`e2er status` shows the methodology on a line of its own.** "Template: empirical (single pass, theoretical)" read as if the empirical template had run as a theoretical one; the run had been started with the methodology "theoretical" (More options on the new-study page) and recorded it correctly.
+- **The studies folder can be on another drive.** Setup's folder browser refused everything outside the home folder ("That folder is outside your home folder."), so `D:\Projects\e2er-studies` on Windows and external disks on macOS could not be chosen. It now also opens the other drives on Windows (on the drive with the home folder, only the home folder stays open), `/Volumes` on macOS and `/mnt` and `/media` on Linux, and shows them as places to go; a link that leads out of these folders is still not followed. The two checkboxes of the studies folder say in plain words what they do ("Use this folder for all my studies, wherever I start e2er"; "Use … only for the studies I start from it, with its own settings").
+- **A data source whose server answers with an error is a warning, in plain words.** The WHO Global Health Observatory answered HTTP 500 and the check showed a failure with the raw HTML page. A source that answers 5xx or 429 now reads "WHO Global Health Observatory: their service answered with a server error (500); try again later" (Preflight, Setup and `e2er doctor`, marked `!`), and `e2er doctor` still exits 0 when only such warnings remain. Slow archives (the Gaia and NASA Exoplanet Archive TAP services, NASA POWER) get 20 seconds instead of 5 (`Doctor.timeout`); the checks still run side by side, so a round takes at most about that long.
+- **A skill pack in a private repository says so.** Installing "100xOS shared skills" failed without a reason: the RISE catalogue lists it as private and names no file to fetch, so every skill failed and an empty pack folder was left behind, which then read as "0 files installed". The Skills page and `e2er skills list` now mark such a pack as private ("ask its owner for access") and keep it listed; installing it, or a pack whose every file GitHub refuses (401, 403, 404), says that the repository is private or no longer available and whom to ask for access. A pack of which nothing could be fetched leaves no folder behind.
+- **"What happened" stays open during a run, also right after an upgrade.** 0.20.0 keeps the open panels open across the 3-second poll, but the browser kept running the `e2er.js` of the version before: the server sent no Cache-Control header, so the browser cached the file by guesswork (a tenth of the time since it was installed) and did not ask for it again. The dashboard now names its scripts and stylesheet with a fingerprint of their contents (`/static/e2er.js?v=…`), and the server tells the browser to check them on every page (`Cache-Control: no-cache`, answered with 304 when unchanged).
+
 ## [0.20.0] — 2026-11-01
 
 ### Added
@@ -4039,7 +4058,8 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.1
 [0.20.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.0
 [0.19.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.1
 [0.19.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.0
