@@ -57,8 +57,8 @@ docker-compose.override.yml
 # live_check.py output
 live_check_report.json
 
-# Claude Code agent worktrees (transient)
-.claude/worktrees/
+# Claude Code's local settings, commands and worktrees
+.claude/
 
 # Generated figure PDF byproduct (regenerate via scripts/gen_pipeline_figure.py)
 docs/figures/*.pdf

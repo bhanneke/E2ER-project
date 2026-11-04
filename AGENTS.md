@@ -183,4 +183,3 @@ Primary references:
 - [CLAUDE.md](CLAUDE.md) — Claude-specific notes (project overview,
   pipeline mechanics, hot-spots)
 - [CONTRIBUTING.md](CONTRIBUTING.md) — first-time-contributor checklist
-- [docs/internal/NEXT_STEPS.md](docs/internal/NEXT_STEPS.md) — current status snapshot

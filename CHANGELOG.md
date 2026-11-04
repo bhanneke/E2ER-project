@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **Files the public repository did not need.** e2er no longer ships `.claude/` (a maintainer's Claude Code commands and a session hook that could run for anyone opening the repository in Claude Code), `docs/internal/` (old plans and diagnoses), `docs/proposals/`, `docs/architecture.html`, `docs/architecture_preview.png`, and the old example outputs `examples/e2er_v2_nft_seasonality` and `examples/e2er_v3_haiku_smoke`. The two early studies `examples/e2er_v1_*` moved to [e2er-demos](https://github.com/bhanneke/e2er-demos/tree/main/early-studies); the demo's bibliography is now `docs/demo/references.bib`. All of it stays in the git history.
+
 ## [0.20.1] — 2026-11-04
 
 ### Fixed

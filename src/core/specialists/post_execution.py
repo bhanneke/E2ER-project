@@ -8,8 +8,7 @@ their tools wired through Python at the runner level, not via Bash from
 the model"). So an econometrics specialist can write a perfectly correct
 ``run_estimation.py`` and then has no tool to run it — it falls through to
 writing ``estimation_results.json = "{}"`` as the documented honest
-signal. The M4 paper ran this failure mode end to end. Diagnosis:
-``docs/internal/M4_DIAGNOSIS.md``.
+signal. The M4 paper ran this failure mode end to end.
 
 The M4.3 contract check catches the empty sidecar at the boundary and
 flips the specialist to ``success=False``. That's the negative path:
@@ -21,7 +20,7 @@ Why this exists at the runner level (not the skill file): the model
 genuinely cannot execute code, so a skill instruction "run your script"
 would be unactionable. Execution has to happen here.
 
-Robustness (the M5 re-run lesson, ``docs/internal/M4_RERUN_FINDINGS.md``): the
+Robustness (the M5 re-run lesson): the
 first version keyed on a single hardcoded script filename
 (``run_estimation.py``) and sidecar (``estimation_results.json``). The
 re-run's specialist named its script ``analyze.py`` writing

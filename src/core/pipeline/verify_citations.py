@@ -650,7 +650,7 @@ async def verify(
         # (paper 7274dddc, 14 keys; ee229dca, 19) the cited works are largely
         # REAL papers recalled from model memory — parkinson1980extreme and
         # bendavid2018etfs both exist; cameron2008bootstrap is even present in
-        # examples/e2er_v1_bitcoin_institutionalization/references.bib. The
+        # docs/demo/references.bib. The
         # defect is that no bibliography was ever materialised for the run, not
         # that the model invented sources. `missing_in_bib` means "no entry
         # backs this key", which is exactly what happened; do not read it as
