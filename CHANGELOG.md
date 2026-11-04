@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] — 2026-11-04
+
 ### Fixed
 
 Fixes from the tester report of 2026-11-02 (Codex CLI 0.165 and 0.166 on Windows and Ubuntu: every specialist "succeeded" without writing a file, failed its contract three times, and the run paused after about ten specialists and one to two million tokens).
@@ -4056,7 +4058,8 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.1
 [0.20.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.0
 [0.19.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.1
 [0.19.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.0
