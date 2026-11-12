@@ -140,6 +140,9 @@ def render(
     if files:
         lines += ["", "Results, value by value:"]
         for f in files:
+            if f.left_out:
+                lines.append(f"  {f.published}: not compared: {f.left_out}")
+                continue
             if f.problem:
                 lines.append(f"  {f.published}: not compared, {f.problem}")
                 continue
@@ -328,7 +331,7 @@ def _reproduce_folder(
         return 2
     rebuild = pkg.rebuild_steps(root)
     try:
-        recipe = rp.load_recipe(root, rebuild=rebuild)
+        recipe = rp.load_recipe(root, rebuild=rebuild, left_out=pkg.left_out_reasons(root, trusted=package))
     except rp.RecipeError as e:
         print(f"error: {printable(e)}")
         return 2
@@ -364,6 +367,8 @@ def _reproduce_folder(
         source = pkg.install_source(root, recipe)
         if source.get("requirements"):
             recipe["requirements"] = source["requirements"]
+        if source.get("python"):
+            recipe["python"] = source["python"]
         if source.get("wheelhouse"):
             recipe["wheelhouse"] = source["wheelhouse"]
         if source.get("wheelhouse_skipped"):
@@ -487,10 +492,7 @@ def _run_in(
     inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
     ran = bool(steps) and not any(s.exit_code for s in steps)
     if ran:
-        files = [
-            rp.compare_json(root / c["published"], run_dir / c["produced"], c["published"], c["produced"])
-            for c in recipe["compare"]
-        ]
+        files = rp.compare_results(root, run_dir, recipe["compare"])
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
     verdict, code = rp.verdict(files, tables, steps, inputs)
     if qualifier:
