@@ -526,7 +526,7 @@ def _run_in(
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
     sources = rsrc.compare(root, run_dir, before)
     verdict, code = rp.verdict(files, tables, steps, inputs)
-    verdict, category = rsrc.judge(verdict, code, sources)
+    verdict, category = rsrc.judge(verdict, code, sources, steps)
     if qualifier:
         verdict = f"{qualifier} {verdict}"
     print()

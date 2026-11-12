@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ REPRODUCED = "reproduced"
 NOT_REPRODUCED = "not_reproduced"
 COULD_NOT_RUN = "could_not_run"
 SOURCE_CHANGED = "source_changed"
+SOURCE_UNAVAILABLE = "source_unavailable"
 
 
 def _loads(path: Path) -> list[dict[str, Any]]:
@@ -93,6 +95,40 @@ def _files(entry: dict[str, Any]) -> dict[str, str]:
     }
 
 
+_EBOOK = re.compile(r"/(?:cache/epub|files|ebooks)/(\d+)/")
+
+
+def _part_name(key: str) -> str:
+    """A changed part as a reader names it: "ebook 2276" for a Project Gutenberg text, else its file name."""
+    if key.isdigit():
+        return f"ebook {key}"
+    m = _EBOOK.search(key)
+    if m:
+        return f"ebook {m.group(1)}"
+    return key.rstrip("/").rsplit("/", 1)[-1] or key
+
+
+def _texts(entry: dict[str, Any]) -> dict[str, str]:
+    """A corpus load's texts (``texts``: id -> {sha256}), by id."""
+    texts = entry.get("texts")
+    if not isinstance(texts, dict):
+        return {}
+    return {str(k): str(v["sha256"]) for k, v in texts.items() if isinstance(v, dict) and v.get("sha256")}
+
+
+def changed_parts(old: dict[str, Any], new: dict[str, Any]) -> tuple[list[str], str]:
+    """(the parts of a load that differ, by name; "texts" or "files"): the texts a corpus load recorded
+    (since 0.21), else the files the source served (url and SHA-256, recorded before too)."""
+    a, b = _texts(old), _texts(new)
+    kind = "texts"
+    if not (a and b):
+        a, b, kind = _files(old), _files(new), "files"
+    if not (a and b):
+        return [], ""
+    keys = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
+    return [_part_name(k) for k in keys], kind
+
+
 def short(sha: str | None) -> str:
     return f"sha256:{sha[:12]}…" if sha else "none"
 
@@ -120,6 +156,10 @@ def compare(folder: Path, run_dir: Path, before: set[str] | None = None) -> list
             "version_recorded": _version(old) or None,
             "version_now": _version(new) or None,
         }
+        parts, kind = changed_parts(old, new)
+        if parts:
+            entry["parts_changed"] = parts
+            entry["parts_kind"] = kind
         had, has = _fp(old), _fp(new)
         if had is None:
             entry["status"] = NOT_RECORDED
@@ -163,7 +203,7 @@ def sentence(entry: dict[str, Any]) -> str:
             rows = f", {entry.get('rows_recorded')} rows then, {entry.get('rows_now')} now"
         return (
             f"{name} returned different data than on {on} (recorded {short(entry.get('recorded'))}, now "
-            f"{short(entry.get('now'))}{rows}){versions}."
+            f"{short(entry.get('now'))}{rows}){versions}{_parts_words(entry)}."
         )
     if entry.get("recorded") and not entry.get("now"):
         return f"{name}: the reload recorded no fingerprint, so e2er cannot compare it with the study's ({on})."
@@ -171,11 +211,23 @@ def sentence(entry: dict[str, Any]) -> str:
         f"{name}: the source fingerprint was not recorded when the study loaded these data ({on}; e2er records it "
         "since 0.21), so e2er cannot say whether the source now returns other data"
     )
-    if entry.get("files_differ"):
+    parts = entry.get("parts_changed") or []
+    if entry.get("parts_kind") == "texts" or any(str(x).startswith("ebook ") for x in parts):
+        text += _parts_words(entry) + " (SHA-256, against the study's record)"
+    elif entry.get("files_differ"):
         text += "; the file the source served differs byte for byte from the one the study recorded (SHA-256)"
     elif entry.get("files_differ") is False:
         text += "; the file the source served is byte for byte the one the study recorded (SHA-256)"
     return text + versions + "."
+
+
+def _parts_words(entry: dict[str, Any]) -> str:
+    parts = entry.get("parts_changed") or []
+    if not parts:
+        return ""
+    what = "texts" if entry.get("parts_kind") == "texts" else "files"
+    shown = ", ".join(parts[:10]) + (f" and {len(parts) - 10} more" if len(parts) > 10 else "")
+    return f"; the {what} that differ: {shown}"
 
 
 def changed(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -191,11 +243,57 @@ def _names(items: list[dict[str, Any]]) -> str:
     return "; ".join(seen)
 
 
-def judge(verdict: str, code: int, sources: list[dict[str, Any]]) -> tuple[str, str]:
-    """(the verdict with the sources named where they explain it, the report's category)."""
+#: What a step that loads data prints when a source did not answer (a time-out, a refused connection, a
+#: server error): Gutendex's "did not answer within 45 s", httpx's ReadTimeout, HTTP 502/503/504.
+_NO_ANSWER = re.compile(
+    r"did not answer|timed? ?out|Timeout(?:Error|Exception)?\b|ReadTimeout|ConnectTimeout|ConnectError|"
+    r"Connection (?:refused|reset|aborted)|Temporary failure in name resolution|Name or service not known|"
+    r"Service Unavailable|Bad Gateway|Gateway Time-?out|\b(?:HTTP|status|answered with)[^\n]{0,40}\b50[234]\b|"
+    r"server error \(5\d\d\)|try again later",
+    re.I,
+)
+
+
+def unanswered(steps: list[Any]) -> tuple[Any, list[str]]:
+    """(the failed step that loads data again, the lines of its output that say a source did not answer).
+
+    Only a failed step that loads inputs again counts (the only step that reaches the web); (None, []) when
+    no such step failed, or its output names no time-out or server error.
+    """
+    failed = next((s for s in steps if getattr(s, "exit_code", 0)), None)
+    if failed is None or not getattr(failed, "reload", False):
+        return None, []
+    try:
+        text = Path(failed.log).read_text(encoding="utf-8", errors="replace") if failed.log else ""
+    except OSError:
+        text = ""
+    text = text or str(getattr(failed, "tail", "") or "")
+    lines: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line and _NO_ANSWER.search(line) and line not in lines:
+            lines.append(line)
+    return failed, lines
+
+
+def judge(verdict: str, code: int, sources: list[dict[str, Any]], steps: list[Any] | None = None) -> tuple[str, str]:
+    """(the verdict with the sources named where they explain it, the report's category).
+
+    A step that loads data again and failed because a source did not answer is neither a source change nor a
+    failure of the study's code: ``source_unavailable``, and a later try may succeed.
+    """
     moved = changed(sources)
     if code == 0:
         return verdict, REPRODUCED
+    step, lines = unanswered(steps or []) if code == 2 else (None, [])
+    if step is not None and lines:
+        said = lines[-1] if len(lines[-1]) <= 300 else lines[-1][:297] + "..."
+        return (
+            f"Could not reproduce yet: a source did not answer while `{step.command}` loaded the data again "
+            f"({said}). This is not a failure of the study's code and says nothing about whether the study "
+            "reproduces; the source may answer on a later try, so run the same command again later.",
+            SOURCE_UNAVAILABLE,
+        )
     if moved:
         cause = (
             "the change at the source is the likely cause, not the study's code"

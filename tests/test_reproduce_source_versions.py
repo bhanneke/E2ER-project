@@ -252,3 +252,72 @@ def test_the_same_data_from_the_source_reproduce(tmp_path: Path, capsys):
     assert "returned the same data as on 2026-10-14" in text
     doc = json.loads(out_json.read_text(encoding="utf-8"))
     assert doc["category"] == "reproduced" and doc["sources"][0]["status"] == "same"
+
+
+# ── a corpus: which texts changed; a source that did not answer ─────────────
+
+
+def test_a_corpus_load_names_the_texts_that_changed(tmp_path: Path):
+    folder, run = tmp_path / "study", tmp_path / "run"
+    then = {"2276": {"sha256": "a" * 64}, "7987": {"sha256": "b" * 64}}
+    now = {"2276": {"sha256": "a" * 64}, "7987": {"sha256": "c" * 64}}
+    old = {"connector": "gutenberg", "table": "texts_c1", "retrieved_at": "2026-10-14T08:00:00Z", "texts": then}
+    new = {"connector": "gutenberg", "table": "texts_c1", "retrieved_at": "2026-11-12T08:00:00Z", "texts": now}
+    old["fingerprint"] = lr.fingerprint_rows([{"id": 1, "text": "x"}])
+    new["fingerprint"] = lr.fingerprint_rows([{"id": 1, "text": "y"}])
+    _records(folder, run, [old], [new])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.CHANGED and entry["parts_changed"] == ["ebook 7987"]
+    assert entry["sentence"].endswith("; the texts that differ: ebook 7987.")
+
+
+def test_a_corpus_recorded_before_fingerprints_names_the_files_that_changed(tmp_path: Path):
+    """The weather-words study (recorded 2026-10-14): each book's file with its SHA-256, no fingerprint."""
+    folder, run = tmp_path / "study", tmp_path / "run"
+    url = "https://gutenberg.pglaf.org/cache/epub/{0}/pg{0}.txt"
+    then = [{"url": url.format(i), "sha256": c * 64} for i, c in (("2276", "a"), ("7987", "b"))]
+    now = [{"url": url.format(i), "sha256": c * 64} for i, c in (("2276", "a"), ("7987", "d"))]
+    old = {"connector": "gutenberg", "table": "texts_c1", "retrieved_at": "2026-10-14T08:00:00Z", "files": then}
+    new = {"connector": "gutenberg", "table": "texts_c1", "retrieved_at": "2026-11-12T08:00:00Z", "files": now}
+    _records(folder, run, [old], [new])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.NOT_RECORDED and entry["parts_changed"] == ["ebook 7987"]
+    assert "the files that differ: ebook 7987 (SHA-256, against the study's record)" in entry["sentence"]
+
+
+def test_the_gutenberg_connector_records_each_texts_fingerprint():
+    import inspect
+
+    from src.modules.data.sources import gutenberg
+
+    assert '"texts": texts' in inspect.getsource(gutenberg)
+
+
+def _failed_reload(tmp_path: Path, output: str):
+    log = tmp_path / "step-1.log"
+    log.write_text(output, encoding="utf-8")
+    return rp.StepResult("python get_data.py", "load again", 1, 1255.0, "", str(log), reload=True)
+
+
+GUTENDEX = (
+    "gutenberg_texts_c3: not loaded (Gutendex, the catalogue e2er checks each book's copyright status with, did not "
+    "answer within 45 s. No text was loaded; try again later.); trying again in 30 s\n"
+    "Could not load:\n  gutenberg_texts_c3 (Project Gutenberg ebooks): Gutendex, the catalogue e2er checks each "
+    "book's copyright status with, did not answer within 45 s. No text was loaded; try again later.\n"
+)
+
+
+def test_a_source_that_did_not_answer_is_neither_a_change_nor_a_code_failure(tmp_path: Path):
+    step = _failed_reload(tmp_path, GUTENDEX)
+    text, category = rsrc.judge("Could not reproduce: the step `python get_data.py` failed.", 2, [], [step])
+    assert category == rsrc.SOURCE_UNAVAILABLE
+    assert text.startswith("Could not reproduce yet: a source did not answer while `python get_data.py` loaded")
+    assert "did not answer within 45 s" in text and "not a failure of the study's code" in text
+    assert "run the same command again later" in text
+
+
+def test_a_failed_reload_without_a_time_out_is_not_called_unavailable(tmp_path: Path):
+    step = _failed_reload(tmp_path, "Traceback ...\nKeyError: 'value'\n")
+    assert rsrc.judge("Could not reproduce: x.", 2, [], [step])[1] == rsrc.COULD_NOT_RUN
+    later = rp.StepResult("python clean.py", "prepare", 1, 1.0, "timed out reading", "", reload=False)
+    assert rsrc.judge("Could not reproduce: x.", 2, [], [later])[1] == rsrc.COULD_NOT_RUN
