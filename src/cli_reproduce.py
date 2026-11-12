@@ -132,7 +132,7 @@ def render(
             named = [
                 i["path"]
                 + (f" (tables {', '.join(i['tables_differ'])})" if i.get("tables_differ") else "")
-                + (" (loaded again from its source)" if i.get("reloaded") else "")
+                + (" (loaded or built again by a step)" if i.get("reloaded") else "")
                 for i in differ
             ]
             lines.append(f"  {len(differ)} differ: {', '.join(named)}")
@@ -182,12 +182,50 @@ def render(
                 )
     if sources:
         lines += ["", "Sources loaded again, compared with the study's record of each load:"]
-        lines += [f"  {s['sentence']}" for s in sources]
+        lines += [f"  {line}" for line in rsrc_lines(sources)]
     notes = [n for n in recipe.get("notes") or [] if isinstance(n, str)]
     if notes:
         lines += ["", "Notes from the study's reproduce.json:"] + [f"  - {n}" for n in notes]
     lines += ["", verdict]
     return "\n".join(lines) + "\n"
+
+
+def rsrc_lines(sources: list[dict[str, Any]]) -> list[str]:
+    """The report's lines for the sources: one per load, except that loads of one source the study recorded
+    without a fingerprint and with nothing else to say (37 Yahoo Finance tickers) share one line."""
+    plain: dict[str, list[dict[str, Any]]] = {}
+    out: list[str] = []
+    for s in sources:
+        quiet = (
+            s.get("status") == "not_recorded"
+            and not s.get("parts_changed")
+            and "files_differ" not in s
+            and s.get("version_recorded") == s.get("version_now")
+        )
+        if quiet:
+            if s["source"] not in plain:
+                out.append(s["source"])  # its place in the list
+            plain.setdefault(s["source"], []).append(s)
+        else:
+            out.append(str(s["sentence"]))
+    lines = []
+    for item in out:
+        group = plain.get(item)
+        if group is None:
+            lines.append(item)
+        elif len(group) == 1:
+            lines.append(str(group[0]["sentence"]))
+        else:
+            where = [str(g.get("loaded_into")) for g in group if g.get("loaded_into")]
+            shown = ", ".join(where[:4]) + (f" and {len(where) - 4} more" if len(where) > 4 else "")
+            dates = sorted({str(g.get("recorded_at")) for g in group if g.get("recorded_at")})
+            on = f"; {', '.join(dates)}" if dates else ""
+            lines.append(
+                f"{item} ({len(group)} loads: {shown}): the source fingerprint was not recorded when the study loaded "
+                f"these data ({'e2er records it since 0.21'}{on}), so e2er cannot say whether the source now returns "
+                "other data."
+            )
+    return lines
 
 
 def _integrity_first(root: Path, recipe: dict[str, Any]) -> tuple[str | None, str | None]:

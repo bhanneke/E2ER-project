@@ -357,3 +357,21 @@ def test_a_new_version_by_the_sources_own_account_counts_as_a_change_without_a_f
 def test_a_version_that_is_only_the_day_of_the_load_is_not_a_source_version():
     assert rsrc._version({"version": "2026-11-12", "retrieved_at": "2026-11-12T08:00:00Z"}) == ""
     assert rsrc._version({"version": "DR3", "retrieved_at": "2026-11-12T08:00:00Z"}) == "DR3"
+
+
+def test_many_loads_of_one_source_without_fingerprints_share_one_line():
+    from src.cli_reproduce import rsrc_lines
+
+    yahoo = [
+        {"source": "Yahoo Finance", "status": "not_recorded", "loaded_into": f"data/px_{t}.csv",
+         "recorded_at": "2026-10-05", "sentence": f"Yahoo Finance (data/px_{t}.csv): ..."}
+        for t in ("BTC", "ETH", "SOL", "XRP", "SPY", "QQQ")
+    ]  # fmt: skip
+    who = {"source": "WHO", "status": "changed", "sentence": "WHO returned different data than on 2026-10-14."}
+    lines = rsrc_lines([*yahoo, who])
+    assert lines == [
+        "Yahoo Finance (6 loads: data/px_BTC.csv, data/px_ETH.csv, data/px_SOL.csv, data/px_XRP.csv and 2 more): the "
+        "source fingerprint was not recorded when the study loaded these data (e2er records it since 0.21; "
+        "2026-10-05), so e2er cannot say whether the source now returns other data.",
+        "WHO returned different data than on 2026-10-14.",
+    ]
