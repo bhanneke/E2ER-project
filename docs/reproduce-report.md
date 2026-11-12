@@ -112,8 +112,14 @@ of the description's `verification` list (`e2er.json` and the request to e2er.or
                   "counts": {"values": 930, "identical": 917, "same_at_precision": 13, "small_difference": 0,
                              "differs": 0, "missing_in_rerun": 0, "only_in_rerun": 0, "result_files": 1,
                              "result_files_not_compared": 0, "tables": 3, "tables_identical": 3,
-                             "inputs": 2, "inputs_identical": 0, "inputs_reloaded": 2}}}
+                             "inputs": 2, "inputs_identical": 0, "inputs_reloaded": 2},
+                  "seconds": 252.2, "reload_seconds": 247.4, "reloaded_sources": ["ESA Gaia Archive"]}}
 ```
+
+`seconds` is how long the rerun's steps took together, `reload_seconds` how long the steps that loaded data
+again took, and `reloaded_sources` the sources they loaded from (from the report's `steps` and `sources`;
+left out when the report records no times). The study page and `e2er inspect` show them as the effort of a
+rerun ("Required for reproduction", docs/publishing.md).
 
 With `--skip-reproduce "<reason>"`: `"status": "SKIP"`, `"detail": "not reproduced before publishing:
 <reason>"`, `"reproduction": {"reproduced": false, "skipped": "<reason>", "date", "e2er_version"}`. A study

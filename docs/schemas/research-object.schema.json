@@ -383,6 +383,229 @@
         }
       }
     },
+    "reproduction_requirements": {
+      "type": "object",
+      "description": "What a reader needs to reproduce the study, and the data with their terms, written by e2er from its own records (reproduce.json, data/data_sources.json, the files a package leaves out, the connectors' keys): e2er src/core/repro_requirements.py, docs/publishing.md. A missing fact is left out. e2er.org shows it on the study page as \"Required for reproduction\" and \"Data and licences\".",
+      "required": [
+        "format"
+      ],
+      "properties": {
+        "format": {
+          "const": "e2er-requirements/1"
+        },
+        "reproducible": {
+          "type": "boolean",
+          "description": "The study has a reproduce.json: e2er reproduce can run it."
+        },
+        "why": {
+          "type": "string",
+          "description": "Why it cannot be run again (no reproduce.json)."
+        },
+        "software": {
+          "type": "object",
+          "properties": {
+            "docker": {
+              "type": "boolean",
+              "description": "e2er reproduce runs the code in a Docker sandbox."
+            },
+            "e2er": {
+              "type": "string",
+              "description": "The e2er version that exported the study."
+            },
+            "python": {
+              "type": "string",
+              "description": "The Python of reproduce.json."
+            },
+            "packages": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "hashes": {
+                  "type": "boolean"
+                }
+              },
+              "description": "The pinned packages: the file and how many it pins."
+            }
+          }
+        },
+        "accounts": {
+          "type": "array",
+          "description": "Each data source the study loaded whose connector takes a key; needed: a rerun loads its data again and the key is not optional.",
+          "items": {
+            "type": "object",
+            "required": [
+              "source",
+              "setting"
+            ],
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "setting": {
+                "type": "string"
+              },
+              "how": {
+                "type": "string"
+              },
+              "optional": {
+                "type": "boolean"
+              },
+              "needed": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "network": {
+              "type": "boolean",
+              "description": "A rerun loads data again from their sources, so that step needs the network."
+            },
+            "reload_step": {
+              "type": "string",
+              "description": "The script that loads them again (code/get_data.py)."
+            },
+            "shipped": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "The data files that come with the study."
+            },
+            "left_out": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "needed": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "sources": {
+          "type": "array",
+          "description": "One entry per data source (connector) the study loaded, from data/data_sources.json.",
+          "items": {
+            "type": "object",
+            "required": [
+              "connector",
+              "name"
+            ],
+            "properties": {
+              "connector": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "dataset": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "versions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The source's own versions or releases, as the loads recorded them."
+              },
+              "loaded": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The days of the loads (UTC)."
+              },
+              "loads": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "terms": {
+                "type": "string",
+                "description": "The source's terms in plain words, as the load recorded them."
+              },
+              "terms_url": {
+                "type": "string"
+              },
+              "citation": {
+                "type": "string"
+              },
+              "citations": {
+                "type": "integer"
+              },
+              "shipped": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reloaded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "not_needed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "missing": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "from": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The hosts a rerun loads the data from."
+              },
+              "left_out_because": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fingerprints": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The data fingerprint of each load (sha256 of the rows in the form e2er-rows/1)."
+              },
+              "fingerprints_missing": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
     "license": {
       "type": [
         "string",

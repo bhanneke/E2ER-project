@@ -112,6 +112,10 @@ def fetch(address: str, out: str | None = None, *, version: int | None = None) -
     arg = shell_arg(shown)
     print(f"✓ {shown}: {rec['bytes']:,} bytes, SHA-256 {rec['sha256']}, as e2er.org records it")
     print(f"  kept by the authors on {'GitHub' if rec['host'] == 'github' else 'Zenodo'}; e2er.org keeps no copy")
+    from .core import repro_requirements as rr
+
+    print()
+    rr.print_summary(path, size=rec["bytes"])
     print("\nNothing was opened or run. Next:")
     print(f"  e2er inspect {arg}")
     print("      what the package holds (nothing is unpacked)")

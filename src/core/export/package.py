@@ -850,6 +850,38 @@ def build(
                 else:
                     notes.append(f"--offline: {note}. The package has no wheels; a rerun downloads the packages.")
 
+        study = _study(folder, prov)
+        # What a reader needs to reproduce the study, and the data and their terms (repro_requirements.py):
+        # in the list below and as text in e2er-package/README.md.
+        from .. import repro_requirements as rr
+
+        held = {**files, **extra}
+
+        def read(rel: str) -> bytes | None:
+            src = held.get(rel)
+            try:
+                return src.read_bytes() if src is not None and src.stat().st_size <= 32 * 1024 * 1024 else None
+            except OSError:
+                return None
+
+        needs = rr.derive(
+            {
+                "left_out": left_out,
+                "environment": environment,
+                "study": study,
+                "recipe": _recipe_summary(recipe, why.replace(str(folder), ".")),
+            },
+            read,
+            files=set(held),
+        )
+        if anonymous:
+            from ..secret_scan import strip_local_paths
+
+            needs = strip_local_paths(needs)
+        readme = staging / "README.md"
+        readme.write_text(rr.package_readme(needs), encoding="utf-8", newline="\n")
+        extra[rr.README] = readme
+
         contents: list[dict[str, Any]] = []
         entries: list[tuple[str, Path]] = []
         for rel, src in sorted({**files, **extra}.items()):
@@ -877,7 +909,6 @@ def build(
                 "(`e2er redact <folder> --text <text>` takes text out of a frozen file) and pack again:\n  "
                 + "\n  ".join(shown[:20])
             )
-        study = _study(folder, prov)
         if anonymous:
             # The file for a journal's double-blind review (`e2er pack --blind`): no author, no folder name, and
             # no path of this computer in what the packing notes say.
@@ -901,6 +932,7 @@ def build(
             "environment": environment,
             "wheels": wheels,
             "notes": notes,
+            rr.KEY: needs,
         }
         if anonymous:
             from ..secret_scan import strip_local_paths

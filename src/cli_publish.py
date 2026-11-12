@@ -725,6 +725,22 @@ def _describe(
     # Without the run, the template file declares the agents (today's file, said to be declared).
     template_file = Path(__file__).resolve().parents[1] / "pipelines" / f"{template}.toml"
 
+    # What a reader needs to reproduce the study, and the data with their terms (core/repro_requirements.py),
+    # with the files left out as the package that goes with the study leaves them out (GitHub's size limit).
+    from .core import repro_requirements as rr
+    from .core.export import package as pkg_
+
+    needs: dict[str, Any] | None
+    try:
+        needs = rr.for_folder(
+            b,
+            host=gf.HOST if github_target is not None else None,
+            max_file_bytes=gf.GITHUB_FILE_LIMIT if github_target is not None else None,
+        )
+    except pkg_.PackageError as e:
+        needs = None
+        print(f"note: the description does not say what a reproduction needs: {e}")
+
     def manifest_now(verification: list[dict[str, Any]]) -> dict[str, Any]:
         if reproduction is not None:
             verification = [*verification, copy.deepcopy(reproduction)]
@@ -746,6 +762,8 @@ def _describe(
             co.carried_manifest_parts(m, previous)
         _declare(m, purpose, kind)
         data_terms.annotate(m, licensed)
+        if needs is not None:
+            m[rr.KEY] = copy.deepcopy(needs)
         return m
 
     try:
@@ -892,7 +910,15 @@ def _describe(
         print("note: --no-stamp: the paper does not carry the dossier link")
     # A study hosted on GitHub: README.md opens with what a visitor of the repository needs (an amendment).
     if hosted is not None and _write_readme(
-        b, doc=doc, did=did, site=site_url, purpose=purpose, kind=kind, left_out=hosted.left_out, licence=license_id
+        b,
+        doc=doc,
+        did=did,
+        site=site_url,
+        purpose=purpose,
+        kind=kind,
+        left_out=hosted.left_out,
+        licence=license_id,
+        requirements=needs,
     ):
         checks = _checks_while_publishing(b)
         verdict, rc = _verdict(checks)
@@ -2067,6 +2093,35 @@ def _hosting_plan(b: Path) -> _Hosted:
     return _Hosted(files=shipped, left_out=left, data=[r for r in shipped if pkg._is_data(r)])
 
 
+def _data_section(doc: dict[str, Any]) -> list[str]:
+    """The README's plain list of the data sources the dossier records (without the reproduction record)."""
+    lines = ["## Data", ""]
+    # One entry per source and release: a study that loaded the same source twice lists it once.
+    sources = list(
+        {
+            (d.get("dataset"), d.get("version"), d.get("licence"), d.get("terms"), d.get("citation")): d
+            for d in doc.get("data_sources") or []
+            if isinstance(d, dict)
+        }.values()
+    )
+    if not sources:
+        lines += ["The dossier records no data load from a connector.", ""]
+    for d in sources:
+        head = str(d.get("dataset") or d.get("connector") or "a data source")
+        if d.get("version"):
+            head += f", release {d['version']}"
+        lines.append(f"- **{head}**")
+        if d.get("licence"):
+            lines.append(f"  - Terms: {d['licence']}")
+        if d.get("terms"):
+            lines.append(f"  - Full terms: {d['terms']}")
+        if d.get("citation"):
+            lines.append(f"  - Cite: {d['citation']}")
+    if sources:
+        lines.append("")
+    return lines
+
+
 def readme_block(
     b: Path,
     *,
@@ -2077,8 +2132,14 @@ def readme_block(
     kind: str | None,
     left_out: list[dict[str, Any]],
     licence: str | None,
+    requirements: dict[str, Any] | None = None,
 ) -> str:
-    """The top of README.md for a study hosted on GitHub: what it is, where its record is, what is left out."""
+    """The top of README.md for a study hosted on GitHub: what it is, where its record is, what is left out.
+
+    ``requirements`` (core/repro_requirements.py): "Required for reproduction" and "Data and licences" take
+    the place of the plain list of data sources. Neither names the time or computer of a rerun, so the same
+    study published again writes the same README.
+    """
     from .core.export import package as pkg
 
     prov = json.loads((b / "provenance.json").read_text(encoding="utf-8"))
@@ -2107,30 +2168,12 @@ def readme_block(
         made.append(f"model{'s' if len(models) > 1 else ''} {', '.join(models)}")
     lines += [f"**Made with:** {'; '.join(made)}", ""]
 
-    lines += ["## Data", ""]
-    # One entry per source and release: a study that loaded the same source twice lists it once.
-    sources = list(
-        {
-            (d.get("dataset"), d.get("version"), d.get("licence"), d.get("terms"), d.get("citation")): d
-            for d in doc.get("data_sources") or []
-            if isinstance(d, dict)
-        }.values()
-    )
-    if not sources:
-        lines += ["The dossier records no data load from a connector.", ""]
-    for d in sources:
-        head = str(d.get("dataset") or d.get("connector") or "a data source")
-        if d.get("version"):
-            head += f", release {d['version']}"
-        lines.append(f"- **{head}**")
-        if d.get("licence"):
-            lines.append(f"  - Terms: {d['licence']}")
-        if d.get("terms"):
-            lines.append(f"  - Full terms: {d['terms']}")
-        if d.get("citation"):
-            lines.append(f"  - Cite: {d['citation']}")
-    if sources:
-        lines.append("")
+    if requirements is not None:
+        from .core import repro_requirements as rr
+
+        lines += rr.markdown(requirements).splitlines()
+    else:
+        lines += _data_section(doc)
 
     lines += ["## Files left out", ""]
     if left_out:
@@ -2201,9 +2244,10 @@ def _host_on_github(
     """Push the study's files (what `e2er pack` ships) to ``t``; the commit that holds them, and the package.
 
     e2er.json goes up as well, without the commit (no commit can name itself), without the paper's
-    address (which names the commit), without the time of publishing and without the package (which
-    holds this e2er.json). The local e2er.json, written after this, has all four, and the outcome of the
-    reproduction before publishing, which the copy on GitHub leaves out for the same reason as the time.
+    address (which names the commit), without the time of publishing, without the package (which
+    holds this e2er.json) and without what a reproduction needs (e2er-package.json next to it has it).
+    The local e2er.json, written after this, has all five, and the outcome of the reproduction before
+    publishing, which the copy on GitHub leaves out for the same reason as the time.
 
     ``package_version`` (the number e2er.org gives this version): the package the files were opened from
     becomes the file of the release ``<project>-v<N>`` of the repository at the pushed commit
@@ -2220,6 +2264,9 @@ def _host_on_github(
     pre.pop("access", None)
     pre.pop("published", None)  # the time of this publish: the same study published again makes no new commit
     pre.pop("package", None)
+    # What a reproduction needs: the opened package's own list (e2er-package.json, in the same folder) and the
+    # README carry it; the local e2er.json and the platform have it in the description.
+    pre.pop("reproduction_requirements", None)
     # The reproduction before publishing names the time and computer it ran on: like the time of publishing,
     # it stays in the local e2er.json and on the platform, so the same study published again makes no new commit.
     pre["verification"] = [v for v in pre.get("verification") or [] if v.get("check") != "reproduction"]

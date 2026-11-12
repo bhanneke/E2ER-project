@@ -54,6 +54,11 @@ def test_the_published_description_matches_the_sites_format(bundle: Path, tmp_pa
     jsonschema.Draft202012Validator(SCHEMA).validate(
         {**manifest, "dossier": {"id": d["id"], "url": manifest["dossier"]["url"], "doc": d["doc"]}}
     )
+    # What a reproduction needs (core/repro_requirements.py) goes with the description, in the site's format.
+    needs = manifest["reproduction_requirements"]
+    assert needs["format"] == "e2er-requirements/1" and needs["software"]["docker"] is needs["reproducible"]
+    local = json.loads((bundle / "e2er.json").read_text(encoding="utf-8"))
+    assert local["reproduction_requirements"] == needs
     prov = json.loads((bundle / "provenance.json").read_text(encoding="utf-8"))
     assert "amendments" not in manifest and isinstance(prov.get("amendments", []), list)
 

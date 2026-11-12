@@ -14,7 +14,8 @@ The outcome goes into what publish writes and sends as one entry of the descript
     {"check": "reproduction", "status": "PASS" | "SKIP", "detail": "<one sentence>",
      "reproduction": {"reproduced": true, "date": "...", "e2er_version": "...", "platform": {...},
                       "python": "3.12.14", "sandbox": "python:3.12-slim", "verdict": "...",
-                      "category": "reproduced", "exit_code": 0, "counts": {...}}}
+                      "category": "reproduced", "exit_code": 0, "counts": {...},
+                      "seconds": 1512.3, "reload_seconds": 1300.0, "reloaded_sources": ["Project Gutenberg"]}}
 
 It lives there, not in provenance.json or the dossier: provenance.json fixes the content id (the SHA-256 of
 provenance.json) and the dossier's id is the SHA-256 of its document, and both must stay the same when the
@@ -150,8 +151,29 @@ def record_from(report: dict[str, Any]) -> dict[str, Any]:
             "category": report.get("category"),
             "exit_code": report.get("exit_code"),
             "counts": c,
+            **timing(report),
         },
     }
+
+
+def timing(report: dict[str, Any]) -> dict[str, Any]:
+    """How long the rerun's steps took (``seconds``), the steps that loaded data again (``reload_seconds``),
+    and the sources they loaded from (``reloaded_sources``); empty when the report records no times."""
+    steps = [s for s in report.get("steps") or [] if isinstance(s, dict) and isinstance(s.get("seconds"), int | float)]
+    if not steps:
+        return {}
+    out: dict[str, Any] = {"seconds": round(sum(float(s["seconds"]) for s in steps), 1)}
+    reload = [float(s["seconds"]) for s in steps if s.get("reload")]
+    if reload:
+        out["reload_seconds"] = round(sum(reload), 1)
+        names: list[str] = []
+        for src in report.get("sources") or []:
+            name = src.get("source") if isinstance(src, dict) else None
+            if isinstance(name, str) and name and name not in names:
+                names.append(name)
+        if names:
+            out["reloaded_sources"] = names
+    return out
 
 
 def run_reproduction(folder: Path, report: dict[str, Any]) -> int:
