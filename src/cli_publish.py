@@ -488,8 +488,12 @@ def _describe(
     blind: dict[str, Any] | None = None,
     deposits_after: list[Callable[[], str | None]] | None = None,
     package_platform: str | None = None,
+    reproduction: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, Any] | None]:
     """Describe, stamp and verify the bundle; write e2er.json.
+
+    ``reproduction``: the outcome of the reproduction before publishing (core/prepublish.py), added to the
+    description's ``verification`` list after verify's checks.
 
     ``deposits_after`` (a publish on a platform): the Zenodo drafts are reserved and named in e2er.json, but
     publishing them (which mints the DOIs) is appended to this list, for the caller to run once the platform
@@ -721,7 +725,9 @@ def _describe(
     # Without the run, the template file declares the agents (today's file, said to be declared).
     template_file = Path(__file__).resolve().parents[1] / "pipelines" / f"{template}.toml"
 
-    def manifest_now(verification: list[dict[str, str]]) -> dict[str, Any]:
+    def manifest_now(verification: list[dict[str, Any]]) -> dict[str, Any]:
+        if reproduction is not None:
+            verification = [*verification, copy.deepcopy(reproduction)]
         m = build_manifest(
             b,
             owner=owner,
@@ -1080,6 +1086,33 @@ def _describe(
 DEFAULT_TEMPLATE = "empirical"
 
 
+def reproduce_before(
+    b: Path, *, skip: str | None, dry_run: bool = False, asked: bool = False, keep_report: bool = True
+) -> tuple[bool, dict[str, Any] | None]:
+    """The reproduction before publishing (core/prepublish.py): (go on?, the verification entry to add).
+
+    ``skip``: --skip-reproduce's reason. A dry run runs nothing heavy unless ``asked`` (--reproduce); its
+    lines go to standard error, so standard output holds only the request.
+    """
+    from .core import prepublish as pp
+
+    if skip is not None:
+        out = pp.skipped(skip)
+    elif dry_run and not asked:
+        print(
+            "note: e2er publish runs the study's code again in Docker before it sends anything (as `e2er "
+            "reproduce` does) and publishes only when the study reproduces; this dry run does not. --reproduce "
+            "runs it in the dry run too.",
+            file=sys.stderr,
+        )
+        return True, None
+    else:
+        out = pp.reproduce_first(b, keep_report=keep_report, quiet=dry_run)
+    for line in out.lines:
+        print(line, file=sys.stderr if dry_run else sys.stdout)
+    return out.ok, out.record
+
+
 def recorded_template(bundle: Path) -> str | None:
     """The template the export recorded (provenance.json → run.template), or None for an older export."""
     try:
@@ -1173,6 +1206,13 @@ def publish(
     blind_ids = kw.pop("blind_identifiers", None)
     blind_ack = kw.pop("blind_ack_self_citations", False)
     unblind_spec = kw.pop("unblind", None)
+    # Reproduce before publishing (core/prepublish.py): --skip-reproduce "<why>" publishes without the run;
+    # --reproduce runs it in a dry run too.
+    skip_reproduce = kw.pop("skip_reproduce", None)
+    reproduce_in_dry_run = bool(kw.pop("reproduce", False))
+    if skip_reproduce is not None and not str(skip_reproduce).strip():
+        print('error: --skip-reproduce needs the reason, in quotes: --skip-reproduce "<why>"')
+        return 2
     if blind and unblind_spec:
         print("error: --blind publishes an anonymous version, --unblind names its authors after the review; use one")
         return 2
@@ -1190,6 +1230,8 @@ def publish(
             interactive=interactive,
             identifiers=blind_ids,
             ack_self_citations=blind_ack,
+            skip_reproduce=skip_reproduce,
+            reproduce_in_dry_run=reproduce_in_dry_run,
             **kw,
         )
     if (blind_ids or blind_ack) and not blind:
@@ -1273,7 +1315,11 @@ def publish(
         if dry_run or to_url:
             print("error: --offline sends nothing; leave out --to and --dry-run")
             return 2
-        code, manifest = _describe(str(b), **kw, remote=True)
+        # The folder is prepared for publishing in the browser: the study is run again first.
+        ok, prepared = reproduce_before(b, skip=skip_reproduce)
+        if not ok:
+            return 1
+        code, manifest = _describe(str(b), **kw, remote=True, reproduction=prepared)
         if code or manifest is None:
             return code or 1
         found = problems(request_body(manifest, b))
@@ -1289,6 +1335,12 @@ def publish(
         print("  The page compares every file with its fingerprint in the browser and sends only the description.")
         return 0
     rehearsed: dict[str, Any] | None = None
+    reproduction: dict[str, Any] | None = None
+    if dry_run:
+        ok, reproduction = reproduce_before(b, skip=skip_reproduce, dry_run=True, asked=reproduce_in_dry_run)
+        if not ok:
+            print("dry run: nothing was written or sent", file=sys.stderr)
+            return 1
     if dry_run or to_url:
         # Rehearse in a scratch copy: the exact request, and nothing written here.
         with tempfile.TemporaryDirectory() as tmp:
@@ -1305,6 +1357,7 @@ def publish(
                 "zenodo_plan_only": bool(kw.get("zenodo")),
                 # A dry run lists what would go up to GitHub; the check before --to pushes nothing.
                 "github_mode": "plan" if dry_run else "rehearse",
+                "reproduction": reproduction,
             }
             with contextlib.redirect_stdout(log):
                 code, manifest = _describe(str(scratch), **rehearsal, remote=True)
@@ -1341,6 +1394,12 @@ def publish(
         if why:
             print(f"error: {why}; nothing was sent")
             return 1
+    if sends:
+        # Before anything leaves this machine: the study's code runs again, and only a study that reproduces
+        # is published (or one the researcher publishes with --skip-reproduce and a reason).
+        ok, reproduction = reproduce_before(b, skip=skip_reproduce)
+        if not ok:
+            return 1
     if sends and not _confirmed(b, rehearsed, to_url, kw, yes=yes):
         print("Not published: nothing was sent or pushed.")
         return 1
@@ -1348,7 +1407,12 @@ def publish(
         kw["github_mode"] = "push"
     after: list[Callable[[], str | None]] = []
     code, manifest = _describe(
-        str(b), **kw, remote=bool(to_url), deposits_after=after if to_url else None, package_platform=to_url
+        str(b),
+        **kw,
+        remote=bool(to_url),
+        deposits_after=after if to_url else None,
+        package_platform=to_url,
+        reproduction=reproduction if sends else None,
     )
     if code or manifest is None or not to_url:
         return code
@@ -1921,6 +1985,9 @@ def _zenodo_package(
     pre = copy.deepcopy(manifest)
     pre.pop("published", None)
     pre.pop("package", None)
+    # The reproduction before publishing names the time and computer it ran on: like the time of publishing,
+    # it stays in the local e2er.json and on the platform, so the same study published again makes no new commit.
+    pre["verification"] = [v for v in pre.get("verification") or [] if v.get("check") != "reproduction"]
     e2er_json = b / MANIFEST_NAME
     before = e2er_json.read_bytes() if e2er_json.is_file() else None
     write_manifest(b, pre)
@@ -2135,7 +2202,8 @@ def _host_on_github(
 
     e2er.json goes up as well, without the commit (no commit can name itself), without the paper's
     address (which names the commit), without the time of publishing and without the package (which
-    holds this e2er.json). The local e2er.json, written after this, has all four.
+    holds this e2er.json). The local e2er.json, written after this, has all four, and the outcome of the
+    reproduction before publishing, which the copy on GitHub leaves out for the same reason as the time.
 
     ``package_version`` (the number e2er.org gives this version): the package the files were opened from
     becomes the file of the release ``<project>-v<N>`` of the repository at the pushed commit
@@ -2152,6 +2220,9 @@ def _host_on_github(
     pre.pop("access", None)
     pre.pop("published", None)  # the time of this publish: the same study published again makes no new commit
     pre.pop("package", None)
+    # The reproduction before publishing names the time and computer it ran on: like the time of publishing,
+    # it stays in the local e2er.json and on the platform, so the same study published again makes no new commit.
+    pre["verification"] = [v for v in pre.get("verification") or [] if v.get("check") != "reproduction"]
     e2er_json = b / MANIFEST_NAME
     before = e2er_json.read_bytes() if e2er_json.is_file() else None
 

@@ -751,7 +751,21 @@ def main() -> None:
     publish_p.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the exact request --to would send; change nothing and send nothing.",
+        help="Print the exact request --to would send; change nothing and send nothing. The study's code is "
+        "not run again unless --reproduce is given too.",
+    )
+    publish_p.add_argument(
+        "--skip-reproduce",
+        default=None,
+        metavar='"REASON"',
+        help="Publish without running the study's code again first. By default e2er publish runs it in Docker, "
+        "as `e2er reproduce` does, and publishes only when the study reproduces. The published description "
+        "records that it was not reproduced, and this reason.",
+    )
+    publish_p.add_argument(
+        "--reproduce",
+        action="store_true",
+        help="With --dry-run: run the study's code again too (in Docker), as publishing would.",
     )
     publish_p.add_argument(
         "--yes",
@@ -1104,6 +1118,8 @@ def main() -> None:
                 blind_identifiers=args.blind_identifiers,
                 blind_ack_self_citations=args.blind_ack_self_citations,
                 unblind=args.unblind,
+                skip_reproduce=args.skip_reproduce,
+                reproduce=args.reproduce,
             )
         )
 

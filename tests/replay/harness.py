@@ -17,6 +17,8 @@ Every change is test-only and named here:
   and open-access PDFs come from the scenario's recordings (``http/index.json``:
   address -> file), so the search and the full-text step run their real code
   on recorded answers; an address without a recording fails like a dead link;
+* the reproduction before publishing (``e2er publish``, src/core/prepublish.py): it "reproduces" without
+  Docker, so no container runs and no study's code runs again;
 * the network: every connection to a host other than this machine is
   refused and written to ``E2ER_REPLAY_NETLOG``, so a story can show that
   nothing reached Zenodo, GitHub, a model provider or a literature index.
@@ -231,9 +233,30 @@ def _patch_recorded_http(scenario_root: Path) -> None:
     fulltext.resolve_pdf = lambda doi: None  # type: ignore[assignment]
 
 
+def _patch_reproduce_first() -> None:
+    from src.core import prepublish
+
+    report = {
+        "environment": {"python": "replay", "sandbox": {"base": "replay"}},
+        "results": [{"values": 1, "counts": {"identical": 1}}],
+        "inputs": [],
+        "tables": None,
+        "verdict": "Reproduced: every compared value is identical or the same at the published precision.",
+        "exit_code": 0,
+        "category": "reproduced",
+        "host": {"e2er_version": "replay", "system": "replay", "machine": "replay", "python": "replay"},
+    }
+
+    def reproduce_first(folder: Any, *, keep_report: bool = True, quiet: bool = False) -> Any:
+        return prepublish.Outcome(True, prepublish.record_from(report), [], report)
+
+    prepublish.reproduce_first = reproduce_first  # type: ignore[assignment]
+
+
 def install() -> None:
     """Apply the replay level to this process (see module docstring)."""
     _guard_network()
+    _patch_reproduce_first()
     if os.environ.get("E2ER_REPLAY_SCENARIO"):
         from .backend import scenario_dir
 

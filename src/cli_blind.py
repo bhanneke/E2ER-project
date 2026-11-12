@@ -118,9 +118,15 @@ def publish_blind(
     interactive: bool,
     identifiers: list[str] | None = None,
     ack_self_citations: bool = False,
+    skip_reproduce: str | None = None,
+    reproduce_in_dry_run: bool = False,
     **kw: Any,
 ) -> int:
-    """`e2er publish <folder> --blind`: anonymise a copy, check it for leaks, publish it at e2er.org/r/<code>."""
+    """`e2er publish <folder> --blind`: anonymise a copy, check it for leaks, publish it at e2er.org/r/<code>.
+
+    The anonymised copy is what is published, so it is what runs again before publishing (core/prepublish.py),
+    unless ``skip_reproduce`` gives the reason not to; a dry run runs it only with ``reproduce_in_dry_run``.
+    """
     from . import cli_publish as cp
 
     b = Path(bundle).expanduser().resolve()
@@ -209,6 +215,12 @@ def publish_blind(
             for rel in result.binary:
                 print(f"  {rel}")
             return 1
+        # The anonymised copy is what is published: it is what must reproduce.
+        ok, reproduction = cp.reproduce_before(
+            copy, skip=skip_reproduce, dry_run=dry_run, asked=reproduce_in_dry_run, keep_report=False
+        )
+        if not ok:
+            return 1
         log = io.StringIO()
         with contextlib.redirect_stdout(log):
             rc, manifest = cp._describe(
@@ -218,6 +230,7 @@ def publish_blind(
                 remote=True,
                 site=base,
                 blind={"code": code, "url": url, "withheld": sorted(result.withheld)},
+                reproduction=reproduction,
                 **kw,
             )
         if rc or manifest is None:

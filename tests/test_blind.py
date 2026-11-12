@@ -688,3 +688,35 @@ def test_an_anonymisation_record_with_an_empty_replacement_fails(tmp_path):
 def test_the_affiliation_and_thanks_blocks_are_replaced_never_deleted():
     tex = "\\title{T}\n\\thanks{Univ X}\n\\affiliation{Univ X}\n"
     assert all(rep for _s, _e, rep, _r in an.latex_blocks(tex))
+
+
+def test_the_anonymised_copy_is_what_reproduces_before_publishing(study, platform, monkeypatch, capsys):
+    """An anonymous version publishes the anonymised copy, so that copy is what runs again first."""
+    from src.core import prepublish
+    from tests.conftest import FAKE_REPRODUCED_REPORT
+
+    ran: list[tuple[Path, bool]] = []
+
+    def reproduce_first(folder, *, keep_report=True, quiet=False):
+        ran.append((Path(folder), keep_report))
+        return prepublish.Outcome(True, prepublish.record_from(FAKE_REPRODUCED_REPORT), [], FAKE_REPRODUCED_REPORT)
+
+    monkeypatch.setattr(prepublish, "reproduce_first", reproduce_first)
+    assert blind(study) == 0, capsys.readouterr().out
+    [(folder, keep)] = ran
+    assert folder != study and folder.name.startswith("anonymous-") and keep is False
+    entries = [v for v in platform.blind["manifest"]["verification"] if v["check"] == "reproduction"]
+    assert [e["status"] for e in entries] == ["PASS"]
+
+
+def test_an_anonymised_copy_that_does_not_reproduce_is_not_sent(study, platform, monkeypatch, capsys):
+    from src.core import prepublish
+
+    monkeypatch.setattr(
+        prepublish,
+        "reproduce_first",
+        lambda folder, *, keep_report=True, quiet=False: prepublish.Outcome(False, None, ["error: not published"]),
+    )
+    assert blind(study) == 1
+    assert "error: not published" in capsys.readouterr().out
+    assert platform.blind is None
