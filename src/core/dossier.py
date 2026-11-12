@@ -1177,6 +1177,10 @@ def _data_sources(bundle: Path | None) -> list[dict[str, Any]]:
         for key in _SOURCE_KEYS:
             if isinstance(load.get(key), str) and load[key]:
                 entry[key] = load[key]
+        # The data version of the rows the load returned (since 0.21; a load recorded before has none).
+        fp = load.get("fingerprint")
+        if isinstance(fp, dict) and isinstance(fp.get("sha256"), str) and isinstance(fp.get("rows"), int):
+            entry["fingerprint"] = {"form": str(fp.get("form") or ""), "sha256": fp["sha256"], "rows": fp["rows"]}
         # A file read from the source (url) or from the researcher's data folder (path).
         entry["files"] = [
             {("url" if f.get("url") else "path"): str(f.get("url") or f["path"]), "sha256": str(f["sha256"])}

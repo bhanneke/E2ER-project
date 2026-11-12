@@ -49,9 +49,22 @@ def render(
     tables: dict[str, Any] | None,
     verdict: str,
     kept: bool = True,
+    sources: list[dict[str, Any]] | None = None,
+    host: dict[str, Any] | None = None,
 ) -> str:
-    """The plain report. Pure, for tests. ``kept``: the run folder (with the steps' full output) stays."""
+    """The plain report. Pure, for tests. ``kept``: the run folder (with the steps' full output) stays.
+    ``sources``: the reloads compared with the study's records (reproduce_sources.compare); ``host``: the
+    computer the rerun ran on (reproduce_sources.host)."""
     lines = [f"e2er reproduce: {folder}", ""]
+    if host:
+        where = ""
+        sandbox = (env_info or {}).get("sandbox")
+        if isinstance(sandbox, dict) and sandbox.get("base"):
+            where = f"; the steps ran in Docker ({sandbox['base']}, Linux)"
+        lines.append(
+            f"Computer: {host.get('system')} {host.get('release')} ({host.get('machine')}), e2er "
+            f"{host.get('e2er_version')} on Python {host.get('python')}{where}"
+        )
     if env_info:
         pins = ", ".join(
             f"{k} {v}" for k, v in sorted(env_info.get("packages", {}).items(), key=lambda kv: kv[0].lower())
@@ -167,6 +180,9 @@ def render(
                     f"  {len(tables['not_compared'])} not compared (they read results the rerun did not write "
                     f"again): {', '.join(sorted(tables['not_compared']))}"
                 )
+    if sources:
+        lines += ["", "Sources loaded again, compared with the study's record of each load:"]
+        lines += [f"  {s['sentence']}" for s in sources]
     notes = [n for n in recipe.get("notes") or [] if isinstance(n, str)]
     if notes:
         lines += ["", "Notes from the study's reproduce.json:"] + [f"  - {n}" for n in notes]
@@ -277,6 +293,7 @@ def reproduce(
     yes: bool = False,
     sandbox: bool | None = None,
     allow_reload: bool | None = None,
+    report: dict[str, Any] | None = None,
 ) -> int:
     """`e2er reproduce`. The run folder and an unpacked package are temporary: removed when the command ends,
     also after a failure, unless ``keep`` (then the report says where they are).
@@ -284,8 +301,9 @@ def reproduce(
     ``sandbox``: None runs the steps in Docker when Docker answers and refuses otherwise; False is
     ``--no-sandbox`` (on this computer, as the user); True requires Docker. ``yes`` answers the
     question before the steps run; ``allow_reload`` the one for the steps that load inputs from
-    the web (None: asked, or ``yes``)."""
-    opts: dict[str, Any] = {"yes": yes, "sandbox": sandbox, "allow_reload": allow_reload}
+    the web (None: asked, or ``yes``). ``report``: filled with the JSON report (what ``--json`` writes) when
+    the steps ran; e2er publish reads the outcome from it."""
+    opts: dict[str, Any] = {"yes": yes, "sandbox": sandbox, "allow_reload": allow_reload, "report": report}
     from .core.export import package as pkg
 
     path = Path(folder).expanduser().resolve()
@@ -325,6 +343,7 @@ def _reproduce_folder(
     yes: bool = False,
     sandbox: bool | None = None,
     allow_reload: bool | None = None,
+    report: dict[str, Any] | None = None,
 ) -> int:
     from .core.export import package as pkg
 
@@ -428,6 +447,7 @@ def _reproduce_folder(
             docker=docker,
             allow_reload=bool(allow_reload),
             qualifier=qualifier,
+            report=report,
         )
     finally:
         if keep:
@@ -447,6 +467,7 @@ def _run_in(
     docker: str | None = None,
     allow_reload: bool = True,
     qualifier: str | None = None,
+    report: dict[str, Any] | None = None,
 ) -> int:
     logs = run_dir / ".e2er-logs"
     logs.mkdir()
@@ -457,10 +478,15 @@ def _run_in(
     inputs: list[dict[str, Any]] = []
     files: list[rp.FileComparison] = []
     tables: dict[str, Any] | None = None
+    from .core import reproduce_sources as rsrc
+
     absent: set[str] = set()
+    before: set[str] = set()
+    host = rsrc.host()
     try:
         rp.lay_out(root, run_dir, recipe)  # without the results it is to write: the rerun must write them
         absent = rp.absent_inputs(run_dir, recipe)  # what the steps load or build again
+        before = rsrc.snapshot(run_dir)  # the loads the steps record are compared with the study's
         if docker is not None:
             from .core import reproduce_sandbox as rs
 
@@ -498,26 +524,36 @@ def _run_in(
     if ran:
         files = rp.compare_results(root, run_dir, recipe["compare"])
         tables = rp.compare_tables(root, run_dir, recipe["compare"])
+    sources = rsrc.compare(root, run_dir, before)
     verdict, code = rp.verdict(files, tables, steps, inputs)
+    verdict, category = rsrc.judge(verdict, code, sources)
     if qualifier:
         verdict = f"{qualifier} {verdict}"
     print()
-    print(printable(render(root, recipe, env_info, steps, inputs, files, tables, verdict, kept=keep)), end="")
+    text = render(root, recipe, env_info, steps, inputs, files, tables, verdict, kept=keep, sources=sources, host=host)
+    print(printable(text), end="")
+    doc = {
+        "schema": "e2er-reproduce-report/1",
+        "folder": str(root),
+        "environment": env_info,
+        "steps": [s.as_dict() for s in steps],
+        "inputs": inputs,
+        "allow_network": allow_network,
+        "sandbox": (env_info or {}).get("sandbox") if docker is not None else None,
+        "results": [f.as_dict() for f in files],
+        "tables": tables,
+        "verdict": verdict,
+        "exit_code": code,
+        "run_folder_kept": keep,
+        # Since 0.21 (docs/reproduce-report.md): what kind of outcome, the reloads against the study's
+        # records, and the computer the rerun ran on.
+        "category": category,
+        "sources": sources,
+        "host": host,
+    }
+    if report is not None:
+        report.update(doc)
     if json_out:
-        doc = {
-            "schema": "e2er-reproduce-report/1",
-            "folder": str(root),
-            "environment": env_info,
-            "steps": [s.as_dict() for s in steps],
-            "inputs": inputs,
-            "allow_network": allow_network,
-            "sandbox": (env_info or {}).get("sandbox") if docker is not None else None,
-            "results": [f.as_dict() for f in files],
-            "tables": tables,
-            "verdict": verdict,
-            "exit_code": code,
-            "run_folder_kept": keep,
-        }
         Path(json_out).expanduser().write_text(
             json.dumps(doc, indent=2, default=str) + "\n", encoding="utf-8", newline="\n"
         )

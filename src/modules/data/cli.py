@@ -475,7 +475,7 @@ def _record(result: dict, args: argparse.Namespace, entry: dict[str, Any]) -> No
     """
     if not isinstance(result, dict) or result.get("error") or result.get("table_error") or not result.get("items"):
         return
-    from .load_record import try_record
+    from .load_record import try_record, with_fingerprint
 
     entry = {
         **entry,
@@ -485,6 +485,8 @@ def _record(result: dict, args: argparse.Namespace, entry: dict[str, Any]) -> No
         "rows": len(result.get("items") or []),
         "specialist": getattr(args, "specialist", None),
     }
+    # The data version of what came back: a later reload (`e2er reproduce`) says whether the source changed.
+    entry = with_fingerprint(entry, result.get("items"))
     err = try_record(_resolve_workspace(args.paper_id), entry)
     if err:
         result["record_error"] = err
@@ -769,6 +771,9 @@ async def _run_gmd_series(args: argparse.Namespace) -> str:
                     "specialist": args.specialist,
                 }
                 record = {k: v for k, v in record.items() if v is not None}
+                from .load_record import with_fingerprint
+
+                record = with_fingerprint(record, result.get("items"))
                 result["recorded_in"] = [str(record_load(workspace, record).name)]
                 if result.get("saved_table"):
                     record_in_dictionary(workspace, result["saved_table"], record)

@@ -1,0 +1,254 @@
+"""Data versions for data a study cannot ship: each load's fingerprint, and what `e2er reproduce` says about it.
+
+The real test of 2026-11-12: road-traffic-death-rates-2021 reloaded WHO GHO data, and the study's own
+clean_rs198.py stopped with "unit check failed ... values outside 0-50 per 100,000: 2". The report said only
+"the step failed". Since then every load records a fingerprint of the rows it returned, a rerun compares the
+reload's fingerprint with the study's, and a step that fails after the source changed names that change as the
+likely cause (category "source_changed" in the JSON report).
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from pathlib import Path
+from types import SimpleNamespace
+
+from src.cli_reproduce import reproduce
+from src.core import reproduce as rp
+from src.core import reproduce_sources as rsrc
+from src.modules.data import load_record as lr
+from tests.test_reproduce import _study
+
+ROWS = [
+    {"location": "AAA", "year": 2021, "value": 12.5},
+    {"location": "BBB", "year": 2021, "value": 3.0},
+    {"location": "CCC", "year": 2021, "value": None},
+]
+
+
+# ── the canonical form ───────────────────────────────────────────────────────
+
+
+def test_the_fingerprint_ignores_the_order_of_rows_and_columns_and_whole_floats():
+    fp = lr.fingerprint_rows(ROWS)
+    assert fp is not None and fp["form"] == "e2er-rows/1" and fp["rows"] == 3
+    assert fp["columns"] == ["location", "value", "year"]
+    shuffled = [
+        {"value": None, "location": "CCC", "year": 2021},
+        {"year": 2021.0, "value": 3, "location": "BBB"},  # 2021.0 and 3: the same numbers as 2021 and 3.0
+        {"value": 12.5, "year": 2021, "location": "AAA"},
+    ]
+    assert lr.fingerprint_rows(shuffled)["sha256"] == fp["sha256"]
+    nan = [dict(r) for r in ROWS]
+    nan[2]["value"] = math.nan  # NaN is written as null, as a missing value
+    assert lr.fingerprint_rows(nan)["sha256"] == fp["sha256"]
+
+
+def test_other_data_give_another_fingerprint():
+    fp = lr.fingerprint_rows(ROWS)["sha256"]
+    changed = [dict(r) for r in ROWS]
+    changed[0]["value"] = 12.6
+    assert lr.fingerprint_rows(changed)["sha256"] != fp
+    assert lr.fingerprint_rows(ROWS[:2])["sha256"] != fp
+    renamed = [{("val" if k == "value" else k): v for k, v in r.items()} for r in ROWS]
+    assert lr.fingerprint_rows(renamed)["sha256"] != fp
+
+
+def test_the_canonical_form_is_pinned():
+    """The documented form, byte for byte: changing it would make every recorded fingerprint "different"."""
+    import hashlib
+
+    text = '["location","value","year"]\n["AAA",12.5,2021]\n["BBB",3,2021]\n["CCC",null,2021]\n'
+    assert lr.fingerprint_rows(ROWS)["sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def test_a_load_without_rows_gets_no_fingerprint():
+    assert lr.with_fingerprint({"connector": "x"}, []) == {"connector": "x"}
+    assert lr.with_fingerprint({"connector": "x"}, None) == {"connector": "x"}
+    assert lr.with_fingerprint({"connector": "x"}, ROWS)["fingerprint"]["rows"] == 3
+
+
+def test_e2er_data_records_the_fingerprint_with_the_load(tmp_path: Path, monkeypatch):
+    from src.modules.data import cli
+
+    monkeypatch.setattr(cli, "_resolve_workspace", lambda paper_id: tmp_path)
+    result = {"items": ROWS, "saved_table": "road_deaths", "saved_table_rows": 3}
+    entry = {"connector": "who_gho", "retrieved_at": "2026-11-12T10:00:00Z", "request": {"command": "data"}}
+    cli._record(result, SimpleNamespace(paper_id="p", specialist="researcher"), entry)
+    [load] = json.loads((tmp_path / "data_sources.json").read_text(encoding="utf-8"))["loads"]
+    assert load["fingerprint"] == lr.fingerprint_rows(ROWS)
+    assert load["rows"] == 3 and load["retrieved_at"] == "2026-11-12T10:00:00Z" and load["request"]
+
+
+def test_the_dossier_lists_the_fingerprint_and_old_loads_stay_as_they_were(tmp_path: Path):
+    from src.core.dossier import _data_sources
+
+    (tmp_path / "data").mkdir()
+    old = {"connector": "who_gho", "dataset": "GHO", "table": "a"}
+    new = {**old, "table": "b", "fingerprint": lr.fingerprint_rows(ROWS)}
+    (tmp_path / "data" / "data_sources.json").write_text(json.dumps({"loads": [old, new]}), encoding="utf-8")
+    first, second = _data_sources(tmp_path)
+    assert "fingerprint" not in first
+    assert second["fingerprint"] == {"form": "e2er-rows/1", "sha256": new["fingerprint"]["sha256"], "rows": 3}
+
+
+# ── comparing a reload with the study's record ───────────────────────────────
+
+
+def _records(folder: Path, run: Path, old: list[dict], new: list[dict]) -> None:
+    (folder / "data").mkdir(parents=True, exist_ok=True)
+    run.mkdir(parents=True, exist_ok=True)
+    (folder / "data" / "data_sources.json").write_text(json.dumps({"loads": old}), encoding="utf-8")
+    (run / "data_sources.json").write_text(json.dumps({"loads": new}), encoding="utf-8")
+
+
+def _load(rows: list[dict] | None, when: str, **extra) -> dict:
+    out = {"connector": "who_gho", "table": "road_deaths", "retrieved_at": when, "version": "2024-04-15", **extra}
+    if rows is not None:
+        out["fingerprint"] = lr.fingerprint_rows(rows)
+    return out
+
+
+def test_the_same_data_and_other_data_are_said_plainly(tmp_path: Path):
+    folder, run = tmp_path / "study", tmp_path / "run"
+    changed = [dict(r) for r in ROWS] + [{"location": "DDD", "year": 2021, "value": 55.0}]
+    _records(folder, run, [_load(ROWS, "2026-10-14T08:00:00Z")], [_load(changed, "2026-11-12T09:00:00Z")])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.CHANGED
+    assert entry["recorded"] == lr.fingerprint_rows(ROWS)["sha256"]
+    assert entry["sentence"].startswith(
+        "WHO Global Health Observatory (road_deaths) returned different data than on 2026-10-14 (recorded sha256:"
+    )
+    assert "3 rows then, 4 now" in entry["sentence"]
+    _records(folder, run, [_load(ROWS, "2026-10-14T08:00:00Z")], [_load(ROWS[::-1], "2026-11-12T09:00:00Z")])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.SAME and "returned the same data as on 2026-10-14" in entry["sentence"]
+
+
+def test_a_study_recorded_before_fingerprints_says_so(tmp_path: Path):
+    folder, run = tmp_path / "study", tmp_path / "run"
+    files_then = [{"url": "https://ghoapi.example/RS_198", "sha256": "a" * 64}]
+    files_now = [{"url": "https://ghoapi.example/RS_198", "sha256": "b" * 64}]
+    _records(
+        folder,
+        run,
+        [_load(None, "2026-10-13T20:59:49Z", files=files_then)],
+        [_load(ROWS, "2026-11-12T09:00:00Z", files=files_now)],
+    )
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.NOT_RECORDED and entry["files_differ"] is True
+    assert "the source fingerprint was not recorded when the study loaded these data (2026-10-13" in entry["sentence"]
+    assert "differs byte for byte from the one the study recorded" in entry["sentence"]
+
+
+def test_loads_that_were_there_before_the_steps_are_not_compared(tmp_path: Path):
+    folder, run = tmp_path / "study", tmp_path / "run"
+    _records(folder, run, [_load(ROWS, "2026-10-14T08:00:00Z")], [_load(ROWS[:1], "2026-10-14T08:00:00Z")])
+    assert rsrc.compare(folder, run, rsrc.snapshot(run)) == []
+
+
+def test_a_failed_step_after_a_source_change_names_the_change_as_the_likely_cause():
+    moved = [{"source": "WHO Global Health Observatory", "status": rsrc.CHANGED, "recorded_at": "2026-10-14"}]
+    text, category = rsrc.judge("Could not reproduce: the step `python clean.py` failed.", 2, moved)
+    assert category == rsrc.SOURCE_CHANGED
+    assert text == (
+        "Could not reproduce: the step `python clean.py` failed. WHO Global Health Observatory returned different "
+        "data than on 2026-10-14: the change at the source is the likely cause, not the study's code."
+    )
+    text, category = rsrc.judge("Not reproduced exactly: 1 differ.", 1, moved)
+    assert category == rsrc.SOURCE_CHANGED and text.endswith("the likely cause of the differences.")
+    assert rsrc.judge("Reproduced: …", 0, moved) == ("Reproduced: …", rsrc.REPRODUCED)
+    assert rsrc.judge("Could not reproduce: x.", 2, []) == ("Could not reproduce: x.", rsrc.COULD_NOT_RUN)
+    same = [{"source": "S", "status": rsrc.SAME}]
+    assert rsrc.judge("Not reproduced exactly: 1 differ.", 1, same)[1] == rsrc.NOT_REPRODUCED
+    unknown = [{"source": "S", "status": rsrc.NOT_RECORDED}]
+    text, category = rsrc.judge("Could not reproduce: x.", 2, unknown)
+    assert category == rsrc.COULD_NOT_RUN and "recorded no fingerprint" in text
+
+
+# ── a full rerun ─────────────────────────────────────────────────────────────
+
+#: get_data.py as e2er-data would run it: writes the input and records the load (with today's rows).
+GET_DATA = """\
+import json, os
+rows = {rows}
+os.makedirs("data", exist_ok=True)
+open("data/x.csv", "w").write("".join(str(r["value"]) + "\\n" for r in rows))
+load = {{"connector": "who_gho", "saved_to": "data/x.csv", "retrieved_at": "2026-11-12T09:00:00Z"}}
+fp = {fingerprint}
+if fp:
+    load["fingerprint"] = fp
+json.dump({{"loads": [load]}}, open("data_sources.json", "w"))
+"""
+
+CHECK = """\
+vals = [float(x) for x in open("data/x.csv").read().split()]
+assert all(0 <= v <= 50 for v in vals), "unit check failed: values outside 0-50 per 100,000: %d" % sum(
+    1 for v in vals if not 0 <= v <= 50
+)
+"""
+
+
+def _source_study(tmp_path: Path, *, now: list[dict], recorded: bool) -> Path:
+    folder = _study(tmp_path, {"main": {"estimate": 2.333333, "n": 3, "label": "ok"}})
+    (folder / "data" / "x.csv").unlink()
+    then = [{"value": 1}, {"value": 2}, {"value": 4}]
+    record = {"connector": "who_gho", "saved_to": "data/x.csv", "retrieved_at": "2026-10-14T08:00:00Z"}
+    if recorded:
+        record["fingerprint"] = lr.fingerprint_rows(then)
+    (folder / "data" / "data_sources.json").write_text(json.dumps({"loads": [record]}), encoding="utf-8")
+    script = GET_DATA.format(rows=repr(now), fingerprint=repr(lr.fingerprint_rows(now)))
+    (folder / "code" / "get_data.py").write_text(script, encoding="utf-8", newline="\n")
+    (folder / "code" / "check.py").write_text(CHECK, encoding="utf-8", newline="\n")
+    recipe = json.loads((folder / rp.RECIPE_FILE).read_text(encoding="utf-8"))
+    recipe["files"] = {
+        "run.py": "code/run.py",
+        "get_data.py": "code/get_data.py",
+        "check.py": "code/check.py",
+        "data/x.csv": "data/x.csv",
+    }
+    recipe["steps"][:0] = [
+        {"run": ["python", "get_data.py"], "about": "load the inputs again"},
+        {"run": ["python", "check.py"], "about": "data preparation"},
+    ]
+    recipe["inputs"][0].update({"reload": "get_data.py", "source": "WHO GHO"})
+    (folder / rp.RECIPE_FILE).write_text(json.dumps(recipe), encoding="utf-8", newline="\n")
+    return folder
+
+
+def test_a_step_that_fails_after_the_source_changed_says_so(tmp_path: Path, capsys):
+    now = [{"value": 1}, {"value": 2}, {"value": 4}, {"value": 55}, {"value": 70}]
+    folder = _source_study(tmp_path, now=now, recorded=True)
+    out_json = tmp_path / "report.json"
+    assert reproduce(str(folder), json_out=str(out_json), yes=True, sandbox=False) == 2
+    text = capsys.readouterr().out
+    assert "Sources loaded again, compared with the study's record of each load:" in text
+    assert "WHO Global Health Observatory (data/x.csv) returned different data than on 2026-10-14" in text
+    assert "the change at the source is the likely cause, not the study's code." in text
+    doc = json.loads(out_json.read_text(encoding="utf-8"))
+    assert doc["exit_code"] == 2 and doc["category"] == "source_changed"
+    [source] = doc["sources"]
+    assert source["status"] == "changed" and source["rows_recorded"] == 3 and source["rows_now"] == 5
+    assert doc["host"]["e2er_version"] and doc["host"]["system"] and doc["host"]["python"]
+
+
+def test_a_study_recorded_before_fingerprints_says_it_cannot_tell(tmp_path: Path, capsys):
+    now = [{"value": 1}, {"value": 2}, {"value": 70}]
+    folder = _source_study(tmp_path, now=now, recorded=False)
+    out_json = tmp_path / "report.json"
+    assert reproduce(str(folder), json_out=str(out_json), yes=True, sandbox=False) == 2
+    text = capsys.readouterr().out
+    assert "the source fingerprint was not recorded when the study loaded these data (2026-10-14" in text
+    doc = json.loads(out_json.read_text(encoding="utf-8"))
+    assert doc["category"] == "could_not_run" and doc["sources"][0]["status"] == "not_recorded"
+
+
+def test_the_same_data_from_the_source_reproduce(tmp_path: Path, capsys):
+    folder = _source_study(tmp_path, now=[{"value": 4}, {"value": 1}, {"value": 2}], recorded=True)
+    out_json = tmp_path / "report.json"
+    assert reproduce(str(folder), json_out=str(out_json), yes=True, sandbox=False) == 0
+    text = capsys.readouterr().out
+    assert "returned the same data as on 2026-10-14" in text
+    doc = json.loads(out_json.read_text(encoding="utf-8"))
+    assert doc["category"] == "reproduced" and doc["sources"][0]["status"] == "same"

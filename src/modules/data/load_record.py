@@ -22,7 +22,14 @@ An entry names what the page needs, in the same keys for every connector:
 - ``citation``: the citation; ``citation_by``: ``source`` when the source
   publishes the format, ``e2er`` when it publishes none and e2er suggests one;
 - ``files``: ``{url, sha256}`` of every file read (or ``{path, sha256}`` for a
-  local file), where the source serves files.
+  local file), where the source serves files;
+- ``request`` / ``query``: the load's parameters and the request as sent;
+  ``rows``: how many rows the load returned;
+- ``fingerprint`` (since 0.21): the data version of what the load returned, so
+  a later reload can say whether the source now returns other data
+  (``e2er reproduce``): ``{"form": "e2er-rows/1", "sha256", "rows", "columns"}``,
+  see :func:`fingerprint_rows` for the canonical form. A load recorded before
+  0.21 has none.
 """
 
 from __future__ import annotations
@@ -30,6 +37,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import math
 import os
 import shutil
 import time
@@ -88,6 +96,87 @@ DATA_FOLDER = SourceInfo(
     licence="Supplied by the researcher; e2er does not know the terms of these files.",
     citation_by="",
 )
+
+
+#: The canonical form of a loaded table that ``fingerprint`` hashes (see fingerprint_rows).
+FINGERPRINT_FORM = "e2er-rows/1"
+_SAFE_INTEGER = 2**53
+
+
+def _cell(value: Any) -> Any:
+    """One value in the canonical form: JSON types only, a whole float as an integer, NaN and infinities as null."""
+    if value is None or isinstance(value, bool | str):
+        return value
+    if isinstance(value, int):
+        return value if abs(value) < _SAFE_INTEGER else str(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        if value.is_integer() and abs(value) < _SAFE_INTEGER:
+            return int(value)
+        return value
+    if isinstance(value, dict):
+        return {str(k): _cell(v) for k, v in value.items()}
+    if isinstance(value, list | tuple):
+        return [_cell(v) for v in value]
+    if hasattr(value, "item"):  # a numpy scalar
+        try:
+            return _cell(value.item())
+        except (ValueError, AttributeError):
+            pass
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+def fingerprint_rows(rows: Any) -> dict[str, Any] | None:
+    """The data version of a loaded table: a SHA-256 of its rows in a canonical form (``e2er-rows/1``).
+
+    The canonical form, so the same data give the same hash whatever order or types the source used:
+
+    1. the columns are the names of every row's keys, as text, sorted by Unicode code point;
+    2. each row becomes a JSON array of its values in that column order, a missing key as null; a number
+       whose value is whole (``3.0``) is written as an integer (``3``), other floats in Python's shortest
+       round-trip form (``0.1``), NaN and infinities as null; dates as ISO text; nested objects with their
+       keys sorted;
+    3. each array is written as compact JSON (``json.dumps(..., ensure_ascii=False, sort_keys=True,
+       separators=(",", ":"))``) and the lines are sorted by Unicode code point, so the order of the rows
+       does not count;
+    4. the hash is SHA-256 over the UTF-8 bytes of the column list (written the same way), a newline, and
+       every sorted row line followed by a newline.
+
+    Returns ``{"form", "sha256", "rows", "columns"}``, or None for rows that are not a list of objects.
+    """
+    if rows is None:
+        return None
+    if hasattr(rows, "to_dict"):
+        rows = rows.to_dict(orient="records")
+    try:
+        records = [r for r in rows if isinstance(r, dict)]
+    except TypeError:
+        return None
+    columns = sorted({str(k) for r in records for k in r})
+
+    def line(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+    keyed = [{str(k): v for k, v in r.items()} for r in records]
+    lines = sorted(line([_cell(r.get(c)) for c in columns]) for r in keyed)
+    h = hashlib.sha256()
+    h.update((line(columns) + "\n").encode("utf-8"))
+    for text in lines:
+        h.update((text + "\n").encode("utf-8"))
+    return {"form": FINGERPRINT_FORM, "sha256": h.hexdigest(), "rows": len(records), "columns": columns}
+
+
+def with_fingerprint(entry: dict[str, Any], rows: Any) -> dict[str, Any]:
+    """``entry`` with the ``fingerprint`` of the rows the load returned (unchanged when there are none)."""
+    try:
+        found = fingerprint_rows(rows)
+    except (TypeError, ValueError) as e:  # a cell JSON cannot write: the load is recorded without it
+        logger.warning("the load's rows could not be fingerprinted: %s", e)
+        return entry
+    return {**entry, "fingerprint": found} if found and found["rows"] else entry
 
 
 def now_utc() -> str:

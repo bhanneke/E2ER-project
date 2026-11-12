@@ -229,10 +229,11 @@ class AlliumToolHandler(ToolHandler):
             row_count = len(rows)
             await mark_executed(query_id, row_count)
             if rows and self._workspace is not None:
-                from .load_record import allium_load, now_utc, try_record
+                from .load_record import allium_load, now_utc, try_record, with_fingerprint
 
                 entry = allium_load(primary_table or "query", now_utc(), query=exec_sql)
-                try_record(self._workspace, {**entry, "rows": row_count, "specialist": self._specialist})
+                entry = with_fingerprint({**entry, "rows": row_count, "specialist": self._specialist}, rows)
+                try_record(self._workspace, entry)
             return (
                 f"Feasibility query executed. {row_count} rows returned.\n"
                 f"query_id: {query_id}\n"
