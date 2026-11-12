@@ -117,7 +117,9 @@ def render(
             )
         if differ:
             named = [
-                i["path"] + (f" (tables {', '.join(i['tables_differ'])})" if i.get("tables_differ") else "")
+                i["path"]
+                + (f" (tables {', '.join(i['tables_differ'])})" if i.get("tables_differ") else "")
+                + (" (loaded again from its source)" if i.get("reloaded") else "")
                 for i in differ
             ]
             lines.append(f"  {len(differ)} differ: {', '.join(named)}")
@@ -455,8 +457,10 @@ def _run_in(
     inputs: list[dict[str, Any]] = []
     files: list[rp.FileComparison] = []
     tables: dict[str, Any] | None = None
+    absent: set[str] = set()
     try:
         rp.lay_out(root, run_dir, recipe)  # without the results it is to write: the rerun must write them
+        absent = rp.absent_inputs(run_dir, recipe)  # what the steps load or build again
         if docker is not None:
             from .core import reproduce_sandbox as rs
 
@@ -485,11 +489,11 @@ def _run_in(
             )
     except rp.RecipeError as e:
         print(f"error: {printable(e)}")
-        inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
+        inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [], absent)
         print(_inputs_only(recipe, inputs), end="")
         return 2
     # The inputs are compared also when a step failed: the reader sees what the rerun had.
-    inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [])
+    inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [], absent)
     ran = bool(steps) and not any(s.exit_code for s in steps)
     if ran:
         files = rp.compare_results(root, run_dir, recipe["compare"])

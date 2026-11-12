@@ -790,14 +790,20 @@ def _same_content(item: dict[str, Any], path: Path) -> tuple[str, list[str]]:
     return {"rows": SAME_ROWS, "numbers": SAME_NUMBERS}.get(m, DIFFERS), []
 
 
-def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]], absent: set[str] | None = None) -> list[dict[str, Any]]:
     """Each declared input as the rerun has it: identical to the study's file, the same rows in another order
     (``same_rows``, when the recipe recorded its content), the same rows with decimal numbers equal to
-    NUMERIC_DIGITS significant digits (``same_numbers``), different, or missing."""
+    NUMERIC_DIGITS significant digits (``same_numbers``), different, or missing.
+
+    ``absent``: the inputs the folder did not ship (:func:`absent_inputs`, before the steps ran); a step loaded
+    or built them again, so they are marked ``"reloaded": true``.
+    """
     out = []
     for item in inputs:
         path = run_dir / item["path"]
         entry: dict[str, Any] = {"path": item["path"], "source": item.get("source")}
+        if absent and str(item["path"]) in absent and not item.get("output"):
+            entry["reloaded"] = True  # loaded or built again by a step, not the study's own copy
         if item.get("output"):
             entry["output"] = True  # a left-out output the rerun built again: reported, not an input
         if item.get("output") and isinstance(item.get("not_compared"), str):
@@ -817,6 +823,11 @@ def compare_inputs(run_dir: Path, inputs: list[dict[str, Any]]) -> list[dict[str
         entry["status"] = status
         out.append(entry)
     return out
+
+
+def absent_inputs(run_dir: Path, recipe: dict[str, Any]) -> set[str]:
+    """The inputs a step loads or builds again that the laid-out run folder lacks (call it before the steps)."""
+    return {p for p in optional_inputs(recipe) if not (run_dir / p).exists()}
 
 
 def add_numeric_fingerprints(recipe: dict[str, Any], recorded: dict[str, dict[str, Any]]) -> list[str]:
@@ -1384,8 +1395,11 @@ def verdict(
     """(one plain sentence, exit code): 0 reproduced, 1 differences, 2 could not run.
 
     "Reproduced" needs every compared value to match, every table to render the
-    same and every declared input to be the study's own file: the same results
-    from other data are not a reproduction of the study.
+    same and every input the folder shipped to be the study's own file. An input
+    the folder could not ship and a step loaded again (``"reloaded"``) may differ
+    byte for byte from the study's: when every result still matches, the study
+    is reproduced, and the sentence says that the reloaded inputs differ. When a
+    result differs, the reloaded inputs that differ are named among the reasons.
     """
     if any(s.exit_code for s in steps):
         failed = next(s for s in steps if s.exit_code)
@@ -1422,13 +1436,22 @@ def verdict(
     inputs = [i for i in inputs or [] if not i.get("output")]
     other = [i for i in inputs if i.get("status") == "differs"]
     absent = [i for i in inputs if i.get("status") == "missing"]
+    # Reloaded from the source (the folder could not ship them): other bytes do not undo matching results.
+    own = [i for i in other if not i.get("reloaded")]
     if (
         not any(count(k) for k in LABELS if k not in MATCHING)
         and not bad_files
         and not bad_tables
-        and not (other or absent)
+        and not (own or absent)
     ):
         tail = " and every table renders the same" if tables and tables.get("rendered") else ""
+        if other:
+            tail += (
+                "; the reloaded inputs differ byte for byte from the study's ("
+                + ", ".join(i["path"] for i in other[:3])
+                + (f" and {len(other) - 3} more" if len(other) > 3 else "")
+                + ")"
+            )
         tail += _left_out_tail(skipped_files)
         skipped = (tables or {}).get("not_compared") or []
         if skipped:
