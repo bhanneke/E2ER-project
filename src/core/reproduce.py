@@ -338,6 +338,37 @@ def optional_inputs(recipe: dict[str, Any]) -> set[str]:
     }
 
 
+#: The script e2er writes to load inputs again (export's get_data.py).
+GET_DATA = "get_data.py"
+
+
+def mark_legacy_reloads(folder: Path, recipe: dict[str, Any]) -> list[str]:
+    """Inputs of an older recipe that a ``get_data.py`` step loads again: marked ``"reload"``; returns them.
+
+    A recipe written before e2er marked reloaded inputs (by hand, before 0.15; spot-bitcoin-etf-comovement of
+    2026-10-05) runs get_data.py as its first step but marks no input with ``"reload"``, so the step was not
+    let onto the web and failed. When no input carries ``"reload"`` and a step runs get_data.py, the inputs the
+    folder lacks are taken as the ones it loads again. Only inputs the folder does not have are marked: the
+    study's own files are never replaced.
+    """
+    inputs = [i for i in recipe.get("inputs") or [] if isinstance(i, dict) and isinstance(i.get("path"), str)]
+    if not inputs or any(i.get("reload") for i in inputs):
+        return []
+    steps = [st for st in recipe.get("steps") or [] if isinstance(st, dict)]
+    if not any(Path(a).name == GET_DATA for st in steps for a in step_argv(st)):
+        return []
+    files = recipe.get("files") if isinstance(recipe.get("files"), dict) else {}
+    marked = []
+    for item in inputs:
+        if item.get("output") or item.get("rebuild"):
+            continue
+        source = str((files or {}).get(item["path"], item["path"]))
+        if not (folder / source).exists():
+            item["reload"] = GET_DATA
+            marked.append(str(item["path"]))
+    return marked
+
+
 def apply_rebuild(recipe: dict[str, Any], plan: list[dict[str, Any]]) -> None:
     """Add the steps that build derived files again (files built from data a source's terms keep out).
 

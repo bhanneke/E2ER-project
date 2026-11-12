@@ -103,3 +103,20 @@ def test_a_study_whose_package_left_a_compared_file_out_reproduces(tmp_path: Pat
     by = {r["published"]: r for r in doc["results"]}
     assert by["results/figure_spec.json"]["not_compared"] is True
     assert by["results/results.json"]["matches"] is True and "not_compared" not in by["results/results.json"]
+
+
+def test_an_older_recipe_lets_its_get_data_step_load_the_missing_inputs(tmp_path: Path):
+    """spot-bitcoin-etf-comovement's reproduce.json (by hand, 2026-10-05) runs get_data.py but marks no input
+    with "reload", so the step was kept off the web and the rerun failed."""
+    folder = _study(tmp_path, {"main": {"estimate": 2.333333, "n": 3, "label": "ok"}})
+    recipe = json.loads((folder / rp.RECIPE_FILE).read_text(encoding="utf-8"))
+    recipe["steps"].insert(0, {"run": ["python", "get_data.py"], "about": "reload the extracts"})
+    recipe["inputs"].append({"path": "data/y.csv", "sha256": "0" * 64})
+    assert rp.mark_legacy_reloads(folder, recipe) == ["data/y.csv"], "data/x.csv is in the folder: kept"
+    assert rp.is_reload_step(recipe["steps"][0], recipe)
+    assert "reload" not in recipe["inputs"][0]
+    # A recipe that marks its reloads, or runs no get_data.py, is left as it is.
+    marked = {**recipe, "inputs": [{"path": "data/z.csv", "sha256": "0" * 64, "reload": "other.py"}]}
+    assert rp.mark_legacy_reloads(folder, marked) == []
+    plain = {**recipe, "steps": recipe["steps"][1:], "inputs": [{"path": "data/z.csv", "sha256": "0" * 64}]}
+    assert rp.mark_legacy_reloads(folder, plain) == []

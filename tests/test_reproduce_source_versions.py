@@ -321,3 +321,39 @@ def test_a_failed_reload_without_a_time_out_is_not_called_unavailable(tmp_path: 
     assert rsrc.judge("Could not reproduce: x.", 2, [], [step])[1] == rsrc.COULD_NOT_RUN
     later = rp.StepResult("python clean.py", "prepare", 1, 1.0, "timed out reading", "", reload=False)
     assert rsrc.judge("Could not reproduce: x.", 2, [], [later])[1] == rsrc.COULD_NOT_RUN
+
+
+def test_a_reload_into_a_file_matches_the_studys_load_into_a_table_and_that_file(tmp_path: Path):
+    """The Gaia study recorded a table and data/gaia_dr3.csv; its get_data.py saves the file alone."""
+    folder, run = tmp_path / "study", tmp_path / "run"
+    old = {"connector": "gaia", "table": "gaia_dr3", "saved_to": "data/gaia_dr3.csv", "retrieved_at": "2026-10-13"}
+    new = {"connector": "gaia", "saved_to": "data/gaia_dr3.csv", "retrieved_at": "2026-11-12T09:00:00Z"}
+    new["fingerprint"] = lr.fingerprint_rows(ROWS)
+    _records(folder, run, [old], [new])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.NOT_RECORDED and entry["loaded_into"] == "data/gaia_dr3.csv"
+
+
+def test_a_new_version_by_the_sources_own_account_counts_as_a_change_without_a_fingerprint():
+    """road-traffic-death-rates-2021 (recorded 2026-10-13, no fingerprint): the WHO GHO now names 2026-10-15
+    as its latest update, the study loaded the 2024-04-15 data; clean_rs198.py's unit check then failed."""
+    unknown = [
+        {
+            "source": "WHO Global Health Observatory",
+            "status": rsrc.NOT_RECORDED,
+            "recorded_at": "2026-10-13",
+            "version_recorded": "2024-04-15",
+            "version_now": "2026-10-15",
+        }
+    ]
+    text, category = rsrc.judge("Could not reproduce: the step `python clean_rs198.py` failed.", 2, unknown)
+    assert category == rsrc.SOURCE_CHANGED
+    assert text.endswith(
+        "WHO Global Health Observatory now gives version 2026-10-15 of its data; the study loaded version "
+        "2024-04-15 on 2026-10-13: the change at the source is the likely cause, not the study's code."
+    )
+
+
+def test_a_version_that_is_only_the_day_of_the_load_is_not_a_source_version():
+    assert rsrc._version({"version": "2026-11-12", "retrieved_at": "2026-11-12T08:00:00Z"}) == ""
+    assert rsrc._version({"version": "DR3", "retrieved_at": "2026-11-12T08:00:00Z"}) == "DR3"

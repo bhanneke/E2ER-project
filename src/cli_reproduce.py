@@ -356,6 +356,12 @@ def _reproduce_folder(
     except rp.RecipeError as e:
         print(f"error: {printable(e)}")
         return 2
+    legacy = rp.mark_legacy_reloads(root, recipe)
+    if legacy:
+        recipe.setdefault("notes", []).append(
+            f"This reproduce.json marks no input as loaded again; its step get_data.py loads the {len(legacy)} "
+            "input(s) the folder lacks, so e2er lets that step use the web like any step that loads inputs again."
+        )
     qualifier, refused = _integrity_first(root, recipe)
     if refused:
         print(refused)

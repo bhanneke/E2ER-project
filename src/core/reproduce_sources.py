@@ -55,6 +55,25 @@ def _key(entry: dict[str, Any]) -> tuple[Any, ...]:
     return key(entry)
 
 
+def same_load(new: dict[str, Any], recorded: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The study's record of the load ``new`` repeats: the same table, else the same saved file, else the same
+    source and request. get_data.py may repeat a load into a table and a file as a file alone (the Gaia study
+    of 2026-10-13 loaded a table and saved data/gaia_dr3.csv; its get_data.py saves the file), so any one of
+    them that both name is enough, for the same connector."""
+    key = _key(new)
+    exact = next((x for x in recorded if _key(x) == key), None)
+    if exact is not None:
+        return exact
+    connector = new.get("connector")
+    for x in recorded:
+        if x.get("connector") != connector:
+            continue
+        for k in ("table", "saved_to", "query", "series"):
+            if new.get(k) and new.get(k) == x.get(k):
+                return x
+    return None
+
+
 def snapshot(run_dir: Path) -> set[str]:
     """The loads the run folder's record holds before the steps run (normally none)."""
     return {json.dumps(x, sort_keys=True) for x in _loads(Path(run_dir) / RUN_RECORD)}
@@ -75,10 +94,12 @@ def _label(entry: dict[str, Any]) -> str:
 
 def _version(entry: dict[str, Any]) -> str:
     """The source's own version, release or last-updated value as the load recorded it, else empty."""
+    loaded_on = str(entry.get("retrieved_at") or "")[:10]
     for key in ("version", "service_version", "api_version", "last_updated"):
         value = entry.get(key)
         if isinstance(value, str | int | float) and str(value).strip():
-            return str(value)
+            # Project Gutenberg's "version" is the day of the load, not the source's: no version of its own.
+            return "" if loaded_on and str(value).startswith(loaded_on) else str(value)
     return ""
 
 
@@ -138,12 +159,12 @@ def compare(folder: Path, run_dir: Path, before: set[str] | None = None) -> list
 
     ``before``: the run record's loads before the steps ran (:func:`snapshot`); only the others are new.
     """
-    recorded = {_key(x): x for x in _loads(Path(folder) / STUDY_RECORD)}
+    recorded = _loads(Path(folder) / STUDY_RECORD)
     out: list[dict[str, Any]] = []
     for new in _loads(Path(run_dir) / RUN_RECORD):
         if before and json.dumps(new, sort_keys=True) in before:
             continue
-        old = recorded.get(_key(new))
+        old = same_load(new, recorded)
         if old is None:
             continue  # a load the study did not record: nothing to compare it with
         what = new.get("table") or new.get("saved_to")
@@ -230,14 +251,29 @@ def _parts_words(entry: dict[str, Any]) -> str:
     return f"; the {what} that differ: {shown}"
 
 
+def _new_version(s: dict[str, Any]) -> bool:
+    """The source names another version, release or update date than when the study loaded it."""
+    a, b = s.get("version_recorded"), s.get("version_now")
+    return bool(a and b and a != b)
+
+
 def changed(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [s for s in sources if s.get("status") == CHANGED]
+    """Loads whose source returned other data: another fingerprint, or (a study recorded before fingerprints)
+    another version by the source's own account (the WHO GHO's latest update date, a data release)."""
+    return [s for s in sources if s.get("status") == CHANGED or (s.get("status") == NOT_RECORDED and _new_version(s))]
 
 
 def _names(items: list[dict[str, Any]]) -> str:
     seen: list[str] = []
     for s in items:
-        bit = f"{s['source']} returned different data than on {s.get('recorded_at') or 'the study’s load'}"
+        on = s.get("recorded_at") or "the study’s load"
+        if s.get("status") == CHANGED:
+            bit = f"{s['source']} returned different data than on {on}"
+        else:
+            bit = (
+                f"{s['source']} now gives version {s.get('version_now')} of its data; the study loaded version "
+                f"{s.get('version_recorded')} on {on}"
+            )
         if bit not in seen:
             seen.append(bit)
     return "; ".join(seen)
