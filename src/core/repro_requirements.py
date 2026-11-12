@@ -532,7 +532,7 @@ def effort_line(package_bytes: int | None, rerun: dict[str, Any] | None) -> str:
 
     parts = []
     if package_bytes:
-        parts.append(f"the package is a {pkg.human_size(int(package_bytes))} download")
+        parts.append(f"downloading the package: {pkg.human_size(int(package_bytes))}")
     if rerun and isinstance(rerun.get("seconds"), int | float) and rerun.get("reproduced"):
         text = f"the rerun before publishing took {duration(rerun['seconds'])}"
         rs = rerun.get("reload_seconds")

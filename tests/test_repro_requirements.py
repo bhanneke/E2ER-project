@@ -217,7 +217,7 @@ def test_effort_and_last_rerun_come_from_the_rerun_before_publishing():
         }
     )
     assert rr.effort_line(962647, rerun) == (
-        "the package is a 940.1 KB download; the rerun before publishing took about 25 minutes, mostly loading "
+        "downloading the package: 940.1 KB; the rerun before publishing took about 25 minutes, mostly loading "
         "data again from Project Gutenberg"
     )
     assert rr.rerun_line(rerun) == "reproduced before publishing on 2026-11-12 with e2er 0.21.0: Reproduced."
