@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-11-15
+
 ### Added
 
 - **Every study says what a reproduction needs, and which data it used under which terms.** Two sections, written from what e2er records already and nothing else: *Required for reproduction* (software: Docker, e2er from the version that exported the study, the Python of `reproduce.json` and how many packages the lock pins; accounts and keys: the key each source's connector takes and whether a rerun needs it, else "none"; data: what comes with the study, what a rerun loads again and from which host, whether it needs the network; effort: the package's size and, where recorded, how long the rerun before publishing took; last rerun) and *Data and licences* (one row per source: version, load date, terms in plain words, with the study or left out and why, citation, data fingerprints). `e2er pack` writes the record into `e2er-package.json` (`reproduction_requirements`, format `e2er-requirements/1`) and as text into `e2er-package/README.md`; `e2er publish` writes it into `e2er.json` and the request to e2er.org, and with `--github` into the README's summary. `e2er inspect` and `e2er fetch` print it, derived from the package's files for a package made before (the nine studies fetched on 2026-11-12 all show it). Neither `provenance.json` nor the dossier changes; an older e2er.org refuses a description with the field, so the site goes first (e2er-site branch `feat/reproduce-status`). The reproduction entry of `verification` now records how long the rerun's steps took (`seconds`, `reload_seconds`, `reloaded_sources`). docs/publishing.md describes the fields.
@@ -4079,7 +4081,8 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.21.0
 [0.20.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.1
 [0.20.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.0
 [0.19.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.19.1
