@@ -65,7 +65,7 @@ For a double-blind review the journal gives you the file itself (the authors mad
 e2er inspect <project>-v1.e2er
 ```
 
-`inspect` reads the package's list of files without unpacking anything. It shows the title, the authors, the e2er version, which data the package includes and which it leaves out (and how a rerun loads them again), the Python version, the pinned packages, the size, the fingerprint, and the exact commands `reproduce` would run.
+`inspect` reads the package's list of files without unpacking anything. It shows the title, the authors, the e2er version, which data the package includes and which it leaves out (and how a rerun loads them again), the Python version, the pinned packages, the size, the fingerprint, and the exact commands `reproduce` would run. Its "Required for reproduction" block says what a rerun needs (Docker, the e2er and Python versions, the pinned packages, any key, which data a rerun loads again and whether it needs the network, the package's size, the rerun before publishing where recorded), and "Data and licences" lists each data source with its version, the day it was loaded, its terms, whether its data come with the package, its citation and its data fingerprints. `fetch` prints the same block after the download. For a package made before e2er recorded this, both commands derive it from the package's own files.
 
 ### Check every file
 

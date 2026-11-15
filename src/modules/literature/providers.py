@@ -1,6 +1,6 @@
 """Literature module — provider interfaces and concrete adapters.
 
-M1 of `docs/internal/MODULARIZATION_PLAN.md`: formalize the de-facto interface the
+The modularization's first step: formalize the de-facto interface the
 source modules already share so the tool handler and the reference-summary
 builder iterate a registry instead of hardcoding provider names. Pure
 refactor — the adapters delegate to the existing module functions; no

@@ -50,8 +50,8 @@ docs/demo/record.sh byod       # just one
 
 `record.sh` rebuilds the demo project first: two years of real daily prices for
 SPY and BTC-USD pulled through the same yfinance library the pipeline uses, and
-a 33-entry bibliography of genuine published references taken from
-`examples/e2er_v1_bitcoin_institutionalization/`.
+a 33-entry bibliography of genuine published references in
+`docs/demo/references.bib`.
 
 Appearance is tunable without editing anything:
 

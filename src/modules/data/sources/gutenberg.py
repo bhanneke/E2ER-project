@@ -44,6 +44,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -420,6 +421,7 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
     rows: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
     removed: dict[str, Any] = {}
+    texts: dict[str, Any] = {}
     citations: list[str] = []
     left: list[str] = []
     for n, i in enumerate(ids):
@@ -442,6 +444,8 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
             {"url": meta["url"], "sha256": meta["sha256"], "bytes": meta["bytes"], "retrieved_at": meta["retrieved_at"]}
         )
         removed[i] = info
+        # Each text's own data version: a rerun names the books whose text changed (reproduce_sources).
+        texts[i] = {"sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(), "characters": len(text)}
         row = _book_row(by_id[i])
         row.update({"text": text, "characters": len(text), "words": len(text.split())})
         rows.append(row)
@@ -470,6 +474,7 @@ async def fetch_text(ctx: Context, params: dict[str, Any]) -> Fetched:
         record={
             "mirror": MIRROR,
             "stripped": removed,
+            "texts": texts,
             "stripping": "Header and footer cut at the *** START OF / *** END OF lines; any other line naming "
             "Project Gutenberg dropped (licence: strip the license and all references).",
             **record,

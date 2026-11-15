@@ -1,6 +1,6 @@
 [project]
 name = "e2er"
-version = "0.20.1"
+version = "0.21.0"
 description = "e2er is the open infrastructure for publishing, verifying, reproducing and reusing AI-enabled research."
 requires-python = ">=3.11"
 readme = "README.md"
@@ -24,7 +24,7 @@ dependencies = [
     # Cap below 3.0: pandas 3.0 removed legacy offset aliases ('M', 'Y', …).
     # LLM-generated estimation scripts use `resample("M")` (the pre-3.0
     # idiom), which raises on 3.x. Pin to the 2.x line the generated code
-    # targets. See docs/internal/M4_RERUN_FINDINGS.md.
+    # targets.
     "pandas>=2.0,<3.0",
     "numpy>=1.26",
     # The estimation runner executes a specialist's run_estimation.py with

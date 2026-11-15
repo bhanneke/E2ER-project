@@ -208,7 +208,7 @@ def _recipe(folder: Path) -> tuple[dict[str, Any] | None, str]:
     from .. import reproduce as rp
 
     try:
-        return rp.load_recipe(folder), ""
+        return rp.load_recipe(folder, left_out=left_out_reasons(folder)), ""
     except rp.RecipeError as e:
         return None, str(e)
 
@@ -850,6 +850,38 @@ def build(
                 else:
                     notes.append(f"--offline: {note}. The package has no wheels; a rerun downloads the packages.")
 
+        study = _study(folder, prov)
+        # What a reader needs to reproduce the study, and the data and their terms (repro_requirements.py):
+        # in the list below and as text in e2er-package/README.md.
+        from .. import repro_requirements as rr
+
+        held = {**files, **extra}
+
+        def read(rel: str) -> bytes | None:
+            src = held.get(rel)
+            try:
+                return src.read_bytes() if src is not None and src.stat().st_size <= 32 * 1024 * 1024 else None
+            except OSError:
+                return None
+
+        needs = rr.derive(
+            {
+                "left_out": left_out,
+                "environment": environment,
+                "study": study,
+                "recipe": _recipe_summary(recipe, why.replace(str(folder), ".")),
+            },
+            read,
+            files=set(held),
+        )
+        if anonymous:
+            from ..secret_scan import strip_local_paths
+
+            needs = strip_local_paths(needs)
+        readme = staging / "README.md"
+        readme.write_text(rr.package_readme(needs), encoding="utf-8", newline="\n")
+        extra[rr.README] = readme
+
         contents: list[dict[str, Any]] = []
         entries: list[tuple[str, Path]] = []
         for rel, src in sorted({**files, **extra}.items()):
@@ -877,7 +909,6 @@ def build(
                 "(`e2er redact <folder> --text <text>` takes text out of a frozen file) and pack again:\n  "
                 + "\n  ".join(shown[:20])
             )
-        study = _study(folder, prov)
         if anonymous:
             # The file for a journal's double-blind review (`e2er pack --blind`): no author, no folder name, and
             # no path of this computer in what the packing notes say.
@@ -901,6 +932,7 @@ def build(
             "environment": environment,
             "wheels": wheels,
             "notes": notes,
+            rr.KEY: needs,
         }
         if anonymous:
             from ..secret_scan import strip_local_paths
@@ -1339,6 +1371,27 @@ def supported_left_out(folder: Path) -> dict[str, dict[str, Any]]:
     return {p: i for p, i in declared.items() if p in restricted or too_large_for_host(folder, i)}
 
 
+def left_out_reasons(folder: Path, *, trusted: bool = False) -> dict[str, str]:
+    """Why each file the folder may lack is not there, by path, in words for "not compared: …".
+
+    The package's own list (e2er-package.json ``left_out``: all of it from a package `e2er reproduce` opened,
+    ``trusted``; in a folder only what supported_left_out accepts), then the study's records of a source's
+    terms (data_terms.restricted_paths), which hold in an export folder without a package list too.
+    """
+    from .. import reproduce as rp
+    from ..data_terms import restricted_paths
+
+    declared = declared_left_out(folder) if trusted else supported_left_out(folder)
+    out = {p: rp.left_out_words(i) for p, i in declared.items()}
+    try:
+        restricted = restricted_paths(folder)
+    except Exception:  # noqa: BLE001 — records that cannot be read: nothing more is excused
+        restricted = {}
+    for rel, why in restricted.items():
+        out.setdefault(rel, f"left out: {why}")
+    return out
+
+
 def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:
     """Data files the package says it left out, by path (data files only: nothing else may be left out)."""
     doc = package_manifest(folder)
@@ -1362,6 +1415,9 @@ def install_source(folder: Path, recipe: dict[str, Any]) -> dict[str, Any]:
     env: dict[str, Any] = doc["environment"] if isinstance(doc.get("environment"), dict) else {}
     if env.get("lock") == LOCK and (Path(folder) / LOCK).is_file():
         out["requirements"] = LOCK
+        # The lock was resolved for this Python: a recipe that names none runs on it, not on e2er's own.
+        if not recipe.get("python") and re.match(r"^3\.\d{1,2}$", str(env.get("python") or "")):
+            out["python"] = str(env["python"])
     wheels = doc.get("wheels") if isinstance(doc.get("wheels"), dict) else None
     if wheels:
         python_minor = str(recipe.get("python") or wheels.get("python") or "")

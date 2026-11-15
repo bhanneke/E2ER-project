@@ -205,7 +205,6 @@ async def run_specialist(
     # `run_estimation.py` for econometrics_specialist) but didn't
     # populate the sidecar, the runner shells out and executes the
     # script itself. Backend-agnostic, idempotent, auditable.
-    # See docs/internal/M4_DIAGNOSIS.md for the diagnosis this fixes.
     if result.success:
         from .post_execution import maybe_execute_specialist_script
 
@@ -576,7 +575,7 @@ def _build_system_prompt(
         # econometric_spec.md missing — once cut off at the timeout, once
         # finishing on its own in 24 minutes inside a 30-minute cap. So it is
         # not a budget problem, it is an ordering problem: their first write
-        # belongs BEFORE the script, not after it. See docs/internal/USER_JOURNEY.md.
+        # belongs BEFORE the script, not after it.
         early_write_by = max(5, max_turns // 8)
     lines = [
         f"You are the {name} specialist in an end-to-end empirical research pipeline.",

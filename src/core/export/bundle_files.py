@@ -37,7 +37,8 @@ JUNK_NAMES = frozenset({".DS_Store", "Thumbs.db", "desktop.ini", "Desktop.ini"})
 #: itself; e2er.json (written by publish) and .e2er/link.json (written by
 #: ``publish --to``) are compared with it by verify's anchor check;
 #: .e2er/zenodo.json records the Zenodo deposits publish reserved, so a retry
-#: reuses them; .e2er/package.json records the study package publish hosted.
+#: reuses them; .e2er/package.json records the study package publish hosted;
+#: .e2er/reproduction.json is the report of the reproduction publish ran first.
 #: Exempt by exact path: a file with one of these names anywhere else in the
 #: bundle is an ordinary file and must be listed.
 #: e2er-package.json and everything under e2er-package/ are a .e2er package's own files (its manifest, the
@@ -50,6 +51,7 @@ NOT_EVIDENCE = (
     ".e2er/zenodo.json",
     ".e2er/github.json",
     ".e2er/package.json",
+    ".e2er/reproduction.json",
     "e2er-package.json",
 )
 PACKAGE_PREFIX = "e2er-package/"

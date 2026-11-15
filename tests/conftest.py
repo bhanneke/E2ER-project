@@ -573,6 +573,58 @@ def _no_real_platform(monkeypatch, tmp_path_factory):
     yield
 
 
+def _real_reproduce_first():
+    from src.core import prepublish
+
+    return prepublish.reproduce_first
+
+
+#: The real step, for the tests of it (the autouse fixture below replaces it everywhere else).
+REAL_REPRODUCE_FIRST = _real_reproduce_first()
+
+#: What the suite's stand-in for the reproduction before publishing reports: the study reproduces.
+FAKE_REPRODUCED_REPORT = {
+    "schema": "e2er-reproduce-report/1",
+    "environment": {"python": "3.12.14", "sandbox": {"base": "python:3.12-slim"}},
+    "results": [
+        {
+            "published": "results/estimation_results.json",
+            "values": 3,
+            "counts": {"identical": 3, "same_at_precision": 0},
+            "matches": True,
+        }
+    ],
+    "tables": None,
+    "inputs": [],
+    "verdict": "Reproduced: every compared value is identical or the same at the published precision.",
+    "exit_code": 0,
+    "category": "reproduced",
+    "sources": [],
+    "host": {"e2er_version": "0.0.0-test", "system": "Linux", "release": "test", "machine": "x86_64", "python": "3.12"},
+}
+
+
+@pytest.fixture(autouse=True)
+def _no_real_reproduction_before_publishing(monkeypatch):
+    """`e2er publish` runs the study's code again in Docker before it sends anything (core/prepublish.py). No
+    test starts Docker or runs a study: the step "reproduces" every folder (the test fixtures are older exports
+    without reproduce.json). Tests of the step put back ``prepublish.reproduce_first`` (REAL_REPRODUCE_FIRST)
+    and keep these fakes of Docker and of the run, or replace them with their own."""
+    from src.core import prepublish
+
+    def reproduced(folder, report):
+        report.update(FAKE_REPRODUCED_REPORT)
+        return 0
+
+    def reproduce_first(folder, *, keep_report=True, quiet=False):
+        return prepublish.Outcome(True, prepublish.record_from(FAKE_REPRODUCED_REPORT), [], FAKE_REPRODUCED_REPORT)
+
+    monkeypatch.setattr(prepublish, "docker_missing", lambda: None)
+    monkeypatch.setattr(prepublish, "run_reproduction", reproduced)
+    monkeypatch.setattr(prepublish, "reproduce_first", reproduce_first)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def _no_real_approval_seals(monkeypatch, tmp_path_factory):
     """The dashboard's approval seals (src/modules/data/approval_seal.py) go to a folder of the test,

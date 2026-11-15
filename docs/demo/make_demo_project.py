@@ -16,8 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
-BIB_SRC = REPO / "examples" / "e2er_v1_bitcoin_institutionalization" / "references.bib"
+BIB_SRC = Path(__file__).resolve().parent / "references.bib"
 
 TICKERS = {"SPY": "spy_daily.csv", "BTC-USD": "btc_daily.csv"}
 

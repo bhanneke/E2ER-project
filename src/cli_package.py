@@ -110,6 +110,10 @@ def inspect(package: str) -> int:
     except (TypeError, ValueError, AttributeError, KeyError) as e:
         print(f"error: the package's list of files is malformed ({type(e).__name__})")
         return 1
+    from .core import repro_requirements as rr
+
+    print()
+    rr.print_summary(path, size=path.stat().st_size)
     print("\n" + "\n".join(pkg.archive_steps(path)))
     print("\nRead from the package's list of files; `e2er verify` checks every file against it.")
     return 0

@@ -6,7 +6,7 @@ A data source in e2er is one definition: a `Source` in
 | From the definition | Where it shows |
 |---|---|
 | `e2er-data <name> <operation> …` with `--table` and `--save-to` | the specialists' command line (CLI backends) |
-| the record of every load in `data_sources.json` (terms, citation, request, query, version, SHA-256 of the files read) | the study page's "Data used", the dossier |
+| the record of every load in `data_sources.json` (terms, citation, request, query, version, SHA-256 of the files read, and the `fingerprint` of the rows returned, docs/reproduce-report.md) | the study page's "Data used", the dossier |
 | the table's entry in `data_dictionary.json` | the data contract, export |
 | the BibTeX entry in the study's `literature.bib` | `paper/refs.bib` |
 | the planning catalogue card and `fetch_data` method | `list_data_sources` / `fetch_data` (API backends) |

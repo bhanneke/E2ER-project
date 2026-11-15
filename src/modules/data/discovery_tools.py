@@ -233,7 +233,7 @@ class SeriesDataToolHandler(ToolHandler):
         items = envelope.get("items") or []
         if not items:
             return
-        from .load_record import fred_load, now_utc, try_record, yfinance_load
+        from .load_record import fred_load, now_utc, try_record, with_fingerprint, yfinance_load
 
         now = now_utc()
         entry: dict[str, Any] | None = None
@@ -259,7 +259,7 @@ class SeriesDataToolHandler(ToolHandler):
             entry = yfinance_load(str(params["ticker"]), now, what=what)
         if entry is None:
             return
-        entry = {**entry, "table": table, "rows": len(items)}
+        entry = with_fingerprint({**entry, "table": table, "rows": len(items)}, items)
         if try_record(self._workspace, entry) is None:
             envelope["recorded_in"] = ["data_sources.json"]
             source = getattr(fetcher, "source", None)

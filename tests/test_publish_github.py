@@ -303,6 +303,15 @@ def test_a_gaia_study_goes_up_without_its_restricted_or_derived_data_and_verifie
     readme = (clone / "pleiades" / "README.md").read_text(encoding="utf-8")
     assert m["dossier"]["url"] in readme and "data/gaia_clean.csv" in readme and "Gaia" in readme
     assert "No licence was set" in readme
+    # What a reproduction needs (core/repro_requirements.py): in the README and in the package's own list next to
+    # it; the copy of e2er.json leaves the record out, the local e2er.json and the request carry it.
+    assert "## Required for reproduction" in readme and "## Data and licences" in readme
+    assert "| ESA Gaia Archive |" in readme and "**Accounts and keys:** none." in readme
+    assert "reproduction_requirements" not in pushed
+    assert m["reproduction_requirements"]["format"] == "e2er-requirements/1"
+    listed = json.loads((clone / "pleiades" / "e2er-package.json").read_text(encoding="utf-8"))
+    assert listed["reproduction_requirements"]["sources"][0]["connector"] == "gaia"
+    assert (clone / "pleiades" / "e2er-package" / "README.md").is_file()
     # Anyone can verify the clone: the left-out file is declared and the folder's own records restrict it.
     checks = _run_checks(clone / "pleiades", online=False)
     assert not [c for c in checks if c.status == FAIL], [(c.name, c.detail) for c in checks]

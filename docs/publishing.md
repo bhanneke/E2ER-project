@@ -19,6 +19,18 @@ Before the question, `--to` checks with the platform (`GET /api/v1/me`) that you
 
 **Held for your confirmation.** When one account publishes more than three versions of a study, or more than three new studies, within ten minutes, e2er.org keeps the extra ones back: it answers "held: confirm in your browser" (HTTP 202) and lists them on your account page, where you confirm or discard each, signed in in the browser. That is not an error: publish prints the address to confirm at, records the version in `.e2er/link.json` as held (`"held": true`, the hold's id and the address; no version number yet) and exits 0. `e2er status` says it is waiting. Zenodo deposits of a held version stay drafts (no DOI is minted) until you have confirmed it; run the same command again then. A later publish without the run's database carries over the held version's dossier only once it is confirmed.
 
+## Publish runs the study again first
+
+Before anything leaves your computer (`--to`, `--zenodo`, `--github`), and before `--offline` prepares the folder for the browser, `e2er publish` runs the study's code again in the Docker sandbox, exactly as `e2er reproduce --yes` does, on the folder it is about to publish. It publishes only when the study reproduces: every compared value identical or the same at the published precision, and every table the same. With `--blind` the anonymised copy is what runs, since that is what is published.
+
+- **Docker is missing or not running.** Publish sends nothing and says so: open Docker Desktop (macOS, Windows) and wait until it runs, or start the service on Linux (`sudo systemctl start docker`), or install Docker from https://docs.docker.com/get-docker/, then run the same command again.
+- **The study does not reproduce.** Publish prints the report (which step failed, which values and tables differ, whether a source now returns other data) and sends nothing. Fix the code or the data, export the study again with `e2er export`, and publish the new folder. `e2er reproduce <folder>` runs the same check on its own.
+- **You publish anyway.** `--skip-reproduce "<reason>"` publishes without the run. The description then says that the study was not reproduced before publishing, with your reason, and e2er.org can show it.
+- **A study with no code to run** (no estimation results or no estimation script) is published with a note that there was nothing to run again. A folder exported before e2er wrote `reproduce.json` (0.15.0) is refused until you export it again, or give `--skip-reproduce`.
+- **`--dry-run`** runs nothing heavy: it says that publishing would reproduce the study first. `--dry-run --reproduce` runs the reproduction too and shows its entry in the request.
+
+The outcome goes into the description publish writes and sends (`e2er.json` and the request to e2er.org), as one entry of its `verification` list, next to verify's checks: `"check": "reproduction"`, `"status": "PASS"` (or `"SKIP"` with the reason), a one-sentence `detail`, and `reproduction` with the date, the e2er version, the computer (system, machine, Python), the Python the steps ran on, the Docker image, the verdict and the counts of values, tables and inputs ([docs/reproduce-report.md](reproduce-report.md#the-reproduction-before-publishing)). It is not part of `provenance.json` or the dossier: their fingerprints (the content id, the dossier's id) stay the same whoever publishes the study, on whichever computer. For the same reason the `e2er.json` that goes to GitHub with the files leaves it out, like the time of publishing. The full report stays on your computer in `.e2er/reproduction.json`.
+
 ## Publishing from CI: a token for one study
 
 Your personal login (`e2er login`, kept in the system keychain, or in `~/.e2er/credentials.json` with mode 0600 where there is none) can publish any study under your handles. A CI job should not hold it. Give it a token that can only publish new versions of one study:
@@ -168,6 +180,29 @@ e2er reproduce <project>-v<N>.e2er                    # the study's code, in a D
 ```
 
 `e2er fetch` reads the record with GET, downloads the file from where the authors keep it (https only, every redirect checked), checks its size and SHA-256 against the record, keeps nothing that does not match, and prints the three commands; it runs nothing. `e2er verify <file> --against` compares the package's fingerprint with the one recorded for that version (`package published`: the same fingerprint means the same files; the SHA-256 says whether it is the recorded file itself) and skips the comparison when no package is recorded.
+
+## What a reproduction needs, and the data's licences
+
+Every study says what a reader needs to run it again, and which data it used under which terms, in two sections: **Required for reproduction** and **Data and licences**. e2er writes both from what it records already; it states no fact that no record holds, and leaves such a fact out.
+
+**Required for reproduction**
+
+- *Software*: Docker (`e2er reproduce` runs the study's code in a Docker sandbox), e2er from the version that exported the study, the Python of the study's `reproduce.json` (the sandbox's image `python:<version>-slim`) and how many packages the lock file pins (`e2er-package/requirements.lock.txt` in a package, else `code/requirements.txt`).
+- *Accounts and keys*: the key each data source's connector takes (`FRED_API_KEY`, `NOAA_TOKEN`, `ALLIUM_API_KEY`; an optional `GITHUB_TOKEN`), and whether a rerun needs it. A rerun needs a key only when it loads that source's data again; `e2er reproduce` passes no API key or token to the study's code, and the section says so. "none" when no source needs one.
+- *Data*: the data files that come with the study, the sources a rerun loads again and from which host (the `RELOADS` list e2er writes into `code/get_data.py`, the files a package leaves out, the recipe's inputs), and whether a rerun needs the network (only while `get_data.py` runs).
+- *Effort*: the size of the study package and, when the study was reproduced before publishing, how long that rerun took and whether loading data again took most of it ("about 25 minutes, mostly loading data again from Project Gutenberg"). Without these records the line says less, or nothing.
+- *Last rerun*: the reproduction before publishing (date, e2er version, verdict); on e2er.org also the line of the authors' scheduled reruns (docs/reproduce-report.md).
+
+**Data and licences**: one row per data source (`data/data_sources.json`): the source, its own version or release, the day of the load, its terms in plain words as the load recorded them (with the link to the full terms), whether the data come with the study or are left out and why (a source's terms, a host's size limit), the citation the source asks for, and the data fingerprint of each load (since 0.21: a SHA-256 of the rows a load returned; the same rows give the same fingerprint, so a rerun can tell whether a source now returns other data).
+
+**Where it is.**
+
+- `e2er pack` writes the record into the package's list, `e2er-package.json`, under `reproduction_requirements` (format `e2er-requirements/1`, fields below), and as text into `e2er-package/README.md`. Both lie outside `provenance.json`: the content id stays the study's.
+- `e2er publish` writes the same record into the description, `e2er.json` and the request to e2er.org (`reproduction_requirements`), with the files left out as the package that goes with the study leaves them out (GitHub's size limit with `--github`). The size of the package (`package.bytes`) and the time of the rerun (the `reproduction` entry of `verification`) stay where they are recorded; the record names neither, so the same study published again writes the same record. With `--github` the README's summary at the top carries both sections in place of the plain list of data sources; the copy of `e2er.json` in the repository leaves the record out, as `e2er-package.json` next to it has it. Neither `provenance.json` nor the dossier changes. An older e2er.org refuses a description that carries the field: the site goes first.
+- `e2er inspect` and `e2er fetch` print a short summary. For a package made before the record existed they derive it from the package's own files and say so ("derived now from the package's files").
+- e2er.org shows both sections on the study page, with the sources in a table; for a study published before the record it shows what it knows from the dossier's data loads and the files the repository leaves out, and "not recorded" for the rest.
+
+The record's fields: `format`; `reproducible` (the study has a `reproduce.json` that `e2er reproduce` takes) and `why` when not; `software` (`docker`, `e2er`, `python`, `packages: {file, count, hashes}`); `accounts` (`source`, `name`, `setting`, `how`, `optional`, `needed`); `data` (`network`, `reload_step`, `shipped`, `left_out: [{path, reason, kind, needed}]`); `sources` (`connector`, `name`, `dataset`, `versions`, `loaded`, `loads`, `terms`, `terms_url`, `citation`, the counts `shipped`, `reloaded`, `not_needed`, `missing`, `from`, `left_out_because`, `fingerprints`, `fingerprints_missing`). The schema is in `docs/schemas/research-object.schema.json`; the code in `src/core/repro_requirements.py`.
 
 ## Taking personal data out before publishing
 
