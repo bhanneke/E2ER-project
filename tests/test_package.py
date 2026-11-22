@@ -824,3 +824,22 @@ def test_rebuild_steps_of_a_manifest_count_only_for_files_the_records_support(tm
     # Nothing in the folder's records says results/table.csv may be missing: its output step is not taken.
     assert pkg.rebuild_steps(folder) == [data_step]
     assert pkg.rebuild_steps(folder, trusted=True) == [planted, data_step]
+
+
+def test_inspect_shows_what_reproduce_installs_and_the_steps_the_package_adds(tmp_path, offline_lock, capsys):
+    """Review 2026-11: inspect listed code/requirements.txt while reproduce installs the package's lock."""
+    folder = _export(tmp_path)
+    packed = pkg.build(folder)
+    with zipfile.ZipFile(packed.path) as zf:
+        manifest = json.loads(zf.read(pkg.MANIFEST))
+    manifest["rebuild"] = [
+        {"path": "data/clean.csv", "script": "clean.py", "from": "code/scratch/clean.py"},
+        {"path": "w.csv", "script": "run.py", "from": "code/run.py", "output": True, "written": True},
+    ]
+    pkg.seal_manifest(manifest)
+    path = _rewrite(packed.path, tmp_path / "r.e2er", replace={pkg.MANIFEST: json.dumps(manifest).encode()})
+    lines = "\n".join(pkg.archive_steps(path))
+    assert f"`e2er reproduce` installs ({pkg.LOCK}, every package pinned with its hashes" in lines
+    assert "Requirements (code/requirements.txt)" not in lines
+    assert "+ python clean.py (from code/scratch/clean.py): builds data/clean.csv again" in lines
+    assert "run.py" not in lines.split("adds")[-1], "a step the recipe already runs adds nothing"

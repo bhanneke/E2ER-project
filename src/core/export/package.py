@@ -1136,14 +1136,49 @@ def archive_steps(path: Path) -> list[str]:
         lines.append(f"  {i}. {printable(cmd, newlines=False)}")
     if not steps:
         lines.append("  (none)")
+    try:
+        manifest = read_manifest(path)
+    except PackageError:
+        manifest = {}
+    # The steps the package's own list adds to build left-out files again (reproduce_recipe.apply_rebuild).
+    raw_rebuild = manifest.get("rebuild")
+    rebuild: list[Any] = raw_rebuild if isinstance(raw_rebuild, list) else []
+    added = []
+    for item in rebuild:
+        if not isinstance(item, dict) or item.get("written") or not isinstance(item.get("script"), str):
+            continue
+        what = item.get("folder") if isinstance(item.get("folder"), str) else item.get("path")
+        script, source = printable(item["script"], newlines=False), printable(item.get("from"), newlines=False)
+        added.append(
+            f"  + python {script} (from {source}): builds {printable(what, newlines=False)} again when the folder "
+            "lacks it"
+        )
+    if added:
+        lines.append(
+            f"Steps {MANIFEST} adds, to build files it left out again (counted only where the study's own records "
+            "say why the file is left out):"
+        )
+        lines += added
+    # What `e2er reproduce` installs: the package's lock when it has one (install_source), else the recipe's file.
+    raw_env = manifest.get("environment")
+    env: dict[str, Any] = raw_env if isinstance(raw_env, dict) else {}
     req = recipe.get("requirements")
-    if isinstance(req, str):
-        data = read_member(path, req)
+    installs, how = req, "the study's own requirements"
+    lock = read_member(path, LOCK) if env.get("lock") == LOCK else None
+    if lock is not None:
+        installs, how = LOCK, "every package pinned with its hashes"
+        m = _LOCK_PYTHON.search(lock[:4096].decode("utf-8", "replace"))
+        python = recipe.get("python") or (m.group(1) if m else None)
+        if python:
+            how += f", for Python {printable(python, newlines=False)}"
+    if isinstance(installs, str):
+        data = lock if installs == LOCK else read_member(path, installs)
         if data is not None:
             names = [ln.split()[0] for ln in data.decode("utf-8", "replace").splitlines() if ln.strip() and
                      not ln.lstrip().startswith(("#", "--hash"))]  # fmt: skip
             shown = ", ".join(printable(n, newlines=False) for n in names[:40]) or "no packages"
-            lines.append(f"Requirements ({printable(req, newlines=False)}): {shown}")
+            more = f" and {len(names) - 40} more" if len(names) > 40 else ""
+            lines.append(f"`e2er reproduce` installs ({printable(installs, newlines=False)}, {how}): {shown}{more}")
     return lines
 
 
