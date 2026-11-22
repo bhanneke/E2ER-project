@@ -116,6 +116,10 @@ async def test_a_specialist_call_imports_the_wrappers_journal(cfg, tmp_path):
         line = {"op": "query", "id": rid, "paper_id": pid, "specialist": "data_analyst", "query_sql": "SELECT 1",
                 "query_type": "feasibility", "fields_requested": [], "aggregation_level": "local_data_db",
                 "estimated_rows": None}  # fmt: skip
+        # The wrapper seals each line with the call's key, which only the wrappers' environment carries.
+        from src.modules.data.audit_journal import line_mac
+
+        line["mac"] = line_mac(line, env["E2ER_AUDIT_JOURNAL_KEY"])
         journal.write_text(json.dumps(line) + "\n", encoding="utf-8")
         proc = MagicMock()
         proc.pid, proc.returncode = 4242, 0

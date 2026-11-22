@@ -32,6 +32,8 @@ call_timeout: ContextVar[tuple[int, bool] | None] = ContextVar("e2er_call_timeou
 #: This call's audit journal (modules/data/audit_journal.py), set by :func:`audit_journal` and
 #: passed to the wrappers by :func:`run_env` as ``E2ER_AUDIT_JOURNAL``.
 _journal: ContextVar[Path | None] = ContextVar("e2er_audit_journal", default=None)
+#: This call's journal key (hex): the wrappers seal every journal line with it (``E2ER_AUDIT_JOURNAL_KEY``).
+_journal_key: ContextVar[str | None] = ContextVar("e2er_audit_journal_key", default=None)
 
 
 @asynccontextmanager
@@ -47,16 +49,19 @@ async def audit_journal(paper_id: str | None, workspace: str | Path | None) -> A
     if not paper_id or not workspace:
         yield None
         return
-    from ..data.audit_journal import JournalImporter, new_journal_path
+    from ..data.audit_journal import JournalImporter, new_journal_key, new_journal_path
 
     path = new_journal_path(Path(workspace))
-    importer = JournalImporter(path, paper_id)
+    key = new_journal_key()
+    importer = JournalImporter(path, paper_id, key)
     token = _journal.set(path)
+    key_token = _journal_key.set(key)
     follower = asyncio.create_task(importer.follow())
     try:
         yield path
     finally:
         _journal.reset(token)
+        _journal_key.reset(key_token)
         follower.cancel()
         with contextlib.suppress(BaseException):
             await follower
@@ -305,6 +310,11 @@ def run_env(
         # (audit_journal above). The model can write that file, as it could write the database's folder
         # up to 0.20; e2er checks every line before it writes a row (modules/data/audit_journal.py).
         env["E2ER_AUDIT_JOURNAL"] = str(journal)
+        # The wrappers seal each line with this call's key; e2er imports only sealed lines. An
+        # AI-written script never gets it (child_env.script_env drops every *_KEY).
+        journal_key = _journal_key.get()
+        if journal_key:
+            env["E2ER_AUDIT_JOURNAL_KEY"] = journal_key
     # Marks every AI CLI call, tool-less strategist calls included: `e2er`
     # itself refuses to run under it (src/__main__.py).
     env["E2ER_AI_STEP"] = specialist or "strategist"

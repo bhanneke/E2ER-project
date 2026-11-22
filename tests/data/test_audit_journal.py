@@ -25,6 +25,19 @@ from src.modules.data.audit_journal import JournalImporter, new_journal_path
 _REAL_EXECUTE = _client.execute
 _REAL_FETCH_ONE = _client.fetch_one
 _REAL_FETCH_ALL = _client.fetch_all
+KEY = audit_journal.new_journal_key()
+
+
+def _seal(line: str) -> str:
+    """A journal line as the wrapper writes it: sealed with the call's key."""
+    try:
+        row = json.loads(line)
+    except ValueError:
+        return line
+    if not isinstance(row, dict):
+        return line
+    row["mac"] = audit_journal.line_mac(row, KEY)
+    return json.dumps(row)
 
 
 @pytest.fixture
@@ -32,6 +45,7 @@ def db(tmp_path: Path, monkeypatch) -> Path:
     path = tmp_path / "run" / "papers.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{path}")
     monkeypatch.delenv(audit_journal.ENV, raising=False)
+    monkeypatch.delenv(audit_journal.ENV_KEY, raising=False)
     monkeypatch.setattr("src.db.client.execute", _REAL_EXECUTE)
     monkeypatch.setattr("src.db.client.fetch_one", _REAL_FETCH_ONE)
     monkeypatch.setattr("src.db.client.fetch_all", _REAL_FETCH_ALL)
@@ -62,9 +76,12 @@ def _rows(db: Path, sql: str) -> list[tuple]:
         return c.execute(sql).fetchall()
 
 
+FEAS_SQL = "SELECT a FROM chain.trades WHERE block_time > '2024-01-01' LIMIT 10"
+
+
 async def _wrapper_writes(paper_id: str) -> tuple[str, str, str]:
     """What `e2er-data allium feasibility` and `production` record (data/tools.py), in the wrapper process."""
-    feas = await audit.log_query(paper_id, "data_analyst", "SELECT a FROM chain.trades LIMIT 10", "feasibility",
+    feas = await audit.log_query(paper_id, "data_analyst", FEAS_SQL, "feasibility",
                                  ["a"], "daily", estimated_rows=10)  # fmt: skip
     await audit.mark_approved(feas, approved_by="auto_feasibility")
     await audit.mark_executed(feas, 7)
@@ -82,17 +99,20 @@ def test_wrapper_rows_go_through_the_journal_into_the_run_database(db, tmp_path,
 
     # The wrapper side: E2ER_AUDIT_JOURNAL set (as run_env sets it), the run database is not written.
     monkeypatch.setenv(audit_journal.ENV, str(journal))
+    monkeypatch.setenv(audit_journal.ENV_KEY, KEY)
     feas, prod, request = asyncio.run(_wrapper_writes(pid))
     assert db.read_bytes() == before, "a wrapper inside a call never writes the run database"
     lines = [json.loads(x) for x in journal.read_text(encoding="utf-8").splitlines()]
     assert [x["op"] for x in lines] == ["query", "approved", "executed", "query", "approval_request"]
-    # The feasibility-first guardrail sees the feasibility query that is only in the journal so far.
-    assert audit_journal.journal_has_approved_feasibility(pid, "chain.trades")
-    assert not audit_journal.journal_has_approved_feasibility(pid, "other.table")
+    assert all(audit_journal.sealed(x, KEY) for x in lines), "every line carries the call's seal"
+    # The feasibility-first guardrail knows the sealed feasibility query is on its way into the database.
+    assert audit_journal.journal_has_pending_feasibility(pid, "chain.trades")
+    assert not audit_journal.journal_has_pending_feasibility(pid, "other.table")
 
     # The e2er side: import, then the journal is gone.
     monkeypatch.delenv(audit_journal.ENV)
-    importer = JournalImporter(journal, pid)
+    monkeypatch.delenv(audit_journal.ENV_KEY)
+    importer = JournalImporter(journal, pid, KEY)
     asyncio.run(importer.finish())
     assert not journal.exists()
     assert importer.imported == 5 and importer.skipped == 0
@@ -104,7 +124,8 @@ def test_wrapper_rows_go_through_the_journal_into_the_run_database(db, tmp_path,
             "fields_requested, estimated_rows FROM data_query_records",
         )  # fmt: skip
     )
-    assert records[feas] == ("feasibility", "approved", "auto_feasibility", 7, pid, '["a"]', 10)
+    # Marked as reported by the wrapper: e2er checked the line, it did not see the query run.
+    assert records[feas] == ("feasibility", "approved", audit_journal.JOURNAL_APPROVAL, 7, pid, '["a"]', 10)
     assert records[prod] == ("production", "pending", None, None, pid, '["a"]', None)
     assert _rows(db, "SELECT id, query_record_id, paper_id, status FROM data_approval_requests") == [
         (request, prod, pid, "pending")
@@ -121,7 +142,8 @@ def test_the_importer_follows_a_call_and_takes_only_complete_lines(db, tmp_path)
     line = json.dumps({"op": "query", "id": rid, "paper_id": pid, "specialist": "s", "query_sql": "SELECT 1",
                        "query_type": "feasibility", "fields_requested": [], "aggregation_level": "daily",
                        "estimated_rows": None})  # fmt: skip
-    importer = JournalImporter(journal, pid)
+    line = _seal(line)
+    importer = JournalImporter(journal, pid, KEY)
     journal.write_text(line[:20], encoding="utf-8")  # a wrapper is writing this line right now
     assert asyncio.run(importer.import_new()) == 0
     journal.write_text(line + "\n", encoding="utf-8")
@@ -164,8 +186,8 @@ def test_malformed_and_forged_lines_are_skipped(db, tmp_path, caplog):
         json.dumps({"op": "approval_request", "id": str(uuid.uuid4()), "query_record_id": prod, "paper_id": other}),
         json.dumps({"op": "executed", "id": good, "actual_rows": 4}),
     ]
-    journal.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    importer = JournalImporter(journal, pid)
+    journal.write_text("\n".join(_seal(x) for x in lines) + "\n", encoding="utf-8")
+    importer = JournalImporter(journal, pid, KEY)
     asyncio.run(importer.finish())
     assert importer.imported == 3 and importer.skipped == len(lines) - 3
     assert not journal.exists()
@@ -197,8 +219,8 @@ def test_a_journal_is_read_up_to_its_cap(db, tmp_path, monkeypatch):
         )  # fmt: skip
         for _ in range(6)
     ]
-    journal.write_text("\n".join(rows) + "\n", encoding="utf-8")
-    importer = JournalImporter(journal, pid)
+    journal.write_text("\n".join(_seal(x) for x in rows) + "\n", encoding="utf-8")
+    importer = JournalImporter(journal, pid, KEY)
     asyncio.run(importer.finish())
     assert importer.imported == 3
     assert _rows(db, "SELECT COUNT(*) FROM data_query_records") == [(3,)]
@@ -217,3 +239,92 @@ def test_a_wrapper_reads_the_run_database_read_only(db, tmp_path, monkeypatch):
     assert asyncio.run(_client.fetch_one("SELECT id FROM papers WHERE id = %(id)s", {"id": pid})) == {"id": pid}
     with pytest.raises(sqlite3.OperationalError, match="readonly"):
         asyncio.run(_client.execute("DELETE FROM papers", {}))
+
+
+def _feasibility_lines(pid: str, sql: str = FEAS_SQL) -> list[str]:
+    rid = str(uuid.uuid4())
+    return [
+        json.dumps(
+            {
+                "op": "query",
+                "id": rid,
+                "paper_id": pid,
+                "specialist": "s",
+                "query_sql": sql,
+                "query_type": "feasibility",
+                "fields_requested": ["a"],
+                "aggregation_level": "daily",
+                "estimated_rows": None,
+            }
+        ),  # fmt: skip
+        json.dumps({"op": "approved", "id": rid, "approved_by": "auto_feasibility"}),
+    ]
+
+
+def test_lines_without_the_calls_seal_are_skipped(db, tmp_path):
+    """Review 2026-11-22: lines the model wrote with its file tools were imported like the wrapper's."""
+    pid = _paper()
+    journal = new_journal_path(tmp_path)
+    forged = _feasibility_lines(pid)
+    wrong_key = audit_journal.new_journal_key()
+    other = [json.dumps({**json.loads(x), "mac": audit_journal.line_mac(json.loads(x), wrong_key)}) for x in forged]
+    journal.write_text("\n".join(forged + other) + "\n", encoding="utf-8")
+    importer = JournalImporter(journal, pid, KEY)
+    asyncio.run(importer.finish())
+    assert importer.imported == 0 and importer.skipped == 4
+    assert _rows(db, "SELECT COUNT(*) FROM data_query_records") == [(0,)]
+
+
+def test_a_feasibility_query_that_fails_the_guardrails_is_not_approved(db, tmp_path):
+    pid = _paper()
+    journal = new_journal_path(tmp_path)
+    journal.write_text("\n".join(_seal(x) for x in _feasibility_lines(pid, "SELECT * FROM chain.trades")) + "\n")
+    importer = JournalImporter(journal, pid, KEY)
+    asyncio.run(importer.finish())
+    assert importer.imported == 1 and importer.skipped == 1
+    assert _rows(db, "SELECT validation_status FROM data_query_records") == [("pending",)]
+
+
+def test_the_guardrail_does_not_trust_journal_lines(db, tmp_path, monkeypatch):
+    """A forged feasibility query in the journal never lets a production query through (finding 6)."""
+    from src.modules.data.guardrails import QueryValidator
+
+    pid = _paper()
+    journal = new_journal_path(tmp_path)
+    monkeypatch.setenv(audit_journal.ENV, str(journal))
+    monkeypatch.setenv(audit_journal.ENV_KEY, KEY)
+    monkeypatch.setattr(audit_journal, "IMPORT_WAIT", 0.6)
+    _client._sqlite_bootstrapped = False
+
+    # Unsealed (the model's file tools): not even waited for.
+    journal.write_text("\n".join(_feasibility_lines(pid)) + "\n", encoding="utf-8")
+    assert not audit_journal.journal_has_pending_feasibility(pid, "chain.trades")
+    result = asyncio.run(QueryValidator.validate_feasibility_first("production", pid, "chain.trades"))
+    assert not result.valid
+
+    # Sealed but never imported (no e2er importing it): the guardrail waits, then refuses.
+    journal.write_text("\n".join(_seal(x) for x in _feasibility_lines(pid)) + "\n", encoding="utf-8")
+    assert audit_journal.journal_has_pending_feasibility(pid, "chain.trades")
+    result = asyncio.run(QueryValidator.validate_feasibility_first("production", pid, "chain.trades"))
+    assert not result.valid
+
+
+def test_the_guardrail_passes_once_e2er_imported_the_feasibility_query(db, tmp_path, monkeypatch):
+    from src.modules.data.guardrails import QueryValidator
+
+    pid = _paper()
+    journal = new_journal_path(tmp_path)
+    journal.write_text("\n".join(_seal(x) for x in _feasibility_lines(pid)) + "\n", encoding="utf-8")
+    asyncio.run(JournalImporter(journal, pid, KEY).finish())
+    result = asyncio.run(QueryValidator.validate_feasibility_first("production", pid, "chain.trades"))
+    assert result.valid, result.rejection_reason
+
+
+def test_an_ai_written_script_never_gets_the_journal_key():
+    from src.core.child_env import script_env
+
+    env = script_env(
+        home=Path("/nonexistent-home"),
+        source={audit_journal.ENV_KEY: KEY, audit_journal.ENV: "/w/.e2er-audit-journal-0123456789abcdef.jsonl"},
+    )
+    assert audit_journal.ENV_KEY not in env

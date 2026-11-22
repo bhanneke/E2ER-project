@@ -18,15 +18,33 @@ Security. The model can write this file: it lies in its workspace. With the extr
 folder it could write the run database itself, every table of it; now it can only
 put journal lines in front of :class:`JournalImporter`, which
 
+* takes only lines sealed with this call's key (review 2026-11-22): e2er makes a new
+  random key for every call and gives it to the wrappers as ``E2ER_AUDIT_JOURNAL_KEY``;
+  each line carries an HMAC (SHA-256) over its fields. A line the model wrote with its
+  file tools has no valid seal and is skipped. AI-written scripts never get the key
+  (``child_env.script_env`` drops every ``*_KEY``), and Claude Code's shell runs only the
+  e2er-* wrappers. Codex's shell can read its own environment, so under Codex the seal
+  stops only a model that writes the file without looking for the key;
 * takes the four operations of :data:`OPERATIONS` with their fixed fields and types,
   and skips (and logs) every other line;
 * writes every row under the call's own paper id, never the one a line names;
 * never takes SQL, a table name or a path from a line: ``query_sql`` is stored as the
   audit record's text and never run, the statements are the fixed ones in audit.py;
 * records an approval only as the automatic one of a feasibility query of the same
-  paper; a production query still needs the researcher's approval in the dashboard,
-  sealed over its id and SQL (approval_seal.py), which no journal line can give;
+  paper whose SQL passes the structural guardrails (no ``SELECT *``, a time bound), and
+  marks it as reported by the wrapper (``approved_by`` :data:`JOURNAL_APPROVAL`); a
+  production query still needs the researcher's approval in the dashboard, sealed over
+  its id and SQL (approval_seal.py), which no journal line can give;
 * reads at most :data:`MAX_BYTES` and :data:`MAX_LINES` per call.
+
+The feasibility-first guardrail (guardrails.py) trusts only rows in the run database,
+which e2er wrote after these checks; a sealed journal line that is not imported yet
+only makes it wait a few seconds for the import, never pass on its own.
+
+Why not a pipe or a socket that e2er owns: the wrappers run in the AI CLI's shell,
+inside its sandbox (Codex: writes to the workspace only, no network), several calls
+side by side; any channel they can reach there, the model's own commands can reach
+too. The per-call key is what tells e2er's wrapper from the model.
 
 Each call has its own journal file: specialists of one batch run side by side in one
 workspace, and one call's clean-up must not remove another's lines.
@@ -35,6 +53,8 @@ workspace, and one call's clean-up must not remove another's lines.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -50,6 +70,8 @@ logger = get_logger(__name__)
 
 #: The environment variable that switches the wrappers to the journal: the absolute path of this call's journal.
 ENV = "E2ER_AUDIT_JOURNAL"
+#: The environment variable with this call's key (hex), which seals every journal line.
+ENV_KEY = "E2ER_AUDIT_JOURNAL_KEY"
 #: A journal's file name: a dotfile in the workspace root (never exported, see export/bundle_files.py).
 _NAME = re.compile(r"^\.e2er-audit-journal-[0-9a-f]{16}\.jsonl$")
 
@@ -67,6 +89,42 @@ _MAX_ROWS = 10**15
 _QUERY_TYPES = frozenset({"feasibility", "production"})
 #: The only approval a wrapper records itself: the automatic one of a feasibility query (data/tools.py).
 AUTO_APPROVAL = "auto_feasibility"
+#: ``approved_by`` of an automatic approval e2er took from a journal: reported by the wrapper, checked by e2er.
+JOURNAL_APPROVAL = "auto_feasibility (reported by the e2er-data wrapper)"
+#: How long the feasibility-first guardrail waits for e2er to import a sealed journal line, in seconds.
+IMPORT_WAIT = 3 * 2.0
+
+
+def new_journal_key() -> str:
+    """A new random key for one call's journal (hex)."""
+    return secrets.token_hex(32)
+
+
+def line_mac(row: dict[str, Any], key: str) -> str:
+    """The seal of one journal line: HMAC-SHA256 over its fields (all but ``mac``) in canonical JSON."""
+    body = json.dumps(
+        {k: v for k, v in row.items() if k != "mac"},
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hmac.new(bytes.fromhex(key), body.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def sealed(row: dict[str, Any], key: str | None) -> bool:
+    """Does ``row`` carry a valid seal for ``key``? (No key: nothing is sealed.)"""
+    if not key:
+        return False
+    mac = row.get("mac")
+    try:
+        return isinstance(mac, str) and hmac.compare_digest(mac, line_mac(row, key))
+    except ValueError:  # a key that is not hex
+        return False
+
+
+def _active_key() -> str | None:
+    return os.environ.get(ENV_KEY, "").strip() or None
 
 
 def new_journal_path(workspace: Path) -> Path:
@@ -91,7 +149,11 @@ def append(op: str, **fields: Any) -> None:
     path = active_journal()
     if path is None:
         raise RuntimeError(f"{ENV} is not set")
-    line = json.dumps({"op": op, **fields}, ensure_ascii=False, default=str)
+    row: dict[str, Any] = json.loads(json.dumps({"op": op, **fields}, ensure_ascii=False, default=str))
+    key = _active_key()
+    if key:
+        row["mac"] = line_mac(row, key)
+    line = json.dumps(row, ensure_ascii=False)
     # One write call per line in append mode, so lines of wrappers running side by side do not interleave.
     with open(path, "a", encoding="utf-8", newline="\n") as f:
         f.write(line + "\n")
@@ -113,17 +175,20 @@ def _read_lines(path: Path) -> list[dict[str, Any]]:
     return out
 
 
-def journal_has_approved_feasibility(paper_id: str, table: str) -> bool:
-    """Whether this call's journal holds an auto-approved feasibility query of ``paper_id`` on ``table``.
+def journal_has_pending_feasibility(paper_id: str, table: str) -> bool:
+    """Whether this call's journal holds a sealed, auto-approved feasibility query of ``paper_id`` on ``table``.
 
-    The feasibility-first guardrail reads the run database; a feasibility query run earlier in the
-    same call may still sit in the journal (e2er imports it every few seconds). Same match as the
-    guardrail's SQL: ``query_sql ILIKE '%table%'``.
+    Never a pass on its own (review 2026-11-22: a forged line passed the guardrail): the
+    feasibility-first guardrail trusts only the run database, and uses this to know that
+    e2er's import of a moment-ago feasibility query is worth waiting for (it imports every
+    few seconds). Only lines sealed with this call's key count. Same match as the
+    guardrail's SQL: the table's name anywhere in the query, ignoring case.
     """
     path = active_journal()
-    if path is None or not table:
+    key = _active_key()
+    if path is None or not table or not key:
         return False
-    rows = _read_lines(path)
+    rows = [r for r in _read_lines(path) if sealed(r, key)]
     needle = table.lower()
     feasibility = {
         r.get("id")
@@ -196,20 +261,23 @@ async def _query_of(record_id: str, paper_id: str) -> dict[str, Any] | None:
     from ...db.client import fetch_one
 
     return await fetch_one(
-        "SELECT id, query_type FROM data_query_records WHERE id = %(id)s AND paper_id = %(pid)s",
+        "SELECT id, query_type, query_sql FROM data_query_records WHERE id = %(id)s AND paper_id = %(pid)s",
         {"id": record_id, "pid": paper_id},
     )
 
 
-async def _apply(row: dict[str, Any], paper_id: str) -> None:
+async def _apply(row: dict[str, Any], paper_id: str, key: str) -> None:
     """Check one journal line and write it with audit.py's fixed statements; raises _SkipLineError to skip it."""
     from . import audit
+    from .guardrails import QueryValidator
 
+    if not sealed(row, key):
+        raise _SkipLineError("not sealed with this call's key (not written by an e2er wrapper)")
     op = row.get("op")
     allowed = OPERATIONS.get(op) if isinstance(op, str) else None
     if allowed is None:
         raise _SkipLineError(f"unknown operation {op!r}")
-    extra = set(row) - allowed - {"op"}
+    extra = set(row) - allowed - {"op", "mac"}
     if extra:
         raise _SkipLineError(f"unknown fields {sorted(extra)}")
     if "paper_id" in allowed and row.get("paper_id") != paper_id:
@@ -239,7 +307,11 @@ async def _apply(row: dict[str, Any], paper_id: str) -> None:
         found = await _query_of(record_id, paper_id)
         if found is None or found.get("query_type") != "feasibility":
             raise _SkipLineError("no feasibility query of this paper with this id")
-        await audit._update_approved(record_id, AUTO_APPROVAL)
+        sql = str(found.get("query_sql") or "")
+        for check in (QueryValidator.validate_no_select_star(sql), QueryValidator.validate_time_bound(sql)):
+            if not check.valid:
+                raise _SkipLineError("the feasibility query does not pass the guardrails")
+        await audit._update_approved(record_id, JOURNAL_APPROVAL)
     elif op == "executed":
         record_id = _uuid(row.get("id"), "id")
         rows = _count(row.get("actual_rows"), "actual_rows")
@@ -264,9 +336,10 @@ async def _apply(row: dict[str, Any], paper_id: str) -> None:
 class JournalImporter:
     """Imports one call's journal into the run database: while the call runs, and once after it."""
 
-    def __init__(self, path: Path, paper_id: str) -> None:
+    def __init__(self, path: Path, paper_id: str, key: str) -> None:
         self.path = Path(path)
         self.paper_id = paper_id
+        self.key = key
         self._offset = 0
         self._lines = 0
         self._capped = False
@@ -335,7 +408,7 @@ class JournalImporter:
                     reason = "not a JSON object"
                 else:
                     try:
-                        await _apply(row, self.paper_id)
+                        await _apply(row, self.paper_id, self.key)
                     except _SkipLineError as e:
                         reason = str(e)
                     except Exception as e:  # noqa: BLE001 — the database's refusal skips the line, never the call
