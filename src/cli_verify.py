@@ -46,7 +46,9 @@ compares the folder with what e2er.org published (GET only): the one anchor
 outside the folder. Without it, verify says it verified against the folder only.
 A .e2er file verified ``--against`` is also compared with the study package
 e2er.org records for that version (``package published``): the same fingerprint
-means the same files; the SHA-256 says whether it is the recorded file itself.
+means the same files and, since format ``e2er-package/2``, the same records of the
+package; the SHA-256 says whether it is the recorded file itself. An older package
+(fingerprint over the list of files only) passes only as the recorded file itself.
 """
 
 from __future__ import annotations
@@ -698,30 +700,61 @@ def _published_package(kind: str, record: Any, bundle: Path, against: str | None
     return None, ""
 
 
-def _check_package_against(file: Path, fingerprint: Any, rec: Any, where: str, source: str) -> Check:
-    """The .e2er file against the package e2er.org records: its fingerprint (the same files), and its bytes."""
+def _check_package_against(file: Path, manifest: Any, rec: Any, where: str, source: str) -> Check:
+    """The .e2er file against the package e2er.org records: its fingerprint, and its bytes.
+
+    A package of format ``e2er-package/2`` has a fingerprint over its whole manifest (its list of files and its
+    own records: environment, files left out and why, rebuild steps): the same fingerprint means the same
+    files and the same records, whatever the zip's bytes. An older package (``e2er-package/1``) has a
+    fingerprint over its list of files only: its records are the recorded ones only when the file is the
+    recorded file byte for byte, so a file packed again from it fails (review 2026-11: a package whose
+    environment and left-out reasons were changed and zipped again passed as "packed again").
+    """
     from .core import study_package as sp
+    from .core.export import package as pkg
 
     if rec is None:
         return Check("package published", SKIP, f"{source} records no study package for {where or 'this folder'}")
     bad = sp.record_problems(rec)
     if bad:
         return Check("package published", FAIL, f"the package record of {source} is malformed: {'; '.join(bad)}")
+    doc: dict[str, Any] = manifest if isinstance(manifest, dict) else {}
+    fingerprint = doc.get("fingerprint")
     if fingerprint != rec["fingerprint"]:
         return Check(
             "package published",
             FAIL,
             f"this package (fingerprint {str(fingerprint)[:19]}…) is not the one {source} records for {where} "
-            f"({rec['fingerprint'][:19]}…): its files differ",
+            f"({rec['fingerprint'][:19]}…): its files or its records differ",
         )
     same_bytes = sp.sha256_file(file) == rec["sha256"] and file.stat().st_size == rec["bytes"]
-    tail = (
-        "the file is the one recorded, byte for byte (SHA-256)"
-        if same_bytes
-        else "the file's bytes are not the recorded file's (packed again), its list of files is the same"
-    )
+    if pkg.covers_manifest(doc):
+        tail = (
+            "the file is the one recorded, byte for byte (SHA-256)"
+            if same_bytes
+            else "the file's bytes are not the recorded file's (packed again), its files and its records are the same"
+        )
+        return Check(
+            "package published",
+            PASS,
+            f"its fingerprint (over the whole manifest) is the one {source} records for {where} "
+            f"({rec['host']}); {tail}",
+        )
+    if same_bytes:
+        return Check(
+            "package published",
+            PASS,
+            f"its fingerprint is the one {source} records for {where} ({rec['host']}), contents-only, older format "
+            "(it covers the list of files, not the package's records); the file is the one recorded, byte for byte "
+            "(SHA-256), so its records are the recorded ones too",
+        )
     return Check(
-        "package published", PASS, f"its fingerprint is the one {source} records for {where} ({rec['host']}); {tail}"
+        "package published",
+        FAIL,
+        f"its list of files is the one {source} records for {where}, but the fingerprint of this older format "
+        "(contents-only) does not cover the package's own records (environment, files left out and why, rebuild "
+        "steps), and the file is not the recorded file (its SHA-256 differs): it was packed again, and its records "
+        "may have been changed. Fetch the recorded file with `e2er fetch`",
     )
 
 
@@ -1871,7 +1904,7 @@ def verify(
                     f"{opened.files} file(s) match {pkg.MANIFEST}; fingerprint {opened.manifest.get('fingerprint')}",
                 )
             )
-            package = (bundle_path, opened.manifest.get("fingerprint"))
+            package = (bundle_path, opened.manifest)
             bundle_path = opened.root
             # The manifest's declarations are the packer's word: only those the study's own records support
             # count (a source's terms, larger than the host takes), as in a folder.

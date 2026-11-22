@@ -157,7 +157,7 @@ def test_a_package_that_declares_a_results_file_left_out_without_support_fails(t
                 doc.setdefault("left_out", []).append(
                     {"path": rel, "kind": "terms", "source": "gaia", "reason": "under Gaia's terms"}
                 )
-                doc["fingerprint"] = pkg.fingerprint(doc["contents"])
+                pkg.seal_manifest(doc)
                 data = json.dumps(doc).encode()
             dst.writestr(info, data)
     capsys.readouterr()

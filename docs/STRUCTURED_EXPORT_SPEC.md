@@ -126,7 +126,7 @@ since 0.16.1); verify reads the run's version from `run.e2er_version_run`, else
 from the published dossier's `e2er.segments`, else from an exporting e2er of 0.16.0
 or earlier, and fails when none of them says.
 
-### The .e2er package (format `e2er-package/1`)
+### The .e2er package (format `e2er-package/2`)
 
 `e2er pack <study id | exported folder> [-o PATH] [--offline] [--no-data]` writes an
 exported folder into one file, `<slug>.e2er` (next to the folder unless `-o` says
@@ -242,14 +242,14 @@ inconsistency, still fails.
 
 ```json
 {
-  "format": "e2er-package/1",
+  "format": "e2er-package/2",
   "e2er_version": "0.16.1",                 // the e2er that packed it
   "created": "20261014",                    // the export's date (provenance.json run.exported_at), not the packing time
   "study": {"id": "…", "title": "…", "question": "…", "authors": ["…"], "folder": "<slug>",
             "template": "…", "exported_at": "20261014", "e2er_version": "0.16.0", "purpose": "…"},
   "contents": [{"path": "code/run_estimation.py", "sha256": "…", "bytes": 27761, "part": "study"},
                {"path": "e2er-package/requirements.lock.txt", "sha256": "…", "bytes": 9120, "part": "package"}],
-  "fingerprint": "sha256:…",                // SHA-256 of the canonical JSON of [{path, sha256, bytes}], sorted by path
+  "fingerprint": "sha256:…",                // SHA-256 of the canonical JSON of this whole object without "fingerprint"
   "left_out": [{"path": "data/data.db", "reason": "the terms of the Global Macro Database (GMD) do not allow passing the data on",
                 "source": "gmd", "rebuilt_by": {"by": "code/get_data.py", "source": "…"},
                 "needed": true,                 // needed: the recipe lists it as an input or lays it out (the code reads it)
@@ -283,15 +283,21 @@ inconsistency, still fails.
 }
 ```
 
-The manifest is not listed in `contents`; the fingerprint covers every other file. The
-canonical JSON is `json.dumps(rows, sort_keys=True, separators=(",", ":"), ensure_ascii=False)`
-in UTF-8. Without the internet the lock cannot be resolved: `environment.lock` is `null`,
+The manifest is not listed in `contents`. The fingerprint covers the whole manifest except the
+`fingerprint` field itself: every file (through `contents`) and every record of the package
+(`environment`, `wheels`, `left_out` with its reasons, `rebuild`, `reproduction_requirements`,
+`notes`, …). The canonical JSON is `json.dumps(value, sort_keys=True, separators=(",", ":"),
+ensure_ascii=False)` in UTF-8. Packages made before 0.22 are in format `e2er-package/1`: their
+fingerprint is the SHA-256 of the canonical JSON of `[{path, sha256, bytes}]` sorted by path, so it
+covers the files and not the package's own records. e2er reads both; `e2er inspect` says which
+the fingerprint covers, and `e2er verify --against` passes an `e2er-package/1` file only when it is
+the recorded file byte for byte (its SHA-256), since a file packed again may carry changed records. Without the internet the lock cannot be resolved: `environment.lock` is `null`,
 `environment.note` says so, and a rerun installs from the recipe's own pins (without hashes).
 
 **Opening a package** (`verify`, `reproduce`, `unpack`; `inspect` reads the manifest only).
 Nothing in the package is run. In order: the manifest must be present, at most 32 MB,
-valid JSON without duplicate keys, in format `e2er-package/1`, and its fingerprint must
-match its own contents list. Then, before anything is written: every entry name is checked
+valid JSON without duplicate keys, in format `e2er-package/2` (or the older `e2er-package/1`),
+and its fingerprint must match the manifest (`/1`: its own contents list). Then, before anything is written: every entry name is checked
 (see Paths), a link entry is refused, every entry must be listed in the manifest with its
 size and every listed file must be present, a file that unpacks to more than 1000 times
 its packed size (and more than 1 MB) is refused, and so are more than 200,000 entries,
@@ -310,7 +316,11 @@ folder is removed. `e2er-package.json` is written into the folder last.
 in the integrity check instead of failing it (data files only). In a plain folder (an
 unpacked package, or any folder with an `e2er-package.json` in it) the file is only a file:
 a declaration counts only for a data file the folder's own records say a source's terms keep
-out (`data_terms.restricted_paths`); any other missing file fails the check. `e2er reproduce` installs
+out (`data_terms.restricted_paths`); any other missing file fails the check. `e2er reproduce` reads the
+manifest's records the same way, in a package as in a folder: a declaration of `left_out`, and a
+`rebuild` step for a left-out output, count only where the study's own records support them (the
+step's SHA-256 is the one provenance.json records), and the Python comes from the lock's own header
+(`for Python 3.12`), not from `environment`. It installs
 from `e2er-package/requirements.lock.txt` (the installers check every hash) and, when the
 package carries wheels for this computer's platform and the recipe's Python, from those
 with `--no-index --find-links` (no internet); wheels for another computer are not used, and
@@ -318,7 +328,8 @@ the report says the packages are downloaded. The location of the wheels is set b
 never read from `reproduce.json`.
 
 **Versions.** A reader refuses a package whose `format` it does not know and says to update
-e2er. A later `e2er-package/2` may add fields; `e2er-package/1` readers ignore unknown fields.
+e2er. `e2er-package/2` (0.22) changed what the fingerprint covers; an e2er before 0.22 refuses such
+a package and says to update e2er.
 
 ### Artifact → folder mapping (driven by `SPECIALIST_ARTIFACTS`, registry.py)
 

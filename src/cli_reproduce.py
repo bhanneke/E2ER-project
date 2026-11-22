@@ -388,9 +388,11 @@ def _reproduce_folder(
     if not root.is_dir():
         print(f"error: {root} is not a folder or a .e2er package")
         return 2
+    # The manifest's own records (left_out, rebuild) are the packer's word, in a package as in a folder: they count
+    # only where the study's records support them, as in `e2er verify` (supported_left_out).
     rebuild = pkg.rebuild_steps(root)
     try:
-        recipe = rp.load_recipe(root, rebuild=rebuild, left_out=pkg.left_out_reasons(root, trusted=package))
+        recipe = rp.load_recipe(root, rebuild=rebuild, left_out=pkg.left_out_reasons(root))
     except rp.RecipeError as e:
         print(f"error: {printable(e)}")
         return 2
@@ -425,7 +427,7 @@ def _reproduce_folder(
             f"{pkg.MANIFEST} adds the steps that build the files it left out again: " + ", ".join(built) + "."
         )
     # Files a package left out carry the fingerprints pack recorded; an older recipe gets the numbers one.
-    rp.add_numeric_fingerprints(recipe, pkg.left_out_content(root, trusted=package))
+    rp.add_numeric_fingerprints(recipe, pkg.left_out_content(root))
     # Never from reproduce.json itself: only e2er sets where the wheels are, for an unpacked package.
     recipe.pop("wheelhouse", None)
     if package or pkg.package_manifest(root) is not None:

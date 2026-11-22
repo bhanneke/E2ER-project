@@ -244,7 +244,7 @@ def _old_package(tmp_path: Path) -> Path:
     files["data/data.db"] = b"SQLite format 3\x00"
     contents = [{"path": p, "sha256": "0" * 64, "bytes": len(b), "part": "study"} for p, b in sorted(files.items())]
     manifest = {
-        "format": pkg.FORMAT,
+        "format": pkg.FORMAT_CONTENTS_ONLY,
         "e2er_version": "0.20.0",
         "study": {"title": "Old", "e2er_version": "0.17.0"},
         "contents": contents,
