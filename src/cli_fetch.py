@@ -37,8 +37,8 @@ def _get(base: str, path: str) -> tuple[int, Any]:
 def resolve(address: str, version: int | None = None) -> tuple[Any, str, str]:
     """(the package record, what it belongs to, the address to verify against) for a study or dossier address."""
     u = urlparse(address.strip())
-    if u.scheme not in ("https", "http") or not u.netloc:
-        raise FetchError(f"give an e2er.org address (https://…), not {address!r}")
+    if not u.netloc or not (u.scheme == "https" or sp.test_server_url(address.strip())):
+        raise FetchError(f"give an e2er.org address that starts with https://, not {address!r}")
     base = f"{u.scheme}://{u.netloc}"
     parts = [p for p in u.path.split("/") if p]
     if parts[:2] == ["api", "v1"] and len(parts) >= 4 and parts[2] in ("studies", "dossiers"):
@@ -123,7 +123,9 @@ def fetch(address: str, out: str | None = None, *, version: int | None = None) -
     print("      checks every file, and compares the package with the one e2er.org records")
     print(f"  e2er reproduce {arg}")
     print(
-        "      runs the study's code again in a Docker container (no network, no folder of yours) and compares "
-        "the results"
+        "      runs the study's code again in Docker containers, with no folder of yours, and compares the results. "
+        "Installing its packages reaches PyPI (unless the package brings its wheels); a step that loads the "
+        "study's data again reaches the data's source on the internet, after you agree; every other step runs "
+        "without network"
     )
     return 0

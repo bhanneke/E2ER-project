@@ -3,19 +3,24 @@
 The same container rules as the replication template's sandbox (src/core/pipeline/sandbox.py),
 for the steps of a study's ``reproduce.json``:
 
-1. **install** (network on unless the package brings its wheels; none of the study's code is
-   mounted). A container from ``python:<version>-slim`` makes a virtual environment at
-   ``/opt/study-venv`` and installs the study's requirements file into it (mounted read-only,
-   nothing else of the study): from wheels only (``--only-binary=:all:``), and only when a
-   package has no wheel, from its source package, still inside this container. e2er's network
-   guard is put into that environment (it reports the connections Python makes; the protection
-   is ``--network none``). For the steps that call ``e2er-data``, e2er's own dependencies go
-   into a second environment at ``/opt/e2er-venv``. The container is committed as a local image
+1. **install** (network on, to reach PyPI, unless the package brings its wheels; none of the
+   study's code is mounted). A container from ``python:<version>-slim`` makes a virtual
+   environment at ``/opt/study-venv`` and installs the study's requirements file into it (mounted
+   read-only, nothing else of the study): from wheels only (``--only-binary=:all:``), and only
+   when a package has no wheel, from its source package, still inside this container. Root only
+   copies the mounted files, makes the environment's folders and hands them to an unprivileged
+   user (``nobody``, with ``setpriv``); pip, and any package's build code, runs as that user. The
+   container keeps only the capabilities those few root steps need. e2er's network guard is put
+   into that environment (it reports the connections Python makes; the protection is
+   ``--network none``). For the steps that call ``e2er-data``, e2er's own dependencies go into a
+   second environment at ``/opt/e2er-venv``. The container is committed as a local image
    (``e2er-reproduce:<hash>``), reused when the same requirements come again.
 
 2. **steps** (``--network none``; a step that loads inputs again gets the network after its own
-   question). Each step runs in its own container, in the run folder (the only writable mount,
-   at ``/work/run``), as this computer's user id, with a read-only root file system, all
+   question: ``bridge``, where the guard refuses Python connections to this computer, the local
+   network and cloud metadata addresses, and ``host.docker.internal`` names the container
+   itself). Each step runs in its own container, in the run folder (the only writable mount, at
+   ``/work/run``), as this computer's user id, with a read-only root file system, all
    capabilities dropped, no privilege escalation, CPU, memory, process and time limits, and
    ``HOME=/tmp``. No folder of this computer's user is mounted, no API key or token is passed;
    e2er's own code is mounted read-only at ``/opt/e2er-src`` for ``e2er-data``.
@@ -44,6 +49,8 @@ E2ER_BIN = "/opt/e2er-bin"
 _REQ_MOUNT = "/e2er-install/requirements.txt"
 _WHEELS_MOUNT = "/e2er-install/wheels"
 _GUARD_MOUNT = "/e2er-install/e2er_reproduce_netguard.py"
+#: Where root copies the mounted files for the unprivileged install (a host file may be readable by its owner only).
+_STAGE = "/opt/e2er-install"
 _PYTHON = re.compile(r"^3\.\d{1,2}$")
 _PY_PROBE = f"{STUDY_VENV}/bin/python -c 'import sys; print(\"E2ER-PYTHON\", sys.version.split()[0])'"
 
@@ -145,16 +152,28 @@ _SHIM = (
 )
 
 
+#: The unprivileged user pip runs as in the install container (``nobody`` in the Debian-based python images).
+INSTALL_USER = "65534:65534"
+
+
 def install_script(*, wheels: bool, e2er_reqs: list[str]) -> str:
-    """The install container's script: the study's environment, the guard, e2er-data's environment."""
-    offline = f" --no-index --find-links {_WHEELS_MOUNT}" if wheels else ""
+    """The install container's script: the study's environment, the guard, e2er-data's environment.
+
+    Root copies the mounted files into a staging folder and makes the environments' folders, gives them to
+    :data:`INSTALL_USER`, and switches to that user with ``setpriv``; pip, a package's build code and the
+    guard's copy run unprivileged. The staging folder is emptied at the end.
+    """
+    req, guard, wheel_dir = f"{_STAGE}/requirements.txt", f"{_STAGE}/e2er_reproduce_netguard.py", f"{_STAGE}/wheels"
+    offline = f" --no-index --find-links {wheel_dir}" if wheels else ""
     pip = f"{STUDY_VENV}/bin/pip install --no-cache-dir --disable-pip-version-check{offline}"
+    folders = [_STAGE, STUDY_VENV] + ([E2ER_VENV, E2ER_BIN] if e2er_reqs else [])
+    uid, gid = INSTALL_USER.split(":")
     lines = [
         "set -e",
         f"python -m venv {STUDY_VENV}",
-        f"{pip} --only-binary=:all: -r {_REQ_MOUNT} || {{ echo E2ER-SOURCE-BUILD; {pip} -r {_REQ_MOUNT}; }}",
+        f"{pip} --only-binary=:all: -r {req} || {{ echo E2ER-SOURCE-BUILD; {pip} -r {req}; }}",
         f"site=$({STUDY_VENV}/bin/python -c \"import sysconfig; print(sysconfig.get_path('purelib'))\")",
-        f'cp {_GUARD_MOUNT} "$site/e2er_reproduce_netguard.py"',
+        f'cp {guard} "$site/e2er_reproduce_netguard.py"',
         'echo "import e2er_reproduce_netguard" > "$site/e2er_reproduce_netguard.pth"',
     ]
     if e2er_reqs:
@@ -162,17 +181,30 @@ def install_script(*, wheels: bool, e2er_reqs: list[str]) -> str:
         lines += [
             f"python -m venv {E2ER_VENV}",
             f"{E2ER_VENV}/bin/pip install --no-cache-dir --disable-pip-version-check --only-binary=:all: {deps}",
-            f"mkdir -p {E2ER_BIN}",
             f"printf %s {shlex.quote(_SHIM)} > {E2ER_BIN}/e2er-data",
             f"chmod 755 {E2ER_BIN}/e2er-data",
         ]
     lines += [
+        f"rm -rf {_STAGE}/*",
         "echo E2ER-INSTALLED-BEGIN",
         f"{STUDY_VENV}/bin/pip list --format=freeze --disable-pip-version-check",
         "echo E2ER-INSTALLED-END",
         _PY_PROBE,
     ]
-    return "\n".join(lines)
+    unprivileged = "\n".join(lines)
+    root = [
+        "set -e",
+        f"mkdir -p {' '.join(folders)}",
+        f"cp {_REQ_MOUNT} {req}",
+        f"cp {_GUARD_MOUNT} {guard}",
+    ]
+    if wheels:
+        root.append(f"cp -R {_WHEELS_MOUNT} {wheel_dir}")
+    root += [
+        f"chown -R {uid}:{gid} {' '.join(folders)}",
+        f"exec setpriv --reuid={uid} --regid={gid} --clear-groups env HOME=/tmp sh -c {shlex.quote(unprivileged)}",
+    ]
+    return "\n".join(root)
 
 
 def install_argv(
@@ -184,9 +216,11 @@ def install_argv(
         docker, "run", "--name", name,
         f"--cpus={limits.cpus}", f"--memory={limits.memory_gb}g", f"--memory-swap={limits.memory_gb}g",
         f"--pids-limit={limits.pids}", "--security-opt=no-new-privileges",
+        # Root needs only to hand the folders over and switch to the unprivileged user (install_script).
+        "--cap-drop=ALL", "--cap-add=CHOWN", "--cap-add=SETUID", "--cap-add=SETGID", "--cap-add=DAC_READ_SEARCH",
     ]  # fmt: skip
-    if wheels is not None:
-        argv += ["--network", "none"]
+    # Network only to reach PyPI; a package that brings its wheels installs without any.
+    argv += ["--network", "none"] if wheels is not None else _NO_HOST_NAMES
     argv += [
         "--mount", bind_mount(requirements.resolve(), _REQ_MOUNT, readonly=True),
         "--mount", bind_mount(guard.resolve(), _GUARD_MOUNT, readonly=True),
@@ -194,6 +228,15 @@ def install_argv(
     if wheels is not None:
         argv += ["--mount", bind_mount(wheels.resolve(), _WHEELS_MOUNT, readonly=True)]
     return [*argv, base, "sh", "-c", script]
+
+
+#: On Docker Desktop these names reach this computer's own services (the e2er dashboard among them) from a
+#: container on ``bridge``: here they name the container itself.
+_NO_HOST_NAMES = [
+    "--add-host=host.docker.internal:127.0.0.1",
+    "--add-host=gateway.docker.internal:127.0.0.1",
+    "--add-host=metadata.google.internal:127.0.0.1",
+]
 
 
 def _user() -> str:
@@ -209,6 +252,7 @@ def run_argv(box: Box, name: str, run_dir: Path, argv: list[str], env: dict[str,
     out = [
         box.docker, "run", "--rm", "--name", name,
         "--network", "bridge" if network else "none",
+        *(_NO_HOST_NAMES if network else []),
         f"--cpus={lim.cpus}", f"--memory={lim.memory_gb}g", f"--memory-swap={lim.memory_gb}g",
         f"--pids-limit={lim.pids}", "--user", _user(),
         "--cap-drop=ALL", "--security-opt=no-new-privileges", "--read-only",

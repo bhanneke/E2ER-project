@@ -1101,7 +1101,7 @@ def empty_home(run_dir: Path) -> Path:
 REPRODUCE_ENV = "E2ER_REPRODUCE"
 #: Set in the steps that do not load inputs again: e2er-data answers read-only queries only.
 DATA_READ_ONLY_ENV = "E2ER_DATA_READ_ONLY"
-#: ``block`` or ``record``: what the network guard does in a step (see reproduce_netguard.py).
+#: ``block``, ``record`` or ``public``: what the network guard does in a step (see reproduce_netguard.py).
 NETWORK_ENV = "E2ER_REPRODUCE_NETWORK"
 #: Where the guard and e2er-data record what a step tried to reach.
 NETWORK_LOG_ENV = "E2ER_REPRODUCE_NETWORK_LOG"
@@ -1403,7 +1403,10 @@ def run_steps(
         if not web:
             step_environment[DATA_READ_ONLY_ENV] = "1"
             step_environment[NETWORK_ENV] = "record" if allow_network else "block"
-            step_environment[NETWORK_LOG_ENV] = seen_as(net_log)
+        else:
+            # A reload reaches its source on the internet, never this computer or the local network.
+            step_environment[NETWORK_ENV] = "public"
+        step_environment[NETWORK_LOG_ENV] = seen_as(net_log)
         started = time.monotonic()
         code, tail = runner(argv, step_environment, timeout, log, web or allow_network, i)
         results.append(
@@ -1429,7 +1432,12 @@ def blocked_words(step: StepResult) -> str:
     hosts = sorted({str(n["host"]) for n in step.blocked if n.get("host")})
     commands = sorted({str(n["command"]) for n in step.blocked if n.get("command")})
     parts = []
-    if hosts:
+    if hosts and step.reload:
+        parts.append(
+            f"tried to reach {', '.join(hosts[:5])}, which is this computer, the local network or a cloud "
+            "metadata address; a step that loads data again may reach hosts on the internet only"
+        )
+    elif hosts:
         parts.append(
             f"tried to reach the web ({', '.join(hosts[:5])}), which a rerun allows only in the step that loads "
             "the inputs again"
