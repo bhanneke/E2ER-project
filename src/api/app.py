@@ -1289,6 +1289,9 @@ async def _review_context(paper_id: str) -> tuple[dict[str, Any], Path, Any, Any
     row = await fetch_one("SELECT * FROM papers WHERE id = %(id)s", {"id": paper_id})
     if row is None:
         raise HTTPException(status_code=404, detail="paper not found")
+    if not row.get("workspace"):
+        # A row without a folder (a run that never got one): nothing to review, not a server error.
+        raise HTTPException(status_code=404, detail="This study has no folder, so there is no step to review.")
     workspace = Path(row["workspace"])
     state = PipelineState.load(workspace, paper_id, row.get("mode") or "single_pass")
     pending = pending_review(workspace, state)
@@ -3552,8 +3555,11 @@ async def stream_artifact(paper_id: PaperId, path: str) -> FileResponse:
         raise HTTPException(status_code=400, detail="Invalid artifact path")
     target = (workspace / path).resolve()
     try:
-        target.relative_to(workspace.resolve())
+        inside = target.relative_to(workspace.resolve())
     except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid artifact path")
+    # A link with a plain name to a hidden file of the workspace (``notes.txt -> .env``) is hidden too.
+    if any(part.startswith(".") for part in inside.parts):
         raise HTTPException(status_code=400, detail="Invalid artifact path")
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Artifact not found")

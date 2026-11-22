@@ -129,8 +129,16 @@ def _windows_drives() -> list[str]:
 
 
 def _home_drive() -> str:
-    """The home folder's drive letter, upper case with its colon (``"C:"``); empty when it has none."""
-    return (Path.home().drive or os.environ.get("SystemDrive", ""))[:2].upper()
+    """The home folder's drive letter, upper case with its colon (``"C:"``); empty when it has none.
+
+    A home folder on a network share (``\\\\server\\users\\me``) has no drive letter: the drive of
+    Windows itself (``SystemDrive``) then stays closed as the home folder's drive would, since its
+    root opens ``C:\\Windows`` and every other user's folder (review of 2026-11-21).
+    """
+    drive = Path.home().drive
+    if len(drive) == 2 and drive[1] == ":":
+        return drive.upper()
+    return os.environ.get("SystemDrive", "C:")[:2].upper()
 
 
 def drive_roots() -> list[Path]:
@@ -166,12 +174,46 @@ def _inside(path: Path, roots: list[Path]) -> bool:
     return any(path == r or r in path.parents for r in roots)
 
 
+#: Folders of backups and snapshots the browser never shows or opens (Time Machine, APFS and btrfs snapshots).
+_SNAPSHOT_NAMES = frozenset(
+    {".timemachine", "Backups.backupdb", ".MobileBackups", ".snapshots", "@snapshots", "timeshift"}
+)
+
+
+def _is_snapshot(name: str) -> bool:
+    low = name.lower()
+    return (
+        name in _SNAPSHOT_NAMES
+        or low.startswith(("com.apple.timemachine", "timemachine"))
+        or low.endswith((".backupdb", ".backupbundle", ".sparsebundle"))
+    )
+
+
+def _hidden_below_root(path: Path, roots: list[Path]) -> bool:
+    """Does ``path`` pass through a hidden or snapshot folder below the root it is in (a link may lead there)?"""
+    for r in roots:
+        if path == r or r in path.parents:
+            return any(p.startswith(".") or _is_snapshot(p) for p in path.relative_to(r).parts)
+    return False
+
+
+def _time_machine_volume(path: Path) -> bool:
+    """A disk Time Machine backs up to (it holds ``Backups.backupdb``), or a snapshot mounted under /Volumes."""
+    try:
+        return (path / "Backups.backupdb").exists() or (path / ".timemachine").exists()
+    except OSError:
+        return False
+
+
 def safe_resolve(raw: str | None) -> Path:
-    """The real path of what was asked for, if it is inside an allowed root; else 403."""
+    """The real path of what was asked for, if it is inside an allowed root and names no hidden or snapshot
+    folder (``~/.ssh``, ``/Volumes/.timemachine``); else 403."""
     roots = allowed_roots()
     s = clean_path_input(raw) if raw else ""
+    if s and any(part.startswith(".") or _is_snapshot(part) for part in Path(s).parts if part not in (".", "..")):
+        raise HTTPException(status_code=403, detail="e2er does not open hidden folders or backups.")
     target = Path(os.path.realpath(s)) if s else roots[0]
-    if not _inside(target, roots):
+    if not _inside(target, roots) or _hidden_below_root(target, roots):
         raise HTTPException(
             status_code=403,
             detail="e2er does not open this folder. Choose a folder in your home folder or on one of this "
@@ -192,8 +234,9 @@ def list_folder(path: Path, kind: str) -> dict[str, Any]:
         entries = list(os.scandir(path))
     except PermissionError as e:
         raise HTTPException(status_code=403, detail="macOS did not allow e2er to read this folder.") from e
+    on_a_drive_root = path in drive_roots()
     for entry in entries:
-        if entry.name.startswith("."):
+        if entry.name.startswith(".") or _is_snapshot(entry.name):
             continue
         full = Path(entry.path)
         try:
@@ -204,6 +247,8 @@ def list_folder(path: Path, kind: str) -> dict[str, Any]:
             is_dir = entry.is_dir()
         except OSError:
             continue
+        if is_dir and on_a_drive_root and _time_machine_volume(full):
+            continue  # a backup disk is not where a study's files are
         if is_dir:
             dirs.append({"name": entry.name, "path": str(full)})
         elif Path(entry.name).suffix.lower() in exts:
