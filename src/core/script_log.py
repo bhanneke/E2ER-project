@@ -45,7 +45,7 @@ LINE_FORM = "e2er-script-run/2"
 #
 # The log lives in the workspace, and the model can write the workspace. Up to 0.21.0 one line
 # the model wrote without ``outputs`` made every results file "predate output records", and the
-# results-from-code contract accepted numbers typed by hand (review of 2026-11-21). Since 0.21.1
+# results-from-code contract accepted numbers typed by hand (review of 2026-11-21). Since 0.22
 # e2er signs each line it writes with a key the model cannot read (``~/.e2er``: Claude Code's
 # specialists may not read it, and scripts run by ``e2er-run`` and by the runner run in a sandbox
 # that denies it, child_env.py), and it records, in its own state folder, how many unsigned lines

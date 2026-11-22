@@ -11,7 +11,7 @@ What this does and does not hold. Claude Code's own file tools may not read or w
 (``--disallowedTools``), and no backend gets the key in its environment. That alone did not keep
 the key from the model: up to 0.21.0 a script it ran with ``e2er-run`` could open any file of the
 user's, the key and the dashboard's session token included, and with the token it could call the
-dashboard's approve endpoint, which then wrote this seal (review of 2026-11-21). Since 0.21.1:
+dashboard's approve endpoint, which then wrote this seal (review of 2026-11-21). Since 0.22:
 
 - scripts started by ``e2er-run``, by the runner and by the meta-analysis run in the operating
   system's sandbox, which denies ``~/.e2er`` (``core/script_sandbox.py``; without a sandbox e2er

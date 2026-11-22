@@ -94,7 +94,7 @@ dashboard's port. macOS uses `sandbox-exec`; Linux uses bubblewrap
 unprivileged user namespaces, see "Codex on Linux and Windows" below). Without a
 sandbox (Windows, or Linux without bubblewrap) e2er says so and does not run the
 script; `SCRIPT_SANDBOX=off` in the settings runs such scripts without one, as
-before 0.21.1. Inside Codex's or Gemini's own sandbox a second one cannot start;
+before 0.22. Inside Codex's or Gemini's own sandbox a second one cannot start;
 there the CLI's sandbox applies.
 
 **Approving a production data query** takes the browser that `e2er` opened when

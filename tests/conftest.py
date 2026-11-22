@@ -72,7 +72,7 @@ os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
 
 def _scripts_run_unsandboxed_where_no_sandbox_is() -> None:
     """On a machine without a sandbox for AI-written scripts (Windows, Linux without bubblewrap or user
-    namespaces: the CI runners) the suite runs them as before 0.21.1 (``SCRIPT_SANDBOX=off``); where one
+    namespaces: the CI runners) the suite runs them as before 0.22 (``SCRIPT_SANDBOX=off``); where one
     exists (macOS) every script of the suite runs in it. tests/test_script_sandbox.py covers both."""
     if os.environ.get("SCRIPT_SANDBOX"):
         return
