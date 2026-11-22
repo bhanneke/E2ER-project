@@ -75,6 +75,7 @@ _CAST_RE = re.compile(
     r"|int|integer|bigint|smallint|float|float8|float4|double|numeric|decimal|real|boolean|bool)"
 )
 _NOW_RE = re.compile(r"\bNOW\(\)")
+_ILIKE_RE = re.compile(r"\bILIKE\b", re.IGNORECASE)
 
 
 def _translate_to_sqlite(sql: str) -> str:
@@ -86,10 +87,14 @@ def _translate_to_sqlite(sql: str) -> str:
     - ``NOW()`` → ``CURRENT_TIMESTAMP`` so timestamp defaults in UPDATEs
       work on both backends. Pre-v0.4 we missed this and silent UPDATEs
       on SQLite left ``papers.status`` stuck at 'idea'.
+    - ``ILIKE`` → ``LIKE``: SQLite has no ILIKE, and its LIKE already ignores the case of
+      ASCII letters. Until 0.21 the feasibility-first guardrail's ILIKE crashed every
+      production data query on the default SQLite database.
     """
     sql = _PARAM_RE.sub(r":\1", sql)
     sql = _CAST_RE.sub("", sql)
     sql = _NOW_RE.sub("CURRENT_TIMESTAMP", sql)
+    sql = _ILIKE_RE.sub("LIKE", sql)
     return sql
 
 

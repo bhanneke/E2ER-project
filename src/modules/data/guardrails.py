@@ -114,10 +114,11 @@ class QueryValidator:
             WHERE paper_id = %(pid)s
               AND query_type = 'feasibility'
               AND validation_status = 'approved'
-              AND query_sql ILIKE %(table_pattern)s
+              AND LOWER(query_sql) LIKE %(table_pattern)s
             LIMIT 1
             """,
-            {"pid": paper_id, "table_pattern": f"%{table}%"},
+            # LOWER … LIKE, not ILIKE: the same match on Postgres and on SQLite, which has no ILIKE.
+            {"pid": paper_id, "table_pattern": f"%{table.lower()}%"},
         )
         if not row:
             # Inside a specialist's call the feasibility query of a moment ago may still sit in the
