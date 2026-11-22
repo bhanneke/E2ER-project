@@ -64,17 +64,38 @@ def _decimals(text: str) -> int:
     return len(token.split(".", 1)[1]) if "." in token else 0
 
 
+def _places(text: str) -> int:
+    """The decimal place of the last printed digit of the first number in ``text``, as a power of ten.
+
+    ``'0.012'`` -> 3; e-notation counts from the exponent, so ``'1.23e-15'`` -> 17 and ``'4.5e+05'`` -> -4:
+    a number printed in e-notation is compared by its significant digits (relative to its size), never
+    at a fixed number of decimals that a very small number (a p-value) would pass by being small.
+    """
+    m = _NUM.search(text.replace("−", "-").replace(",", ""))
+    if not m:
+        return 0
+    token = m.group(0).lower()
+    mantissa, _, exponent = token.partition("e")
+    places = len(mantissa.split(".", 1)[1]) if "." in mantissa else 0
+    return places - int(exponent) if exponent else places
+
+
 def _claimed_decimals(value: Any, printed: Any = None) -> int:
+    """The decimal place a number was given to: from its printed form, else from its shortest repr
+    (``repr(1.2345e-15)`` -> 19, the place of its last significant digit)."""
     if isinstance(printed, str) and printed.strip():
-        return _decimals(printed)
-    text = repr(float(value))
-    if "e" in text or "E" in text:
-        return 12
+        return _places(printed)
+    text = repr(float(value)).lower()
+    if "e" in text:
+        return _places(text)
     return len(text.split(".", 1)[1].rstrip("0")) if "." in text else 0
 
 
 def _equal_at(a: float, b: float, decimals: int) -> bool:
-    return abs(a - b) <= 0.5 * 10 ** (-decimals) + _EPS * max(1.0, abs(b))
+    """``a`` rounds to ``b`` given to ``decimals`` places (half a unit of the last digit), with only a
+    relative allowance for floating-point noise: no absolute floor, which would make any two very small
+    numbers (1.2345e-15 and 9.9e-14) "the same"."""
+    return abs(a - b) <= 0.5 * 10 ** (-decimals) + _EPS * abs(b)
 
 
 def _to_float(text: Any) -> float | None:
@@ -334,7 +355,7 @@ def evaluate(
             decimals = _claimed_decimals(claimed, comp.get("reproduced_printed"))
             if not _equal_at(value, float(claimed), decimals):
                 reasons.append(f"{cw}: the output holds {value}, not the claimed {claimed}")
-            dp = _decimals(str(target.get("reported") or ""))
+            dp = _places(str(target.get("reported") or ""))
             lab = label_for(value, published, dp, minor_rel_tolerance, target_level=tier)
             diff = lab["abs_diff"]
             result_expected.append(lab["label"])

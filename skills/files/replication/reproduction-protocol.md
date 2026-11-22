@@ -68,7 +68,7 @@ Let *t* be the target, *r* the rerun value, and the relative difference
 
 | Label | Rule for one number |
 |---|---|
-| `reproduced` | Level 2 (a printed number): *r* rounded to the printed decimals is the printed value. Level 1 (a full-precision cell of a shipped file): relative difference at most 1e-9 (absolute 1e-12 when *t* is zero). |
+| `reproduced` | Level 2 (a printed number): *r* rounded to the printed decimals is the printed value (a number printed in e-notation, such as p = 1.2e-15, to its printed significant digits). Level 1 (a full-precision cell of a shipped file): relative difference at most 1e-9 (absolute 1e-12 when *t* is zero). |
 | `reproduced_minor` | Not `reproduced`, same sign, and relative difference at most 10 % (the template's `minor_rel_tolerance`). |
 | `not_reproduced` | Relative difference above 10 %, or the sign changes, or *t* is zero and *r* is not. |
 | `could_not_run` | No number: the code that produces it failed, timed out, needed network access or data the package does not include, or wrote no output that holds it. |

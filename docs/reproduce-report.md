@@ -28,6 +28,13 @@ says since when it is there.
 `published`, `produced`, `values`, `counts` (`identical`, `same_at_precision`, `small_difference`,
 `differs`, `missing_in_rerun`, `only_in_rerun`), `matches`, `problem`, `largest_differences`.
 
+A value is `same_at_precision` when the published number was stored rounded (four or more significant
+digits, never a whole number) and the rerun's value rounds to it: within half a unit of its last digit.
+A number in e-notation (a p-value such as `4.5678e-12`) is compared by its significant digits, so the
+rerun must give 4.5678e-12 to five digits; 0.0 or 9.9e-14 against 1.2345e-15 differ. Until 0.21 a number
+in e-notation counted to 12 decimals, plus an absolute allowance of 1e-9, so any two very small numbers
+counted as the same.
+
 Since 0.21 a result file that the folder does not ship (a package leaves it out under a source's terms, as
 `results/figure_spec.json` of a study on Yahoo Finance data) is listed with `"not_compared": true`,
 `"left_out": "left out under Yahoo Finance's terms (rebuilt by code/scratch/build_panel.py)"` and the same
