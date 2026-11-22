@@ -400,7 +400,7 @@ def test_an_edited_record_of_the_manifest_is_refused(tmp_path, offline_lock):
     old = _rewrite(packed.path, tmp_path / "old.e2er", replace={pkg.MANIFEST: json.dumps(manifest).encode()})
     opened = pkg.open_package(old, tmp_path / "o")
     assert not pkg.covers_manifest(opened.manifest)
-    assert "the list of files only (older format)" in pkg.summary(opened.manifest)
+    assert "covers the list of files only, older format" in pkg.summary(opened.manifest)
 
 
 # ── unsafe archives ─────────────────────────────────────────────────────────

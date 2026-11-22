@@ -1623,8 +1623,8 @@ def summary(manifest: dict[str, Any], size: int | None = None) -> str:
     total = sum(int(c.get("bytes") or 0) for c in contents)
     size_words = f"{human_size(size)} packed, " if size is not None else ""
     lines.append(f"Size: {size_words}{human_size(total)} unpacked, {len(contents)} file(s)")
-    form = "the whole manifest" if covers_manifest(manifest) else "the list of files only (older format)"
-    lines.append(f"Fingerprint: {manifest.get('fingerprint')} (covers {form})")
+    form = "covers the whole manifest" if covers_manifest(manifest) else "covers the list of files only, older format"
+    lines.append(f"Fingerprint: {manifest.get('fingerprint')} ({form})")
     for n in manifest.get("notes") or []:
         lines.append(f"Note: {n}")
     from ..safe_text import printable
