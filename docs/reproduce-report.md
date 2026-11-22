@@ -134,8 +134,14 @@ of the description's `verification` list (`e2er.json` and the request to e2er.or
                              "differs": 0, "missing_in_rerun": 0, "only_in_rerun": 0, "result_files": 1,
                              "result_files_not_compared": 0, "tables": 3, "tables_identical": 3,
                              "inputs": 2, "inputs_identical": 0, "inputs_reloaded": 2},
-                  "seconds": 252.2, "reload_seconds": 247.4, "reloaded_sources": ["ESA Gaia Archive"]}}
+                  "seconds": 252.2, "reload_seconds": 247.4, "reloaded_sources": ["ESA Gaia Archive"],
+                  "content_id": "sha256:…", "package_fingerprint": "sha256:…"}}
 ```
+
+`content_id` names the folder the run reproduced: the SHA-256 of its provenance.json, which lists every file's
+SHA-256 (publish then changes only what it records as amendments, such as the stamp on the paper).
+`package_fingerprint` is the fingerprint of the study package published with it (`--github`, `--zenodo`), when
+there is one.
 
 `seconds` is how long the rerun's steps took together, `reload_seconds` how long the steps that loaded data
 again took, and `reloaded_sources` the sources they loaded from (from the report's `steps` and `sources`;

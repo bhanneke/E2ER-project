@@ -263,6 +263,21 @@ def _integrity_first(root: Path, recipe: dict[str, Any]) -> tuple[str | None, st
     return None, None
 
 
+def _stopped(report: dict[str, Any] | None, kind: str, message: str) -> int:
+    """The run stopped before it could say anything about the study's results: exit code 2.
+
+    For `e2er publish` (``report`` given) the cause goes into the report as ``stopped`` (``kind``:
+    ``edited``, the folder is not the study as exported; ``recipe``, its reproduce.json cannot be run;
+    ``could_not_run``, the environment could not be made), and publish prints it as the reason; else it is
+    printed here. Publish then says this cause alone, never that the study does not reproduce.
+    """
+    if report is not None:
+        report["stopped"] = {"kind": kind, "why": message.removeprefix("error: ")}
+    else:
+        print(message)
+    return 2
+
+
 def _inputs_only(recipe: dict[str, Any], inputs: list[dict[str, Any]]) -> str:
     """The inputs section alone, for a run that stopped before its steps."""
     text = render(Path(""), {**recipe, "steps": []}, None, [], inputs, [], None, "")
@@ -394,8 +409,7 @@ def _reproduce_folder(
     try:
         recipe = rp.load_recipe(root, rebuild=rebuild, left_out=pkg.left_out_reasons(root))
     except rp.RecipeError as e:
-        print(f"error: {printable(e)}")
-        return 2
+        return _stopped(report, "recipe", f"error: {printable(e)}")
     legacy = rp.mark_legacy_reloads(root, recipe)
     if legacy:
         recipe.setdefault("notes", []).append(
@@ -404,8 +418,7 @@ def _reproduce_folder(
         )
     qualifier, refused = _integrity_first(root, recipe)
     if refused:
-        print(refused)
-        return 2
+        return _stopped(report, "edited", refused)
     # A left-out output the step only updates (figure_spec.json, produced by the figure step): not compared.
     from .core.derived_data import not_produced_by_step
 
@@ -444,8 +457,7 @@ def _reproduce_folder(
     try:
         rp.check_foreign(root, recipe)
     except rp.RecipeError as e:
-        print(f"error: {printable(e)}")
-        return 2
+        return _stopped(report, "recipe", f"error: {printable(e)}")
 
     # Where the steps run: the Docker sandbox when it answers; on this computer only with --no-sandbox.
     from .core import reproduce_sandbox as rs
@@ -560,10 +572,12 @@ def _run_in(
                 allow_reload=allow_reload,
             )
     except rp.RecipeError as e:
-        print(f"error: {printable(e)}")
+        message = f"error: {printable(e)}"
+        if report is None:
+            print(message)
         inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [], absent)
         print(_inputs_only(recipe, inputs), end="")
-        return 2
+        return _stopped(report, "could_not_run", message) if report is not None else 2
     # The inputs are compared also when a step failed: the reader sees what the rerun had.
     inputs = rp.compare_inputs(run_dir, recipe.get("inputs") or [], absent)
     ran = bool(steps) and not any(s.exit_code for s in steps)
