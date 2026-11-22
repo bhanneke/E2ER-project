@@ -20,7 +20,10 @@ from src.api.app import app
 
 @pytest.fixture(scope="module")
 def client() -> TestClient:
-    return TestClient(app)
+    # The pages need the session too (review of 2026-11-21); module scope: made before the autouse patch.
+    from .conftest import TEST_SESSION_TOKEN
+
+    return TestClient(app, headers={"x-e2er-token": TEST_SESSION_TOKEN})
 
 
 def test_workflow_page_renders(client: TestClient):

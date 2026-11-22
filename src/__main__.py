@@ -208,7 +208,7 @@ def main() -> None:
     )
     run_p.add_argument(
         "--max-cost",
-        type=float,
+        type=_cost_cap,
         default=5.0,
         help="Per-paper USD cost cap (default $5). $0 on the Claude Code / Codex CLI backends. The Gemini "
         "backend (not tested) is also recorded as $0, while Google bills its API key.",
@@ -291,7 +291,7 @@ def main() -> None:
     )
     matrix_p.add_argument("--mode", choices=["single_pass", "iterative"], default="single_pass")
     matrix_p.add_argument("--governance", choices=["off", "contracts", "full"], default=None)
-    matrix_p.add_argument("--max-cost", type=float, default=5.0, help="Per-paper cost cap (default $5).")
+    matrix_p.add_argument("--max-cost", type=_cost_cap, default=5.0, help="Per-paper cost cap (default $5).")
     matrix_p.add_argument(
         "--out", default=None, help="Output dir for bundles + matrix.json (default: ./matrix-<slug>/)."
     )
@@ -373,7 +373,7 @@ def main() -> None:
     )
     resume_p.add_argument(
         "--max-cost",
-        type=float,
+        type=_cost_cap,
         default=None,
         help="Raise the per-paper cost cap atomically with the resume (common after BudgetExceededError).",
     )
@@ -1546,6 +1546,20 @@ def _interactive() -> bool:
         return sys.stdout.isatty() and sys.stdin.isatty()
     except (AttributeError, ValueError):
         return False
+
+
+def _cost_cap(text: str) -> float:
+    """``--max-cost``: a positive, finite number of dollars (NaN or inf would switch the cap off)."""
+    import argparse
+    import math
+
+    try:
+        value = float(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a number of dollars: {text!r}") from None
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"must be a positive number of dollars, such as 5 (got {text!r})")
+    return value
 
 
 def _launch_url(host: str, port: int, token: str | None, approver: str | None = None) -> str:

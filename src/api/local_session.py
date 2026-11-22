@@ -165,13 +165,50 @@ def bearer_ok(request: Request) -> bool | None:
 
 #: ``/api/`` paths that answer without the session (none today; /health is outside /api/).
 OPEN_API_PATHS: frozenset[str] = frozenset()
+#: The page that says how to open the dashboard signed in; it, ``/health`` and ``/static/`` need no session.
+SIGNED_OUT_PATH = "/signed-out"
+OPEN_PAGE_PATHS = frozenset({"/health", SIGNED_OUT_PATH, "/favicon.ico"})
+SIGNED_OUT_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2er: start e2er</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;
+color:#222;background:#fff} code{background:#f2f2f2;padding:.1rem .3rem;border-radius:3px}</style></head>
+<body><h1>Start e2er</h1>
+<p>This browser tab is not signed in to e2er. Open a terminal and run <code>e2er</code>: it opens the dashboard
+signed in. If e2er is already running, running <code>e2er</code> again opens it signed in.</p></body></html>
+"""
+
+
+def _launch_token_ok(request: Request) -> bool:
+    """A GET that carries this server's token in the launch address (``?t=…``), which the dashboard trades."""
+    t = request.query_params.get(QUERY)
+    return request.method == "GET" and bool(t) and secrets.compare_digest(str(t), session_token())
 
 
 def guard_request(request: Request) -> tuple[int, str] | None:
-    """The checks every request passes: a known Host, and the session on ``/api/``. None = pass."""
+    """The checks every request passes: a known Host, and the session on ``/api/`` and on every page.
+
+    None = pass. A page without the session answers 303 to :data:`SIGNED_OUT_PATH` (status 303, the
+    detail is the address): up to 0.21.0 the pages showed the studies, their files and the settings
+    page to anything on this computer that asked (review of 2026-11-21).
+    """
     if not host_allowed(request):
         return 400, "Invalid Host header: e2er answers at 127.0.0.1 or localhost (or a host set with --host)."
     path = request.url.path
+    if (
+        not path.startswith(("/api/", "/static/"))
+        and path not in OPEN_PAGE_PATHS
+        and request.method != "OPTIONS"
+        and not _launch_token_ok(request)
+        and bearer_ok(request) is not True
+        and not has_session(request)
+    ):
+        if request.method in ("GET", "HEAD"):
+            return 303, SIGNED_OUT_PATH
+        return (
+            403,
+            "This browser tab is not signed in to e2er. Run `e2er` in a terminal: it opens the dashboard signed in.",
+        )
     if path.startswith("/api/") and path not in OPEN_API_PATHS and request.method != "OPTIONS":
         bearer = bearer_ok(request)
         if bearer is False:

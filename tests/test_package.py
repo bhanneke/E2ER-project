@@ -691,10 +691,10 @@ def test_the_finish_page_offers_the_package_for_download(live_db, session, offli
         )
     )
     c = TestClient(app, base_url=BASE, client=("127.0.0.1", 5))
+    assert c.post(f"/api/papers/{pid}/package").status_code == 403, "needs the session"
+    c.cookies.set("e2er_session_8290", TOKEN)  # the page needs the session too (review of 2026-11-21)
     page = c.get(f"/papers/{pid}/finish").text
     assert "Download package (.e2er)" in page
-    assert c.post(f"/api/papers/{pid}/package").status_code == 403, "needs the session"
-    c.cookies.set("e2er_session_8290", TOKEN)
     assert c.get(f"/api/papers/{pid}/package").status_code == 404, "not written yet"
     d = c.post(f"/api/papers/{pid}/package").json()
     assert d["name"] == f"{bundle.name}.e2er" and d["fingerprint"].startswith("sha256:")

@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 
 #: Setting names that hold a key or secret: their values are stripped of surrounding whitespace.
@@ -289,7 +289,7 @@ class Settings(BaseSettings):
     max_review_rounds: int = 3
     weak_accept_threshold: float = 7.0
     max_revision_iterations: int = 3
-    default_max_cost_usd: float = 25.0  # fallback per-paper cost cap
+    default_max_cost_usd: float = Field(default=25.0, gt=0, allow_inf_nan=False)  # fallback per-paper cost cap
     # Per-API-call output cap. Must be large enough for ONE specialist's
     # `write_file` tool argument (the JSON / LaTeX / markdown content).
     # 16384 was too low: data_architect / paper_drafter writing

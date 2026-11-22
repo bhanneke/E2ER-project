@@ -700,11 +700,14 @@ def test_the_finish_page_verifies_the_export(live_db, session, monkeypatch):
         )
     )
     c = TestClient(app, base_url=BASE, client=("127.0.0.1", 5))
-    page = c.get(f"/papers/{pid}/finish").text
-    assert str(bundle) in page and "Publish to e2er.org" in page
+    signed_out = c.get(f"/papers/{pid}/finish", follow_redirects=False)  # the page needs the session too
+    assert signed_out.status_code == 303 and signed_out.headers["location"] == "/signed-out"
+    assert str(bundle) not in c.get(f"/papers/{pid}/finish").text
 
     assert c.post(f"/api/papers/{pid}/verify").status_code == 403, "needs the session"
     c.cookies.set("e2er_session_8290", TOKEN)
+    page = c.get(f"/papers/{pid}/finish").text
+    assert str(bundle) in page and "Publish to e2er.org" in page
     d = c.post(f"/api/papers/{pid}/verify").json()
     assert [x["name"] for x in d["checks"]][:6] == ["integrity", "anchor", "numbers", "tables", "spec", "citations"]
     assert d["verified"] is True, d

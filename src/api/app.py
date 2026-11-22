@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import io
 import json
+import math
 import mimetypes
 import secrets
 import tarfile
@@ -261,9 +262,6 @@ def _error_response(request: Request, status_code: int, detail: Any) -> Any:
 from fastapi.exception_handlers import (  # noqa: E402
     http_exception_handler as _default_http_handler,
 )
-from fastapi.exception_handlers import (  # noqa: E402
-    request_validation_exception_handler as _default_validation_handler,
-)
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 from starlette.exceptions import HTTPException as _StarletteHTTPException  # noqa: E402
 
@@ -279,7 +277,19 @@ async def _http_error(request: Request, exc: _StarletteHTTPException) -> Any:
 async def _validation_error(request: Request, exc: RequestValidationError) -> Any:
     if _wants_page(request):
         return _error_response(request, 422, "Some of the form was missing or not readable. Go back and try again.")
-    return await _default_validation_handler(request, exc)
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+
+    def _plain(v: Any) -> Any:  # NaN and infinity are not JSON: the default handler failed on them with a 500
+        if isinstance(v, float) and not math.isfinite(v):
+            return str(v)
+        if isinstance(v, dict):
+            return {k: _plain(x) for k, x in v.items()}
+        if isinstance(v, list | tuple):
+            return [_plain(x) for x in v]
+        return v
+
+    return JSONResponse({"detail": _plain(jsonable_encoder(exc.errors()))}, status_code=422)
 
 
 @app.exception_handler(Exception)
@@ -384,6 +394,10 @@ async def _host_and_session_guard(request: Request, call_next):
         status, detail = problem
         if status == 400:
             return PlainTextResponse(detail, status_code=400)
+        if status == 303:
+            return RedirectResponse(url=detail, status_code=303)
+        if not request.url.path.startswith("/api/"):  # a page's form: the page that says what to do
+            return HTMLResponse(ls.SIGNED_OUT_PAGE, status_code=status)
         return JSONResponse({"detail": detail}, status_code=status)
     return await call_next(request)
 
@@ -854,7 +868,9 @@ class CreatePaperRequest(BaseModel):
     # checkpoints (unattended, current behaviour). Validated against the real
     # stage names (PIPELINE_STAGES).
     review_stages: list[str] = []
-    max_cost_usd: float | None = None  # falls back to settings.default_max_cost_usd
+    # Falls back to settings.default_max_cost_usd. A positive, finite number: NaN or infinity never
+    # trips the budget check (review of 2026-11-21).
+    max_cost_usd: float | None = Field(default=None, gt=0, allow_inf_nan=False)
     # First-run guardrail: when no paper at the current (model, methodology, mode)
     # tuple has ever reached `completed`, the cap is forced to $1.00 unless the
     # requester explicitly acknowledges. Defaults to False so the cheap path
@@ -889,7 +905,7 @@ class ResumeRequest(BaseModel):
     the runner so the new cap is what the budget check reads.
     """
 
-    max_cost_usd: float | None = None
+    max_cost_usd: float | None = Field(default=None, allow_inf_nan=False)  # 0 and below: 400 in resume_paper
 
 
 class PaperResponse(BaseModel):
@@ -2016,6 +2032,14 @@ async def get_usage_summary() -> dict[str, Any]:
 # --- Health ---
 
 
+@app.get("/signed-out", response_class=HTMLResponse)
+async def signed_out_page() -> HTMLResponse:
+    """Where a page without the session sends the browser: how to open the dashboard signed in."""
+    from . import local_session as ls
+
+    return HTMLResponse(ls.SIGNED_OUT_PAGE, status_code=401)
+
+
 @app.get("/health")
 async def health():
     """Health plus the identity of THIS process — the authoritative answer to
@@ -2610,6 +2634,8 @@ async def submit_new_paper(
 
     if not rq:
         return refuse("Write the research question first.")
+    if max_cost_usd is not None and not (math.isfinite(max_cost_usd) and max_cost_usd > 0):
+        return refuse("The cost limit must be a positive number of dollars, such as 5.")
     form = await request.form()
     folder = new_upload_folder()
     try:
