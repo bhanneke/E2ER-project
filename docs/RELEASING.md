@@ -49,11 +49,38 @@ git checkout main && git merge --ff-only dev   # or the release PR dev → main
 git tag v0.18.0 && git push origin main v0.18.0
 ```
 
-The tag starts the release workflow: version check (`scripts/release.py --check --tag`), tests,
-build, GitHub release (notes from the CHANGELOG section whose heading starts with `## [X.Y.Z]`,
-matched literally), PyPI (trusted publishing), and the release
-facts below. Do not create the GitHub release by hand; a run that failed after the release was
-created is re-run with `gh run rerun <id>` (every job is idempotent).
+The tag starts the release workflow:
+
+1. **Tag on main.** The first job refuses a tag whose commit is not on `main`
+   (`git merge-base --is-ancestor "$GITHUB_SHA" origin/main`): tag `main` after the merge, never
+   `dev` or a feature branch.
+2. **Version check** (`scripts/release.py --check --tag`).
+3. **Tests** in four parts (section 4) and the release facts (section 3).
+4. **Build**, then **install test**: the job `check-wheel` installs the built wheel into a fresh
+   virtualenv outside the checkout and runs `scripts/check_wheel.sh` on it, the same check as the
+   `package` job of `tests.yml`. A wheel that cannot start a study is never released.
+5. **GitHub release** (notes from the CHANGELOG section whose heading starts with `## [X.Y.Z]`,
+   matched literally), with the wheel, the sdist and `release-facts.json`.
+6. **PyPI** (trusted publishing, in the GitHub environment `pypi`, which waits for the required
+   reviewer's approval: section 6).
+7. **PyPI check**: `scripts/release_pypi_check.py` compares PyPI's SHA-256 of every file with the
+   run's `dist/` and fails on any difference or on a file that only one side has.
+
+Do not create the GitHub release by hand; a run that failed after the release was created is
+re-run with `gh run rerun <id>` (every job is idempotent).
+
+When the PyPI check fails, PyPI and the GitHub release hold different builds of the same version:
+a re-run built the files again and uploaded them to the GitHub release (`--clobber`), while PyPI
+kept the first ones (`skip-existing`; PyPI never replaces a file). Users install PyPI's files, so
+put those on the GitHub release:
+
+```bash
+mkdir -p /tmp/pypi-files && cd /tmp/pypi-files
+curl -s https://pypi.org/pypi/e2er/X.Y.Z/json \
+  | python3 -c 'import json, sys; print("\n".join(u["url"] for u in json.load(sys.stdin)["urls"]))' \
+  | xargs -n 1 curl -sSLO
+gh release upload vX.Y.Z e2er-X.Y.Z* --repo bhanneke/E2ER-project --clobber
+```
 
 ## 3. The release facts: `release-facts.json`
 
@@ -142,6 +169,8 @@ Every workflow in `.github/workflows/` (CI and release alike):
 - declares `permissions: contents: read` at the top; a job that writes says so itself
   (`release` and `zenodo-doi`: `contents: write`; `publish`: `id-token: write` for PyPI's OIDC;
   `schema-drift`: `issues: write`);
+- passes values that come from outside the script (step outputs, inputs, issue text) to a `run:`
+  script only through `env:`, never as `${{ … }}` inside the script;
 - names every action by a full commit SHA, with its version in a comment
   (`actions/checkout@11d5960a… # v4.4.0`), and checks out with `persist-credentials: false`;
 - installs from hash-pinned files: `.github/requirements/ci.txt` (the `dev` extra plus the
@@ -176,3 +205,66 @@ and replace both the SHA and the comment:
 gh api repos/actions/checkout/git/ref/tags/v4.4.0 --jq '.object.type + " " + .object.sha'
 gh api repos/<owner>/<repo>/git/tags/<sha-of-the-tag-object> --jq .object.sha   # when the type is "tag"
 ```
+
+## 6. Who can publish: the GitHub settings
+
+The workflow alone cannot stop a release: anyone who may push to the repository can push a `v*`
+tag, and the tag-on-main check only proves that the tagged commit is on `main`. Three settings of
+the repository close that; none of them lives in the code:
+
+| Setting | Value | What it does |
+| --- | --- | --- |
+| Environment `pypi`: required reviewers | `bhanneke` | the `publish` job waits until he approves the run (Actions → the run → Review deployments) |
+| Environment `pypi`: deployment branches and tags | selected branches and tags, one rule: tag `v*` | only a run started by a `v*` tag can deploy to `pypi`; a branch push or a `workflow_dispatch` run never gets PyPI's token |
+| Ruleset `release tags` (target tags, `refs/tags/v*`) | restrict creations, updates and deletions; bypass: repository admin | only an admin creates a `v*` tag, and nobody moves or deletes one |
+
+PyPI's trusted publisher names the environment `pypi` (the one-time setup in the header of
+`release.yml`), so PyPI accepts a token only from a job in that environment, and with these settings
+only after the approval. The environment's "Allow administrators to bypass configured protection
+rules" is on (as of 2026-11-22); turn it off on the environment page if every release, also one an
+admin starts, must wait for the approval.
+
+The settings as `gh api` calls (`99802553` is the user id of `bhanneke`,
+`gh api users/bhanneke --jq .id`):
+
+```bash
+# 1. The required reviewer, and deployments only from the refs that the policy of step 2 names.
+gh api -X PUT repos/bhanneke/E2ER-project/environments/pypi --input - <<'EOF'
+{
+  "wait_timer": 0,
+  "prevent_self_review": false,
+  "reviewers": [{"type": "User", "id": 99802553}],
+  "deployment_branch_policy": {"protected_branches": false, "custom_branch_policies": true}
+}
+EOF
+
+# 2. The policy: tags v* only.
+gh api -X POST repos/bhanneke/E2ER-project/environments/pypi/deployment-branch-policies \
+  -f name='v*' -f type=tag
+
+# 3. The tag ruleset: only a repository admin (role id 5) creates, moves or deletes a v* tag.
+gh api -X POST repos/bhanneke/E2ER-project/rulesets --input - <<'EOF'
+{
+  "name": "release tags",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": {"ref_name": {"include": ["refs/tags/v*"], "exclude": []}},
+  "rules": [{"type": "creation"}, {"type": "update"}, {"type": "deletion"}, {"type": "non_fast_forward"}],
+  "bypass_actors": [{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}]
+}
+EOF
+```
+
+`prevent_self_review` stays `false`: with one maintainer, the person who pushes the tag is the one
+who approves. To check the settings:
+
+```bash
+gh api repos/bhanneke/E2ER-project/environments/pypi \
+  --jq '{rules: [.protection_rules[].type], policy: .deployment_branch_policy}'
+gh api repos/bhanneke/E2ER-project/environments/pypi/deployment-branch-policies \
+  --jq '.branch_policies[] | {name, type}'
+gh api repos/bhanneke/E2ER-project/rulesets --jq '.[] | {id, name, target, enforcement}'
+```
+
+The first lists `required_reviewers` and `branch_policy` with `custom_branch_policies: true`, the
+second `{"name": "v*", "type": "tag"}`, the third the ruleset `release tags`.
