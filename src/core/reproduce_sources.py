@@ -279,22 +279,60 @@ def _names(items: list[dict[str, Any]]) -> str:
     return "; ".join(seen)
 
 
-#: What a step that loads data prints when a source did not answer (a time-out, a refused connection, a
-#: server error): Gutendex's "did not answer within 45 s", httpx's ReadTimeout, HTTP 502/503/504.
+#: A source that did not answer, in the final error of a step that loads data (a time-out, a refused or reset
+#: connection, a name that did not resolve): Gutendex's "did not answer within 45 s", httpx's ReadTimeout.
 _NO_ANSWER = re.compile(
     r"did not answer|timed? ?out|Timeout(?:Error|Exception)?\b|ReadTimeout|ConnectTimeout|ConnectError|"
+    r"ConnectionError|RemoteDisconnected|IncompleteRead|"
     r"Connection (?:refused|reset|aborted)|Temporary failure in name resolution|Name or service not known|"
-    r"Service Unavailable|Bad Gateway|Gateway Time-?out|\b(?:HTTP|status|answered with)[^\n]{0,40}\b50[234]\b|"
-    r"server error \(5\d\d\)|try again later",
+    r"nodename nor servname|try again later",
     re.I,
 )
+#: An HTTP status in an error: urllib's "HTTP Error 404", requests' "404 Client Error", httpx's
+#: "Client error '404 Not Found'", "status 503", "status_code=500", e2er's "answered with a server error (500)".
+_HTTP_STATUS = re.compile(
+    r"HTTP(?: Error)?[ :/]+(?:\d\.\d )?([1-5]\d\d)\b|\b([1-5]\d\d) (?:Client|Server) Error|"
+    r"(?:Client|Server) error '([1-5]\d\d)\b|status(?:[ _]code)?\s*[=: ]\s*([1-5]\d\d)\b|"
+    r"answered with[^\n\d]{0,30}\(?([1-5]\d\d)\b",
+    re.I,
+)
+#: Statuses that say "not now": the server failed or is overloaded (5xx), or asked to wait (408, 429).
+_TRANSIENT_STATUS = frozenset({408, 429})
+
+
+def final_error(text: str) -> str:
+    """The error a failed step ended with: the exception line of the last Python traceback, else the last
+    line of the output. Lines the step printed before (an echoed ``timeout=60``, a retry note) do not count.
+    """
+    lines = text.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith("Traceback (most recent call last)")]
+    if starts:
+        for line in lines[starts[-1] + 1 :]:
+            if line.strip() and not line[:1].isspace():
+                return line.strip()
+    return next((line.strip() for line in reversed(lines) if line.strip()), "")
+
+
+def did_not_answer(error: str) -> bool:
+    """Does this final error say that a source did not answer (so a later try may succeed)?
+
+    An HTTP status decides when there is one: 5xx, 408 and 429 are "not now"; any other (404, 400, 401, 403,
+    410, …) is a permanent answer, not an unavailable source. Without a status, a time-out or connection
+    error is "not now"; anything else (a KeyError, a schema or parse error) is a failure of the step.
+    """
+    m = _HTTP_STATUS.search(error)
+    if m:
+        status = int(next(g for g in m.groups() if g))
+        return status >= 500 or status in _TRANSIENT_STATUS
+    return bool(_NO_ANSWER.search(error))
 
 
 def unanswered(steps: list[Any]) -> tuple[Any, list[str]]:
-    """(the failed step that loads data again, the lines of its output that say a source did not answer).
+    """(the failed step that loads data again, [its final error] when that error says a source did not answer).
 
-    Only a failed step that loads inputs again counts (the only step that reaches the web); (None, []) when
-    no such step failed, or its output names no time-out or server error.
+    Only a failed step that loads inputs again counts (the only step that reaches the web), and only its final
+    error (:func:`final_error`) is classified; (None, []) when no such step failed, or its final error is no
+    time-out, connection error or server error.
     """
     failed = next((s for s in steps if getattr(s, "exit_code", 0)), None)
     if failed is None or not getattr(failed, "reload", False):
@@ -303,13 +341,8 @@ def unanswered(steps: list[Any]) -> tuple[Any, list[str]]:
         text = Path(failed.log).read_text(encoding="utf-8", errors="replace") if failed.log else ""
     except OSError:
         text = ""
-    text = text or str(getattr(failed, "tail", "") or "")
-    lines: list[str] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if line and _NO_ANSWER.search(line) and line not in lines:
-            lines.append(line)
-    return failed, lines
+    error = final_error(text or str(getattr(failed, "tail", "") or ""))
+    return failed, ([error] if error and did_not_answer(error) else [])
 
 
 def judge(verdict: str, code: int, sources: list[dict[str, Any]], steps: list[Any] | None = None) -> tuple[str, str]:

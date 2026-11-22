@@ -14,6 +14,8 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from src.cli_reproduce import reproduce
 from src.core import reproduce as rp
 from src.core import reproduce_sources as rsrc
@@ -375,3 +377,42 @@ def test_many_loads_of_one_source_without_fingerprints_share_one_line():
         "2026-10-05), so e2er cannot say whether the source now returns other data.",
         "WHO returned different data than on 2026-10-14.",
     ]
+
+
+# ── review B, finding 8: only the final error decides ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        # an echoed setting earlier in the log, then a permanent error
+        'requesting https://x.example/api?timeout=60\nTraceback (most recent call last):\n  File "get_data.py", '
+        "line 3, in <module>\nrequests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://x.example\n",
+        "retrying after a timeout\nurllib.error.HTTPError: HTTP Error 403: Forbidden\n",
+        'Traceback (most recent call last):\n  File "get_data.py", line 9\nhttpx.HTTPStatusError: Client error '
+        "'400 Bad Request' for url 'https://x.example'\n",
+        'Service Unavailable on the first try; trying again\nTraceback (most recent call last):\n  File "a.py"\n'
+        "KeyError: 'value'\n",
+        "timeout=60\nValueError: the response has no column 'year'\n",
+    ],
+)
+def test_a_permanent_failure_is_not_called_unavailable(tmp_path: Path, log: str):
+    step = _failed_reload(tmp_path, log)
+    assert rsrc.judge("Could not reproduce: x.", 2, [], [step])[1] == rsrc.COULD_NOT_RUN
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        'Traceback (most recent call last):\n  File "get_data.py"\nhttpx.ReadTimeout: The read operation timed out\n',
+        'Traceback (most recent call last):\n  File "get_data.py"\nrequests.exceptions.HTTPError: 503 Server Error: '
+        "Service Unavailable for url: https://x.example\n",
+        'Traceback (most recent call last):\n  File "get_data.py"\nhttpx.HTTPStatusError: Server error '
+        "'502 Bad Gateway' for url 'https://x.example'\n",
+        "urllib.error.HTTPError: HTTP Error 429: Too Many Requests\n",
+        'Traceback (most recent call last):\n  File "a.py"\nConnectionError: Connection refused\n',
+    ],
+)
+def test_a_time_out_or_server_error_at_the_end_is_unavailable(tmp_path: Path, log: str):
+    step = _failed_reload(tmp_path, log)
+    assert rsrc.judge("Could not reproduce: x.", 2, [], [step])[1] == rsrc.SOURCE_UNAVAILABLE
