@@ -27,9 +27,12 @@ An entry names what the page needs, in the same keys for every connector:
   ``rows``: how many rows the load returned;
 - ``fingerprint`` (since 0.21): the data version of what the load returned, so
   a later reload can say whether the source now returns other data
-  (``e2er reproduce``): ``{"form": "e2er-rows/1", "sha256", "rows", "columns"}``,
-  see :func:`fingerprint_rows` for the canonical form. A load recorded before
-  0.21 has none.
+  (``e2er reproduce``): ``{"form": "e2er-rows/2", "sha256", "rows", "columns",
+  "also": {"e2er-rows/1": sha256}}``, see :func:`fingerprint_rows` for the
+  canonical form. ``also`` holds the same rows in the form of 0.21
+  (``e2er-rows/1``), so a reload can be compared with a study recorded then. A
+  load recorded before 0.21 has none; a load that returned no rows has one too
+  (since 0.22).
 """
 
 from __future__ import annotations
@@ -99,12 +102,15 @@ DATA_FOLDER = SourceInfo(
 
 
 #: The canonical form of a loaded table that ``fingerprint`` hashes (see fingerprint_rows).
-FINGERPRINT_FORM = "e2er-rows/1"
+FINGERPRINT_FORM = "e2er-rows/2"
+#: The form of 0.21: still computed (``also``) and read, so a study recorded then can be compared.
+FORM_V1 = "e2er-rows/1"
+FORMS = (FINGERPRINT_FORM, FORM_V1)
 _SAFE_INTEGER = 2**53
 
 
 def _cell(value: Any) -> Any:
-    """One value in the canonical form: JSON types only, a whole float as an integer, NaN and infinities as null."""
+    """One value in the form ``e2er-rows/1`` (0.21), kept as it was so old fingerprints can be recomputed."""
     if value is None or isinstance(value, bool | str):
         return value
     if isinstance(value, int):
@@ -129,24 +135,111 @@ def _cell(value: Any) -> Any:
     return str(value)
 
 
-def fingerprint_rows(rows: Any) -> dict[str, Any] | None:
-    """The data version of a loaded table: a SHA-256 of its rows in a canonical form (``e2er-rows/1``).
+def _missing(value: Any) -> bool:
+    """pandas' NA and NaT, numpy's NaT: a missing value (null in ``e2er-rows/2``)."""
+    if type(value).__name__ in ("NAType", "NaTType"):
+        return True
+    try:
+        import numpy as np
+
+        if isinstance(value, np.datetime64 | np.timedelta64):
+            return bool(np.isnat(value))
+    except ImportError:  # pragma: no cover - numpy comes with pandas
+        pass
+    return False
+
+
+def _json_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _number(value: Any) -> Any:
+    """An int or float in the canonical form: whole numbers as integers, large integers as text."""
+    if isinstance(value, int):
+        return value if abs(value) < _SAFE_INTEGER else str(value)
+    if not math.isfinite(value):
+        return None
+    if value.is_integer() and abs(value) < _SAFE_INTEGER:
+        return int(value)
+    return value
+
+
+def _cell2(value: Any) -> Any:
+    """One value in the form ``e2er-rows/2`` (see :func:`fingerprint_rows`)."""
+    if value is None or isinstance(value, bool | str):
+        return value
+    if _missing(value):
+        return None
+    if isinstance(value, int | float):
+        return _number(value)
+    from decimal import Decimal
+
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            return None
+        if value == value.to_integral_value():
+            return _number(int(value))
+        return _number(float(value))
+    if isinstance(value, dict):
+        return {str(k): _cell2(v) for k, v in value.items()}
+    if isinstance(value, set | frozenset):
+        return sorted((_cell2(v) for v in value), key=_json_text)
+    if isinstance(value, list | tuple):
+        return [_cell2(v) for v in value]
+    try:
+        import numpy as np
+
+        if isinstance(value, np.datetime64 | np.timedelta64):
+            import pandas as pd
+
+            stamp = pd.Timestamp(value) if isinstance(value, np.datetime64) else pd.Timedelta(value)
+            return stamp.isoformat()
+        if isinstance(value, np.ndarray):
+            return [_cell2(v) for v in value.tolist()]
+    except ImportError:  # pragma: no cover
+        pass
+    if hasattr(value, "item"):  # another numpy scalar
+        try:
+            return _cell2(value.item())
+        except (ValueError, AttributeError):
+            pass
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+_CELLS = {FINGERPRINT_FORM: _cell2, FORM_V1: _cell}
+
+
+def fingerprint_rows(rows: Any, form: str = FINGERPRINT_FORM) -> dict[str, Any] | None:
+    """The data version of a loaded table: a SHA-256 of its rows in a canonical form (``e2er-rows/2``).
 
     The canonical form, so the same data give the same hash whatever order or types the source used:
 
     1. the columns are the names of every row's keys, as text, sorted by Unicode code point;
-    2. each row becomes a JSON array of its values in that column order, a missing key as null; a number
-       whose value is whole (``3.0``) is written as an integer (``3``), other floats in Python's shortest
-       round-trip form (``0.1``), NaN and infinities as null; dates as ISO text; nested objects with their
-       keys sorted;
+    2. each row becomes a JSON array of its values in that column order, a missing key as null. Values:
+       a number whose value is whole (``3.0``, ``Decimal("3")``) is written as an integer (``3``), other
+       floats and decimals as a float in Python's shortest round-trip form (``0.1``); an integer of
+       magnitude 2**53 or more as its decimal text (``"9007199254740993"``), since a JSON reader that
+       reads numbers as doubles would change it; NaN, infinities, pandas' NA and NaT and numpy's NaT as
+       null; dates, times and numpy's datetime64 as ISO text (``2024-01-02T00:00:00``, as
+       ``pandas.Timestamp.isoformat``); a set as a list sorted by each element's JSON text; nested
+       objects with their keys sorted; anything else as its text;
     3. each array is written as compact JSON (``json.dumps(..., ensure_ascii=False, sort_keys=True,
        separators=(",", ":"))``) and the lines are sorted by Unicode code point, so the order of the rows
        does not count;
     4. the hash is SHA-256 over the UTF-8 bytes of the column list (written the same way), a newline, and
-       every sorted row line followed by a newline.
+       every sorted row line followed by a newline. A load with no rows hashes the empty column list.
+
+    ``e2er-rows/1`` (0.21) differed in step 2: numpy's datetime64 became its count of nanoseconds,
+    pandas' NA and NaT the text ``<NA>`` and ``NaT``, a Decimal and a set their text. ``form`` picks the
+    form; e2er records ``e2er-rows/2`` and, under ``also``, ``e2er-rows/1``.
 
     Returns ``{"form", "sha256", "rows", "columns"}``, or None for rows that are not a list of objects.
     """
+    cell = _CELLS.get(form)
+    if cell is None:
+        raise ValueError(f"unknown fingerprint form {form!r}")
     if rows is None:
         return None
     if hasattr(rows, "to_dict"):
@@ -157,26 +250,33 @@ def fingerprint_rows(rows: Any) -> dict[str, Any] | None:
         return None
     columns = sorted({str(k) for r in records for k in r})
 
-    def line(value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-
     keyed = [{str(k): v for k, v in r.items()} for r in records]
-    lines = sorted(line([_cell(r.get(c)) for c in columns]) for r in keyed)
+    lines = sorted(_json_text([cell(r.get(c)) for c in columns]) for r in keyed)
     h = hashlib.sha256()
-    h.update((line(columns) + "\n").encode("utf-8"))
+    h.update((_json_text(columns) + "\n").encode("utf-8"))
     for text in lines:
         h.update((text + "\n").encode("utf-8"))
-    return {"form": FINGERPRINT_FORM, "sha256": h.hexdigest(), "rows": len(records), "columns": columns}
+    return {"form": form, "sha256": h.hexdigest(), "rows": len(records), "columns": columns}
 
 
 def with_fingerprint(entry: dict[str, Any], rows: Any) -> dict[str, Any]:
-    """``entry`` with the ``fingerprint`` of the rows the load returned (unchanged when there are none)."""
+    """``entry`` with the ``fingerprint`` of the rows the load returned, a load with no rows included.
+
+    Unchanged when ``rows`` is not a table (None, not a list of objects). The fingerprint carries the
+    same rows in the form of 0.21 under ``also`` (``{"e2er-rows/1": sha256}``), so that a reload can
+    be compared with a study recorded then.
+    """
     try:
         found = fingerprint_rows(rows)
+        if found is None:
+            return entry
+        old = fingerprint_rows(rows, FORM_V1)
     except (TypeError, ValueError) as e:  # a cell JSON cannot write: the load is recorded without it
         logger.warning("the load's rows could not be fingerprinted: %s", e)
         return entry
-    return {**entry, "fingerprint": found} if found and found["rows"] else entry
+    if old is not None:
+        found["also"] = {FORM_V1: old["sha256"]}
+    return {**entry, "fingerprint": found}
 
 
 def now_utc() -> str:

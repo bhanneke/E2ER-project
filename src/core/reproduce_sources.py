@@ -108,6 +108,22 @@ def _fp(entry: dict[str, Any]) -> dict[str, Any] | None:
     return fp if isinstance(fp, dict) and isinstance(fp.get("sha256"), str) else None
 
 
+def _in_form(fp: dict[str, Any] | None, form: Any) -> str | None:
+    """The SHA-256 of a load's rows in ``form``: its fingerprint, or the same rows in an older form (``also``).
+
+    A reload records ``e2er-rows/2`` and, under ``also``, ``e2er-rows/1``, so it compares with a study
+    recorded by 0.21 (load_record.py). A fingerprint without a form is of 0.21's form.
+    """
+    if fp is None:
+        return None
+    form = form or "e2er-rows/1"
+    if (fp.get("form") or "e2er-rows/1") == form:
+        return str(fp["sha256"])
+    also = fp.get("also")
+    value = also.get(form) if isinstance(also, dict) else None
+    return value if isinstance(value, str) else None
+
+
 def _files(entry: dict[str, Any]) -> dict[str, str]:
     return {
         str(f["url"]): str(f["sha256"])
@@ -191,11 +207,13 @@ def compare(folder: Path, run_dir: Path, before: set[str] | None = None) -> list
             if shared:
                 entry["files_differ"] = any(before_files[u] != now_files[u] for u in shared)
         else:
+            # The reload's rows in the form the study recorded them (a study of 0.21: e2er-rows/1).
+            now = _in_form(has, had.get("form"))
             entry.update(
                 {
-                    "status": SAME if has is not None and has["sha256"] == had["sha256"] else CHANGED,
+                    "status": SAME if now is not None and now == had["sha256"] else CHANGED,
                     "recorded": had["sha256"],
-                    "now": has["sha256"] if has else None,
+                    "now": now,
                     "rows_recorded": had.get("rows"),
                     "rows_now": has.get("rows") if has else new.get("rows"),
                     "form": had.get("form"),
@@ -204,6 +222,10 @@ def compare(folder: Path, run_dir: Path, before: set[str] | None = None) -> list
             if has is None:
                 # This e2er recorded no fingerprint for the reload (it should): the data cannot be compared.
                 entry["status"] = NOT_RECORDED
+            elif now is None:
+                # The study's form is one this e2er does not compute: never "different" on that ground alone.
+                entry["status"] = NOT_RECORDED
+                entry["form_now"] = has.get("form")
         entry["sentence"] = sentence(entry)
         out.append(entry)
     return out
@@ -225,6 +247,11 @@ def sentence(entry: dict[str, Any]) -> str:
         return (
             f"{name} returned different data than on {on} (recorded {short(entry.get('recorded'))}, now "
             f"{short(entry.get('now'))}{rows}){versions}{_parts_words(entry)}."
+        )
+    if entry.get("recorded") and entry.get("form_now"):
+        return (
+            f"{name}: the study recorded its data in the fingerprint form {entry.get('form')}, which this e2er "
+            f"does not compute ({entry['form_now']}), so e2er cannot compare the reload with the study's ({on})."
         )
     if entry.get("recorded") and not entry.get("now"):
         return f"{name}: the reload recorded no fingerprint, so e2er cannot compare it with the study's ({on})."
