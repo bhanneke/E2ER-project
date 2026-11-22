@@ -1548,11 +1548,19 @@ def _interactive() -> bool:
         return False
 
 
-def _launch_url(host: str, port: int, token: str | None) -> str:
-    """The address to open. Carries the session token, which the dashboard trades for a cookie."""
+def _launch_url(host: str, port: int, token: str | None, approver: str | None = None) -> str:
+    """The address to open. Carries the session token, which the dashboard trades for a cookie, and the
+    approver key after ``#`` (local_session.py), which only this address and this terminal ever hold."""
     shown = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
     base = f"http://{shown}:{port}/"
-    return f"{base}?t={token}" if token else base
+    url = f"{base}?t={token}" if token else base
+    return f"{url}#{ls_fragment(approver)}" if approver else url
+
+
+def ls_fragment(approver: str) -> str:
+    from .api.local_session import APPROVER_FRAGMENT
+
+    return f"{APPROVER_FRAGMENT}={approver}"
 
 
 def _open_browser(url: str, delay: float = 1.2) -> None:
@@ -1626,6 +1634,10 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
     if _already_serving(host, port):
         url = _launch_url(host, port, ls.read_session_token(port))
         print(f"e2er is already running at {url} — opening it.")
+        print(
+            "   (approving production data queries needs the browser opened where that e2er started, "
+            "or the address it printed there)"
+        )
         if open_it:
             import webbrowser
 
@@ -1644,15 +1656,21 @@ def _serve(*, host: str, port: int, reload: bool, no_browser: bool) -> int:
         return 2
     # A new session token per start: the cookie of the last start no longer works (0.19.0).
     ls.forget_stable_secret()
+    from .home import secure_state
+
+    secure_state()  # ~/.e2er mode 700, papers.db mode 600
     token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()
     os.environ[ls.ENV_TOKEN] = token  # the uvicorn app (and a --reload worker) read it from here
     os.environ[ls.ENV_SERVE_HOST] = host  # the Host allowlist adds the address served on
+    # The approver key: its hash for the server, the key only in the address below (local_session.py).
+    approver, approver_sha = ls.new_approver_key()
+    os.environ[ls.ENV_APPROVER] = approver_sha
     from .home import ENV_PROJECT, project_dir
 
     if reload:
         # A --reload worker is another process: it uses the studies folder chosen now.
         os.environ.setdefault(ENV_PROJECT, str(project_dir().resolve()))
-    url = _launch_url(host, port, token)
+    url = _launch_url(host, port, token, approver)
 
     if open_it and not reload:
         _open_browser(url)

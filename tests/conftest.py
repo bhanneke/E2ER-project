@@ -789,12 +789,37 @@ def _the_local_session(monkeypatch):
     from starlette.testclient import TestClient
 
     monkeypatch.setenv("E2ER_SESSION_TOKEN", TEST_SESSION_TOKEN)
+    # No approver key unless a test asks for one (as_approver); a started server's key is undone after the test.
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", "")
     real = TestClient.__init__
 
     def init(self, *args, headers=None, **kwargs):
         real(self, *args, headers={"x-e2er-token": TEST_SESSION_TOKEN, **(headers or {})}, **kwargs)
 
     monkeypatch.setattr(TestClient, "__init__", init)
+
+
+#: The approver key of the test server (local_session.py: only the browser `e2er` opened has it).
+TEST_APPROVER_KEY = "test-approver-key"
+
+
+@pytest.fixture
+def as_approver(monkeypatch):
+    """TestClients made in the test carry the approver cookie of the browser `e2er` opened."""
+    import hashlib
+
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", hashlib.sha256(TEST_APPROVER_KEY.encode()).hexdigest())
+    real = TestClient.__init__
+
+    def init(self, *args, **kwargs):
+        real(self, *args, **kwargs)
+        port = self.base_url.port or 80
+        self.cookies.set(f"e2er_approver_{port}", TEST_APPROVER_KEY)
+
+    monkeypatch.setattr(TestClient, "__init__", init)
+    return TEST_APPROVER_KEY
 
 
 def pytest_collection_modifyitems(config, items):

@@ -229,6 +229,59 @@ def require_local_session(request: Request) -> None:
         raise HTTPException(status_code=403, detail=problem)
 
 
+# ── the researcher's approvals: a key the session file never holds ─────────
+#
+# The session token is in ``~/.e2er/session-<port>.json``, so whatever can read that file can call
+# the API (review of 2026-11-21: an AI-written script did, and approved a production query). An
+# approval therefore needs more: the approver key. The `e2er` that starts the server makes it, gives
+# the server only its SHA-256 (``E2ER_APPROVER_SHA256``), and puts the key itself only into the
+# address it opens in the browser and prints in its terminal, after ``#`` (a fragment: the browser
+# never sends it in a request line, so no log records it). The dashboard's script trades it for an
+# HttpOnly cookie (``POST /api/session/approver``). Nothing on disk holds the key.
+
+ENV_APPROVER = "E2ER_APPROVER_SHA256"
+APPROVER_FRAGMENT = "a"
+
+
+def new_approver_key() -> tuple[str, str]:
+    """(key, its SHA-256): the key goes to the browser, the hash to the server's environment."""
+    import hashlib
+
+    key = secrets.token_urlsafe(32)
+    return key, hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def approver_cookie_name(request: Request) -> str:
+    port = request.url.port or (443 if request.url.scheme == "https" else 80)
+    return f"e2er_approver_{port}"
+
+
+def approver_key_ok(key: object) -> bool:
+    """Is ``key`` the approver key of this server (whose hash the starting `e2er` set)?"""
+    import hashlib
+
+    expected = os.environ.get(ENV_APPROVER, "")
+    if not (isinstance(key, str) and key and len(expected) == 64):
+        return False
+    return secrets.compare_digest(hashlib.sha256(key.encode("utf-8")).hexdigest(), expected)
+
+
+def is_approver(request: Request) -> bool:
+    """Does this request come from the browser the starting `e2er` opened (its approver cookie)?"""
+    return approver_key_ok(request.cookies.get(approver_cookie_name(request)))
+
+
+def set_approver_cookie(response: Any, request: Request, key: str) -> None:
+    response.set_cookie(approver_cookie_name(request), key, httponly=True, samesite="strict", path="/")
+
+
+NOT_APPROVER = (
+    "Approving a production data query needs the browser e2er opened when it started (or the address it "
+    "printed in that terminal window). This tab can watch the run but not approve: open that address, or "
+    "stop e2er (ctrl-c) and start it again with `e2er`."
+)
+
+
 # ── the session file a second `e2er` reads ──────────────────────────────────
 
 
@@ -246,7 +299,7 @@ def set_session_cookies(response: Any, request: Request, token: str) -> None:
 def write_session_file(port: int, token: str, *, pid: int | None = None) -> Path:
     """Record the token of the server on ``port``; ``pid`` is the server's process (default: this one)."""
     p = session_file(port)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"token": token, "pid": pid if pid is not None else os.getpid(), "port": port}, fh)

@@ -196,7 +196,7 @@ async def _ensure_sqlite_schema() -> None:
     from ..config import get_settings
 
     path = Path(_sqlite_path(get_settings().resolved_database_url))
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     schema_path = Path(__file__).resolve().parent.parent.parent / "sql" / "sqlite" / "schema.sql"
     if not schema_path.exists():
@@ -229,6 +229,10 @@ async def _ensure_sqlite_schema() -> None:
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_papers_archived ON papers(archived_at)")
         await _ensure_papers_trigger(conn)
         await conn.commit()
+    # Only the user reads the run database and e2er's folder (review of 2026-11-21).
+    from ..home import secure_state
+
+    secure_state(path)
 
 
 #: Columns whose changes are bookkeeping, not activity on the paper: writing

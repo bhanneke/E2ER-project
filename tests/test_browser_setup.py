@@ -795,7 +795,12 @@ def test_bare_e2er_serves_and_prints_the_launch_url(monkeypatch, capsys, home):
     out = capsys.readouterr().out
     token = os.environ[ls.ENV_TOKEN]
     assert f"http://127.0.0.1:8291/?t={token}" in out
-    assert opened == [f"http://127.0.0.1:8291/?t={token}"]
+    # The approver key rides after "#" (never in a request line); the server has only its hash.
+    [url] = opened
+    assert url.startswith(f"http://127.0.0.1:8291/?t={token}#a=")
+    key = url.split("#a=", 1)[1]
+    assert ls.approver_key_ok(key) and len(os.environ[ls.ENV_APPROVER]) == 64
+    assert key not in os.environ[ls.ENV_APPROVER]
     assert ran["port"] == 8291 and ran["host"] == "127.0.0.1"
 
 

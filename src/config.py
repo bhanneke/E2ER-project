@@ -351,6 +351,11 @@ class Settings(BaseSettings):
     # danger-full-access (no sandbox at all) runs only with this set as well (and a warning).
     codex_allow_full_access: bool = False
 
+    # ── AI-written scripts (e2er-run, the runner's rerun, the meta-analysis script) ──
+    # auto: in the operating system's sandbox (macOS sandbox-exec, Linux bubblewrap), which denies
+    # ~/.e2er and the user's secrets; without one e2er refuses to run the script. off: no sandbox.
+    script_sandbox: str = "auto"
+
     # ── Gemini CLI backend (not tested) ───────────────────────────────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires
     # the Gemini CLI (`npm install -g @google/gemini-cli`) and GEMINI_API_KEY:

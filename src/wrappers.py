@@ -34,7 +34,9 @@ def run_main(argv: list[str] | None = None) -> int:
     Guarantees (as the shell wrapper had them): exactly one ``.py`` file inside
     the current folder; no absolute path, no ``..``, no link out of the folder,
     no arguments for the script; a hard time limit (``E2ER_RUN_TIMEOUT``,
-    default 600 s). The run is recorded in the workspace's script log
+    default 600 s); the operating system's sandbox, which denies e2er's folder
+    (``~/.e2er``: the dashboard's session, the approval key, the run database)
+    and the user's secrets (``core/script_sandbox.py``). The run is recorded in the workspace's script log
     (``.e2er-script-runs.jsonl``), which export reads for the order of
     ``reproduce.json``. The script's exit code is passed on.
     """
@@ -69,8 +71,10 @@ def run_main(argv: list[str] | None = None) -> int:
     # Run through the script log's bootstrap: it records the packages the script loaded (reproduce.json pins them).
     argv, extra, packages_file = script_command(python, resolved)
     from .core.child_env import empty_home, run_in_own_session, script_env
+    from .core.script_sandbox import SandboxUnavailable
 
-    # The script is the model's: none of the CLI's keys (data keys, its sign-in), an empty HOME.
+    # The script is the model's: none of the CLI's keys (data keys, its sign-in), an empty HOME, and the
+    # operating system's sandbox, which denies ~/.e2er and the user's secrets (core/script_sandbox.py).
     home = empty_home()
     env = script_env(home=home, extra=extra)
     started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -80,6 +84,9 @@ def run_main(argv: list[str] | None = None) -> int:
     except subprocess.TimeoutExpired:
         print(f"e2er-run: stopped {target} after {timeout:.0f}s", file=sys.stderr)
         code = TIMED_OUT
+    except SandboxUnavailable as e:
+        script_record(packages_file)
+        return _refuse(str(e))
     except OSError as e:
         script_record(packages_file)
         print(f"e2er-run: could not start {python}: {e}", file=sys.stderr)

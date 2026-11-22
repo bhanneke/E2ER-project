@@ -15,7 +15,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def test_approve_query_propagates_db_failure():
+def test_approve_query_propagates_db_failure(as_approver):
     pytest.importorskip("fastapi")
     from fastapi.testclient import TestClient
 

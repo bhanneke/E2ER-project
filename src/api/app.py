@@ -40,7 +40,15 @@ def require_auth(request: Request, authorization: str | None = Header(default=No
     commands send; see local_session.py) or, when ``API_AUTH_TOKEN`` is set,
     with ``Authorization: Bearer <token>``. Before 0.13.8 these endpoints were
     open to anything on this computer without ``API_AUTH_TOKEN``, the shell
-    commands of a run's own AI model included; those never get the token.
+    commands of a run's own AI model included.
+
+    The token is not in any AI CLI's or script's environment, but it is in
+    ``~/.e2er/session-<port>.json``, and a program that can read that file has
+    it: up to 0.21.0 an AI-written script run by ``e2er-run`` could (review of
+    2026-11-21). Such scripts now run in a sandbox that denies ``~/.e2er``
+    (core/script_sandbox.py), and approving a production query needs more than
+    this check: the approver cookie of the browser the starting `e2er` opened
+    (local_session.py, ``approve_query``).
     """
     from . import local_session as ls
 
@@ -1927,13 +1935,37 @@ async def get_pending_queries(paper_id: PaperId) -> list[dict[str, Any]]:
         raise HTTPException(status_code=500, detail="failed to fetch pending queries; check server logs")
 
 
+class ApproverKey(BaseModel):
+    key: str = Field(max_length=200)
+
+
+@app.post("/api/session/approver", dependencies=[Depends(require_auth)])
+async def session_approver(body: ApproverKey, request: Request):
+    """Trade the approver key from the launch address's fragment for the approver cookie (local_session.py)."""
+    from fastapi.responses import JSONResponse
+
+    from . import local_session as ls
+
+    if not ls.approver_key_ok(body.key):
+        raise HTTPException(status_code=403, detail="That is not the approval key of this e2er.")
+    resp = JSONResponse({"approver": True})
+    ls.set_approver_cookie(resp, request, body.key)
+    return resp
+
+
 @app.post("/api/queries/{query_id}/approve", dependencies=[Depends(require_auth)])
-async def approve_query(query_id: str, action: ApprovalAction):
+async def approve_query(query_id: str, action: ApprovalAction, request: Request):
+    """The researcher's decision on a production query. Approving needs the approver cookie, which only the
+    browser the starting `e2er` opened has (local_session.py); the session token alone, which a program
+    that reads ``~/.e2er`` could find, may refuse a query but never approve one."""
     from ..db.client import execute, fetch_one
     from ..modules.data.approval_seal import is_query_id, seal
+    from . import local_session as ls
 
     if not is_query_id(query_id):
         raise HTTPException(status_code=404, detail="Query not found")
+    if action.approved and not ls.is_approver(request):
+        raise HTTPException(status_code=403, detail=ls.NOT_APPROVER)
     try:
         row = await fetch_one("SELECT query_sql FROM data_query_records WHERE id = %(id)s", {"id": query_id})
         # The seal is what check_approval trusts (approval_seal.py); the database row alone is not.

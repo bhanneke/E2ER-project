@@ -68,5 +68,14 @@
     ids.forEach((id) => { const d = document.getElementById(id); if (d && target.contains(d)) d.open = true; });
   });
 
+  // The approver key: `e2er` puts it after "#a=" in the address it opens (never in a file, never in a request
+  // line). It is traded once for an HttpOnly cookie, and the address bar loses it at once.
+  (function approverFromFragment() {
+    const m = /(?:^#|&)a=([A-Za-z0-9_-]{20,100})/.exec(location.hash || '');
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    call('POST', '/api/session/approver', { key: m[1] }).catch((e) => notice(e.message));
+  })();
+
   window.e2er = { call, notice, messageFor, UNREACHABLE };
 })();

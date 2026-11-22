@@ -153,10 +153,24 @@ def run_in_own_session(
     env: Mapping[str, str],
     timeout: float,
     capture: bool = True,
+    sandbox: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """``subprocess.run`` for an AI-written script: in its own session, and at the time limit the
     whole process group is stopped (a script's own child processes too), then TimeoutExpired.
+
+    With ``sandbox`` (the default) the script runs in the operating system's sandbox, which denies
+    e2er's folder and the user's secrets (script_sandbox.py); when there is none and the researcher
+    did not set ``SCRIPT_SANDBOX=off``, :class:`~.script_sandbox.SandboxUnavailable` (an OSError)
+    is raised and nothing runs.
     """
+    if sandbox:
+        from .script_sandbox import wrap
+
+        argv, how = wrap(list(argv), Path(cwd))
+        if how.kind in ("off", "outer"):
+            import logging
+
+            logging.getLogger(__name__).warning("AI-written script runs %s", how.note)
     proc = subprocess.Popen(
         argv,
         cwd=str(cwd),
