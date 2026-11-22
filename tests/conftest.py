@@ -68,6 +68,23 @@ _home_is_home_on_windows()
 # Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
 # default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
 os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
+
+
+def _scripts_run_unsandboxed_where_no_sandbox_is() -> None:
+    """On a machine without a sandbox for AI-written scripts (Windows, Linux without bubblewrap or user
+    namespaces: the CI runners) the suite runs them as before 0.21.1 (``SCRIPT_SANDBOX=off``); where one
+    exists (macOS) every script of the suite runs in it. tests/test_script_sandbox.py covers both."""
+    if os.environ.get("SCRIPT_SANDBOX"):
+        return
+    from src.core.script_sandbox import SandboxUnavailable, plan
+
+    try:
+        plan(Path.cwd())
+    except SandboxUnavailable:
+        os.environ["SCRIPT_SANDBOX"] = "off"
+
+
+_scripts_run_unsandboxed_where_no_sandbox_is()
 # No real Codex call: a run on the codex backend first asks Codex to write a test file in its
 # sandbox (llm/codex.py check_sandbox). The tests of that check clear this themselves.
 os.environ.setdefault("E2ER_SKIP_SANDBOX_PREFLIGHT", "1")
