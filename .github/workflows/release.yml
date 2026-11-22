@@ -14,8 +14,9 @@ name: Release
 #        workflow:      release.yml
 #        environment:   pypi
 #   3. Create a GitHub environment named "pypi" (Settings → Environments)
-#      with optional protection rules (recommended: require reviewer for
-#      production releases).
+#      with a required reviewer and a deployment tag policy `v*`; protect
+#      the v* tags with a ruleset. docs/RELEASING.md section 6 has the exact
+#      settings and the `gh api` commands that set them.
 #   4. Push any new v* tag. The `publish` job runs in the `pypi`
 #      environment and mints a short-lived OIDC token that PyPI accepts.
 #
@@ -28,8 +29,9 @@ name: Release
 #      the CHANGELOG heading) and commits them.
 #   2. Bring dev to main, then tag and push from main:
 #        git tag vX.Y.Z && git push origin main vX.Y.Z
-#   3. This workflow runs: version check -> tests (four parallel parts) ->
-#      build -> GitHub release with release-facts.json -> PyPI; and, beside
+#   3. This workflow runs: tag-on-main and version check -> tests (four
+#      parallel parts) -> build -> install test of the wheel -> GitHub release
+#      with release-facts.json -> PyPI -> PyPI's SHA-256 against dist/; and, beside
 #      PyPI, the job that waits for Zenodo's version DOI and fills it into
 #      release-facts.json. Do NOT `gh release create` the tag by hand.
 #
@@ -55,6 +57,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
           persist-credentials: false
+          fetch-depth: 0  # every branch, so origin/main is there for the next step
+
+      - name: Refuse a tag that is not on main
+        # Any v* tag pushed by anyone with write access starts this workflow, and the publish job
+        # puts it on PyPI. Only a commit that main already contains is released; docs/RELEASING.md
+        # names the GitHub settings that guard the tag and the pypi environment as well.
+        run: |
+          # fetch-depth: 0 above fetched every branch as refs/remotes/origin/* with the run's token.
+          git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null \
+            || { echo "::error::origin/main was not fetched"; exit 1; }
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "::error::The tag $GITHUB_REF_NAME points at $GITHUB_SHA, which is not on main. Merge dev into main first, then tag main (docs/RELEASING.md)."
+            exit 1
+          fi
+          echo "ok  $GITHUB_SHA is on main"
 
       - name: Check version consistency
         # Every place that names the version (scripts/release.py makes the edits) must name the tag's.
@@ -167,9 +184,44 @@ jobs:
           path: dist/
           retention-days: 30
 
+  check-wheel:
+    # The same check as the `package` job of tests.yml, on the very wheel this run releases:
+    # installed into a fresh virtualenv outside the checkout, it must start a study
+    # (scripts/check_wheel.sh). It runs in its own job, after the wheel was uploaded as an
+    # artifact, so the dependencies it installs from PyPI never run where the artifact is built.
+    name: Install-test the built wheel
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install it outside the checkout and check it
+        run: |
+          wheels=(dist/*.whl)
+          if [ "${#wheels[@]}" -ne 1 ] || [ ! -f "${wheels[0]}" ]; then
+            echo "::error::expected exactly one wheel in dist/, found: ${wheels[*]}"
+            exit 1
+          fi
+          PYTHON=python scripts/check_wheel.sh "${wheels[0]}"
+
   release:
     name: Create GitHub release
-    needs: [build, facts]
+    needs: [build, check-wheel, facts]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -285,5 +337,29 @@ jobs:
         with:
           # `skip-existing: true` makes re-runs idempotent — if the
           # version was already uploaded (e.g. a prior partial run),
-          # this is a no-op instead of an error.
+          # this is a no-op instead of an error. The `pypi-check` job
+          # below then fails if PyPI kept other bytes than this run built.
           skip-existing: true
+
+  pypi-check:
+    # skip-existing above and `--clobber` in the release job let a re-run put newly built files on
+    # the GitHub release while PyPI keeps the first run's: compare PyPI's SHA-256 of every file with
+    # this run's dist/ and fail on any difference (docs/RELEASING.md says how to repair it).
+    name: PyPI holds exactly this run's files
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Compare SHA-256 with PyPI
+        run: python3 scripts/release_pypi_check.py dist/ --version "$GITHUB_REF_NAME" --wait 300 --every 15
