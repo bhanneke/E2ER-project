@@ -520,6 +520,14 @@ def mock_db():
 
 
 @pytest.fixture(autouse=True)
+def _script_log_state_in_the_test(monkeypatch, tmp_path_factory):
+    """The script log's key and adoption records (script_log.py) live in a folder of the test, never in ~/.e2er."""
+    state = tmp_path_factory.mktemp("e2er-state")
+    monkeypatch.setenv("E2ER_SCRIPT_LOG_DIR", str(state))  # e2er-run in a subprocess signs with the same key
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _temporary_files_stay_in_the_test(monkeypatch, tmp_path_factory):
     """Every temporary folder a test makes (`e2er reproduce`'s run folder, an unpacked package, a subprocess's
     TMPDIR) lands under pytest's own base folder, which pytest prunes, never in the machine's $TMPDIR.

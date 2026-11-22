@@ -367,12 +367,15 @@ def test_robustness_results_without_a_script_fail_too(tmp_path):
     assert failed.artifact == "robustness_results.json" and "no script that computes them" in failed.reason
 
 
-def test_a_study_from_before_output_records_is_not_judged_even_without_a_script(tmp_path):
+def test_a_study_from_before_output_records_is_judged_when_its_script_is_gone(tmp_path):
+    """Review of 2026-11-21: an older line naming a script the study does not have accepted any results file."""
     ws = tmp_path / "ws"
     ws.mkdir()
     (ws / "estimation_results.json").write_text('{"main": {"n": 4}}', encoding="utf-8", newline="\n")
     line = {"script": "old_script.py", "sha256": "x", "started_at": "t", "exit_code": 0, "by": "e2er-run"}
     (ws / SCRIPT_RUNS).write_text(json.dumps(line) + "\n", encoding="utf-8", newline="\n")
+    assert not any(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))
+    (ws / "old_script.py").write_text("print(1)\n", encoding="utf-8")  # the study still has it: not judged
     assert all(c.ok for c in check_results_from_code(ws, "econometrics_specialist"))
 
 
