@@ -243,8 +243,9 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
         )
     amendments = prov.get("amendments") or []
     if amendments:
+        # Every amended file, by name: a reader sees what changed after export, not the first three.
         paths = sorted({a["path"] for a in amendments})
-        notes += f"; {len(amendments)} change(s) after export recorded as amendments ({', '.join(paths[:3])})"
+        notes += f"; {len(amendments)} change(s) after export recorded as amendments ({', '.join(paths)})"
     rewritten = sorted({a["path"] for a in amendments if a.get("kind") == "abstract_rewritten"})
     if rewritten:
         notes += f"; the abstract rewritten after export by e2er's abstract step ({', '.join(rewritten[:4])})"
@@ -271,24 +272,76 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     )
 
 
+#: The files each kind of amendment may change, as the commands that record them change them (review 2026-11:
+#: any kind but the abstract's could name any file, so a results edit could be recorded as a "stamp").
+#: ``None``: any file, because verify checks the change itself against the file (_redaction_problems: a
+#: redaction or an anonymisation replaces text at recorded places with a fixed text, nothing else).
+#: No kind (the changes ``e2er publish`` makes to compile the paper and mark the report, and the stamp before
+#: it had a kind): the paper, its bibliography and PDF, the reproduction report and the README.
+_UNTYPED_AMENDABLE = (
+    "paper/paper.tex",
+    "paper/paper.pdf",
+    "paper/refs.bib",
+    "reproduction_report.md",
+    "misc/reproduction_report.md",
+    "README.md",
+)
+
+
+def _amendable(kind: Any) -> tuple[str, ...] | None:
+    """The paths an amendment of ``kind`` may name (None: any path); an unknown kind may name none."""
+    from .core import anonymise as an
+    from .core import carry_over as co
+    from .core import redact as rd
+    from .core.abstract import AMENDMENT_KINDS, CHANGED_FILES
+
+    if kind is None:
+        return _UNTYPED_AMENDABLE
+    if kind in AMENDMENT_KINDS:
+        return CHANGED_FILES  # e2er abstract: the abstract, the paper, its PDF and report.html
+    if kind == "stamp":
+        return ("paper/paper.tex", "paper/paper.pdf")
+    if kind == "readme":
+        return ("README.md",)
+    if kind == co.KIND:
+        return ("e2er.json",)
+    if kind in (rd.KIND, an.KIND):
+        return None
+    return ()
+
+
 def _amendment_problems(prov: dict[str, Any]) -> list[str]:
     """Each file changed after export (``e2er publish``) keeps a chain from its exported fingerprint.
 
     Per path, the amendments must link up (each ``sha256_before`` is the
-    previous ``sha256_after``) and end at the fingerprint the file has now.
+    previous ``sha256_after``) and end at the fingerprint the file has now. Each
+    kind of amendment may name only the files its command changes (_amendable):
+    results, data, code and reproduce.json are never amended but by a redaction or
+    an anonymisation, whose every change verify checks against the file.
     """
-    from .core.abstract import AMENDMENT_KINDS, CHANGED_FILES
+    from .core.abstract import AMENDMENT_KINDS
 
     out: list[str] = []
     last: dict[str, str | None] = {}
     for a in prov.get("amendments") or []:
+        if not isinstance(a, dict):
+            out.append("an amendment in provenance.json is not an object")
+            continue
         path, before, after = a.get("path"), a.get("sha256_before"), a.get("sha256_after")
         if not isinstance(path, str) or not isinstance(after, str):
             out.append("an amendment in provenance.json names no file or no new fingerprint")
             continue
-        if a.get("kind") in AMENDMENT_KINDS and path not in CHANGED_FILES:
+        kind = a.get("kind")
+        allowed = _amendable(kind)
+        if kind in AMENDMENT_KINDS and allowed is not None and path not in allowed:
             # e2er abstract changes the abstract, the paper, its PDF and report.html: nothing else.
             out.append(f"{path}: recorded as an abstract amendment, but e2er abstract never changes that file")
+        elif allowed is not None and path not in allowed:
+            label = f'"{kind}"' if isinstance(kind, str) else "without a kind"
+            out.append(
+                f"{path}: recorded as an amendment {label}, but no e2er command records such an amendment of that "
+                f"file (it may change only {', '.join(allowed) if allowed else 'no file'})"
+            )
         if path in last and last[path] != before:
             out.append(f"the amendments of {path} do not link up")
         last[path] = after

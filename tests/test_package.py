@@ -719,7 +719,7 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
 
     folder = _export(tmp_path)
     packed = pkg.build(folder)
-    if tamper:  # the rerun differs from the published results (recorded as a change): a failure
+    if tamper:  # results changed and recorded as an amendment: no command records that, so the folder is refused
         from src.core.export.provenance import amend
 
         res = folder / "results" / "estimation_results.json"
@@ -729,7 +729,7 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
         amend(folder, "results/estimation_results.json", "edited", at="x")
     tmp = Path(tempfile.gettempdir())
     assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
-    assert reproduce(str(folder), yes=True, sandbox=False) == (1 if tamper else 0)
+    assert reproduce(str(folder), yes=True, sandbox=False) == (2 if tamper else 0)
     out = capsys.readouterr().out
     assert _leftovers(tmp) == [], out
     assert "is kept" not in out and "--keep keeps it" in out
