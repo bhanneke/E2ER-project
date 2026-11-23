@@ -76,6 +76,7 @@ async def _collect(stream: Any) -> Any:
 
     text: list[str] = []
     calls: dict[int, dict[str, Any]] = {}
+    reasoning: list[Any] = []
     finish: str | None = None
     usage: Any = None
     error: Any = None
@@ -99,10 +100,13 @@ async def _collect(stream: Any) -> Any:
             if delta is not None:
                 if getattr(delta, "content", None):
                     text.append(delta.content)
+                details = getattr(delta, "reasoning_details", None)
+                if details is None:
+                    details = (getattr(delta, "model_extra", None) or {}).get("reasoning_details")
+                if isinstance(details, list):
+                    reasoning.extend(details)
                 for tc in getattr(delta, "tool_calls", None) or []:
-                    slot = calls.setdefault(
-                        tc.index if tc.index is not None else len(calls), {"id": "", "name": "", "args": []}
-                    )
+                    slot = calls.setdefault(_slot_of(tc, calls), {"id": "", "name": "", "args": []})
                     if getattr(tc, "id", None):
                         slot["id"] = tc.id
                     fn = getattr(tc, "function", None)
@@ -126,11 +130,38 @@ async def _collect(stream: Any) -> Any:
             )
             for i, c in sorted(calls.items())
         ]
-        message = SimpleNamespace(content="".join(text) or None, tool_calls=tool_calls or None)
+        message = SimpleNamespace(
+            content="".join(text) or None, tool_calls=tool_calls or None, reasoning_details=reasoning or None
+        )
         choices.append(
             SimpleNamespace(finish_reason=finish or ("tool_calls" if tool_calls else "stop"), message=message)
         )
     return SimpleNamespace(choices=choices, usage=usage, error=error, model_extra={})
+
+
+def _slot_of(tc: Any, calls: dict[int, dict[str, Any]]) -> int:
+    """Which tool call a streamed fragment belongs to.
+
+    OpenAI-style providers number the calls (``index``). Some send fragments without an index:
+    those continue the call being streamed, unless they carry a new call id.
+    """
+    if getattr(tc, "index", None) is not None:
+        return int(tc.index)
+    if not calls:
+        return 0
+    last = max(calls)
+    new_id = getattr(tc, "id", None)
+    if new_id and calls[last]["id"] and calls[last]["id"] != new_id:
+        return last + 1
+    return last
+
+
+def _reasoning_of(msg: Any) -> Any:
+    """The reasoning blocks of an answer (OpenRouter's ``reasoning_details``), to send back unchanged."""
+    details = getattr(msg, "reasoning_details", None)
+    if details is None:
+        details = (getattr(msg, "model_extra", None) or {}).get("reasoning_details")
+    return details if isinstance(details, list) and details else None
 
 
 def _int(v: Any) -> int:
@@ -477,30 +508,35 @@ class OpenRouterBackend(LLMBackend):
                     "length",
                 )
 
-            if finish_reason == "stop" or (finish_reason != "tool_calls" and not msg.tool_calls):
+            # The calls decide, not the finish reason: some providers report "stop" with tool calls.
+            if not msg.tool_calls:
                 return _result(True, msg.content or "", None, "end_turn")
 
             # Execute tool calls
-            msgs.append(
-                {
-                    "role": "assistant",
-                    # Coerce None → "" : when the model returns only tool calls,
-                    # content is None, and some OpenAI-compatible servers reject
-                    # an assistant message with content=null + tool_calls.
-                    "content": msg.content or "",
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                        for tc in (msg.tool_calls or [])
-                    ],
-                }
-            )
+            assistant: dict[str, Any] = {
+                "role": "assistant",
+                # Coerce None → "" : when the model returns only tool calls,
+                # content is None, and some OpenAI-compatible servers reject
+                # an assistant message with content=null + tool_calls.
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in (msg.tool_calls or [])
+                ],
+            }
+            details = _reasoning_of(msg)
+            if details:
+                # Reasoning models (Gemini 3, o-series, Claude with thinking) need their reasoning back
+                # with the tool results, or the next turn loses it or is refused.
+                assistant["reasoning_details"] = details
+            msgs.append(assistant)
 
             for tc in msg.tool_calls or []:
                 tool_calls_made += 1
