@@ -14,12 +14,9 @@ not public and receive no security updates.
 
 **Please do not open a public issue for security problems.**
 
-Use one of these private channels:
-
-1. **GitHub Security Advisories (preferred):** open a draft advisory at
-   <https://github.com/bhanneke/E2ER-project/security/advisories/new>.
-   This keeps the report private until a fix is published.
-2. **Email:** `100xos.lab@gmail.com` with subject `E2ER security:`.
+Open a draft advisory through GitHub Security Advisories at
+<https://github.com/bhanneke/E2ER-project/security/advisories/new>.
+The report stays private until a fix is published.
 
 Please include:
 
