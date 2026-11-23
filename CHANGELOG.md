@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-11-23
+
 Fixes from an independent review of 0.21.0 (2026-11-21).
 
 ### Security
@@ -4114,7 +4116,8 @@ which were tied to internal infrastructure.
 - Audit bundle export (`.tar.gz`) includes `usage.json` with full cost
   breakdown.
 
-[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/bhanneke/E2ER-project/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.22.0
 [0.21.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.21.0
 [0.20.1]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.1
 [0.20.0]: https://github.com/bhanneke/E2ER-project/releases/tag/v0.20.0
