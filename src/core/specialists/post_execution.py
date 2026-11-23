@@ -472,12 +472,11 @@ def read_execution_error(workspace: Path, specialist: str) -> str | None:
 
     return (
         "## Your previous script FAILED — fix it and rewrite\n"
-        "You do not have a tool to run code yourself; the runner executes the script "
-        f"you write (saved as `{script_name}`) and reports the result here. On the last "
-        f"attempt the runner ran it and it **crashed (exit code {rc})**, so "
-        f"`{convention.sidecar}` is still empty. Read the error below, fix the specific "
-        "bug, and rewrite the script so it runs cleanly and writes a populated "
-        f"`{convention.sidecar}`. Do not write `{{}}` — fix the code.\n\n"
+        f"After the last attempt the runner ran the script you wrote (`{script_name}`) and it "
+        f"**crashed (exit code {rc})**, so `{convention.sidecar}` is still empty. Read the error "
+        "below, fix the specific bug, run the script yourself with `e2er-run` until it exits "
+        f"cleanly, and check that it writes a populated `{convention.sidecar}`. Do not write "
+        "`{}` — fix the code.\n\n"
         f"```\n{tail}\n```"
     )
 

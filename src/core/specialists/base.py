@@ -151,6 +151,23 @@ async def run_specialist(
 
     file_handler = FileToolHandler(workspace)
     handlers: list[ToolHandler] = list(extra_handlers or []) + [file_handler]
+
+    # A model reached through an API has no shell: the e2er commands its instructions name are tools
+    # of the same name (modules/llm/command_tools.py), for the specialists Claude Code lets run them.
+    from ...modules.llm.command_tools import (
+        API_BACKENDS,
+        COMMANDS_NOTE,
+        CommandToolHandler,
+        command_tools_for,
+        for_api_backend,
+    )
+
+    if backend_name in API_BACKENDS:
+        command_tools = command_tools_for(specialist)
+        tools.extend(command_tools)
+        handlers.insert(0, CommandToolHandler(workspace, {t["name"] for t in command_tools}))
+        system = f"{for_api_backend(system)}\n\n{COMMANDS_NOTE}"
+        user_prompt = for_api_backend(user_prompt)
     handler = CompositeToolHandler(handlers)
 
     messages = [{"role": "user", "content": user_prompt}]
