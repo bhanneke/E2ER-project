@@ -52,6 +52,7 @@ def test_denied_paths_cover_e2er_and_secrets(home, tmp_path):
     assert not any(ws.resolve().is_relative_to(d) for d in denied)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the profile is macOS's; it escapes Windows paths")
 def test_profile_denies_the_folders_and_the_dashboard_port(tmp_path):
     prof = macos_profile([tmp_path / ".e2er"], 8280)
     assert f'(subpath "{tmp_path / ".e2er"}")' in prof

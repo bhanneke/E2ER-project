@@ -7,6 +7,7 @@ file "predate output records", and the results-from-code contract accepted numbe
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from src.core import script_log
@@ -108,4 +109,5 @@ def test_adoption_record_is_outside_the_workspace(tmp_path):
     adopt(ws)
     assert not any(p.name.startswith(".e2er-script") and p.suffix == ".json" for p in ws.iterdir())
     assert script_log.key_file().is_file()
-    assert (script_log.key_file().stat().st_mode & 0o077) == 0
+    if sys.platform != "win32":  # Windows has no Unix permission bits; the key sits in the user's own folder
+        assert (script_log.key_file().stat().st_mode & 0o077) == 0

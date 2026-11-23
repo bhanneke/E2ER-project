@@ -30,6 +30,7 @@ from src.core.export import package as pkg
 from src.core.export.structured import export_paper
 from src.core.specialists.post_execution import _run_recorded
 from tests.platform_help import fake_program
+from tests.which_stub import which_only
 
 # ── a Gaia-like study: 120 stars, a figure spec with a point per star ────────
 
@@ -412,7 +413,7 @@ def test_publish_to_github_keeps_row_level_results_out(tmp_path, rerun_here, mon
     monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
     monkeypatch.setenv("GIT_CONFIG_KEY_0", f"url.file://{root}/.insteadOf")
     monkeypatch.setenv("GIT_CONFIG_VALUE_0", "https://github.com/")
-    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: str(gh) if name == "gh" else None)
+    monkeypatch.setattr(shutil, "which", which_only(gh=str(gh)))
     monkeypatch.delenv("E2ER_PURPOSE", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setattr(pc, "load_token", lambda base: "tok")

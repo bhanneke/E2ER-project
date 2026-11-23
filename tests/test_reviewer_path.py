@@ -397,7 +397,7 @@ def test_verify_against_the_published_record(reviewer, study_package, site):
     code, out = reviewer.e2er("verify", package.name, "--against", f"{site.base}/ada/road-deaths")
     assert code == 0, out
     assert "[PASS] published" in out, out
-    assert re.search(r"\[PASS\] package published\s+its fingerprint is the one", out), out
+    assert re.search(r"\[PASS\] package published\s+its fingerprint \(over the whole manifest\) is the one", out), out
     assert "byte for byte" in out
     # The same file against a study it is not.
     code, out = reviewer.e2er("verify", package.name, "--against", f"{site.base}/ada/other")
