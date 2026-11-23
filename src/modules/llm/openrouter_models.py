@@ -47,6 +47,8 @@ class OpenRouterModel:
     cache_read_per_m: str | None
     context_length: int
     tools: bool
+    #: The most output tokens one call may ask for (OpenRouter's ``top_provider``); 0 when not listed.
+    max_completion_tokens: int = 0
 
     def rates(self) -> tuple[Decimal, Decimal, Decimal | None] | None:
         if self.input_per_m is None or self.output_per_m is None:
@@ -99,6 +101,7 @@ def parse_models(payload: dict[str, Any]) -> dict[str, OpenRouterModel]:
             cache_read_per_m=_per_million(pricing["input_cache_read"]) if "input_cache_read" in pricing else None,
             context_length=int(m.get("context_length") or 0),
             tools="tools" in params,
+            max_completion_tokens=int((m.get("top_provider") or {}).get("max_completion_tokens") or 0),
         )
     return out
 

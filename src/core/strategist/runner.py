@@ -758,6 +758,7 @@ class PipelineRunner:
                     "paused_billing_limit": "billing_limit",
                     "paused_timeout": "timeout",
                     "paused_sandbox": "sandbox",
+                    "paused_backend_setup": "backend_setup",
                 }.get(getattr(pl, "event", ""), "plan_limit"),
                 "backend": pl.backend,
                 "resets": pl.resets,

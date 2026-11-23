@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OpenRouter and the Anthropic API get e2er's commands as tools.** A model reached through an API has no shell, so `e2er-run`, `e2er-data`, `e2er-lit`, `e2er-check-tables` and `e2er-fieldmap`, which the specialists' instructions name, were out of its reach: a script writer could not run its script before handing it in, and the first run came after the step, where a bug cost a whole new attempt. Each command is now a tool of the same name for the specialists Claude Code lets run it (`modules/llm/command_tools.py`); a call runs the command's own code in the study's folder, so `e2er-run` keeps its sandbox, time limit and script log. The instructions drop "(via Bash)" for these backends and say how a command is called. docs/BACKENDS.md has a section on the two backends.
+- **A run on OpenRouter is checked before its first step.** e2er asks OpenRouter whether it accepts the key and whether the key has credit left, and checks in OpenRouter's model list that the model can call tools and reads at least 64,000 tokens; the output limit per call follows the model's own. A failed check, and a refusal during the run that no retry fixes (a wrong key, no provider of the model that can call tools, an unknown model), pause the run (`paused_backend_setup`) with what to change; Resume checks again. Before, such a run failed every step three times.
+
 ### Fixed
 
+- **The OpenRouter tool loop runs the tool calls of a turn its provider ends with `stop`** (they were dropped and the step ended), joins streamed tool-call fragments that come without an index, and sends a reasoning model's `reasoning_details` back with the tool results.
 - **AI-written scripts start with a Python that resolves the folders above itself.** On macOS, a virtual environment inside a folder the script sandbox denies (`~/.claude/…`, where coding agents make checkouts) with Homebrew's Python stopped at start (`realpath: … Operation not permitted`): the sandbox now shows the metadata of the folders above the script's Python, never their contents. `SECURITY.md` names GitHub's private security advisories as the one channel.
 
 ## [0.22.0] — 2026-11-23

@@ -194,6 +194,7 @@ EVENTS: dict[str, str] = {
     "paper_paused": "Paused",
     "paused_plan_limit": "Paused: the plan's usage limit was reached",
     "paused_billing_limit": "Paused: the AI provider's credits or spending limit ran out",
+    "paused_backend_setup": "Paused: the AI provider cannot run the study as set up",
     "preregistration": "Pre-registration frozen",
     "preregistration_check": "Pre-registration compared with the plan",
     "run_identity": "e2er version recorded",

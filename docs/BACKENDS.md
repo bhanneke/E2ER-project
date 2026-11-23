@@ -106,6 +106,39 @@ The orchestrator does not rely on what a specialist ran: it re-runs the final
 analysis script itself, re-renders the tables and checks every number in the
 paper against the results, on every backend.
 
+## OpenRouter and the Anthropic API
+
+These two backends call the model through its API; e2er runs the conversation
+itself, and the model has no shell. It gets tools instead:
+
+- the file tools (`read_file`, `write_file`, `edit_file`, `list_directory`),
+  confined to the study's workspace folder;
+- e2er's commands as tools of the same name, for the same specialists Claude
+  Code lets run them (since 0.23): `e2er-data` for every specialist,
+  `e2er-run` for the script writers, `e2er-lit` for the literature and writing
+  specialists, `e2er-check-tables` for the paper's writers, `e2er-fieldmap`
+  for the field-map template. A call takes the words after the command as a
+  list (`e2er-data query sql "SELECT 1"` is the tool `e2er-data` with
+  `["query", "sql", "SELECT 1"]`) and runs the command's own code in the
+  study's folder, so `e2er-run` keeps its sandbox, time limit and script log;
+- `list_data_sources`, `fetch_data`, `query_data`, the literature tools, and
+  `query_allium` when an Allium key is set.
+
+Before the first step of a run on OpenRouter, e2er asks OpenRouter whether it
+accepts the key and whether the key has credit left, and checks in OpenRouter's
+model list that the model can call tools and reads at least 64,000 tokens at
+once; it lowers the output limit per call (`MAX_TOKENS_PER_CALL`) to what the
+model allows. When one of these fails, or a call is refused for good (a wrong
+key, no provider of the model that can call tools), the run pauses with the
+reason and Resume checks again; no attempt is counted. No credits or the key's
+spending limit pause the run the same way. Offline, the run starts and the
+calls report what is wrong.
+
+Choose the model with `OPENROUTER_MODEL` (or `--model` per study); the setup
+page lists the models that can call tools, with their prices. One model runs
+every step of a study. The cost of each call is the one OpenRouter reports, and
+the study's spending limit (`--max-cost`) pauses it when reached.
+
 ## Codex settings
 
 | setting | default | what it does |

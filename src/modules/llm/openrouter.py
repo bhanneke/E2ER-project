@@ -164,6 +164,31 @@ def _reasoning_of(msg: Any) -> Any:
     return details if isinstance(details, list) and details else None
 
 
+#: The context a model needs for a study's steps (the system prompt, skills and the step's files).
+MIN_CONTEXT_TOKENS = 64_000
+
+
+async def _key_info(api_key: str) -> dict[str, Any] | str | None:
+    """OpenRouter's answer about the key: its data, ``"rejected"`` (401), or None (offline, no answer)."""
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            resp = await client.get(f"{_OPENROUTER_BASE}/key", headers={"Authorization": f"Bearer {api_key}"})
+    except Exception as e:  # noqa: BLE001 — offline: the calls will tell
+        logger.info("OpenRouter key check not possible (%s)", type(e).__name__)
+        return None
+    if resp.status_code == 401:
+        return "rejected"
+    if resp.status_code != 200:
+        return None
+    try:
+        data = resp.json().get("data")
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _int(v: Any) -> int:
     return v if isinstance(v, int) and not isinstance(v, bool) else 0
 
@@ -220,6 +245,67 @@ class OpenRouterBackend(LLMBackend):
         from .openrouter_models import load_models
 
         load_models()
+
+    async def preflight(self) -> None:
+        """Before a run's first step: stop when the key, the model or its limits cannot run a study.
+
+        Checks the key with OpenRouter (``/api/v1/key``: accepted, credit left), and in OpenRouter's model
+        list that the model exists, can call tools, and has room for a study's prompts; lowers the output
+        limit per call to what the model allows. Offline or when OpenRouter does not answer, the run goes
+        on and the calls report what is wrong. Raises :class:`BackendSetupError` (the run pauses).
+        """
+        from .openrouter_models import find_model
+        from .plan_limit import SETUP_TAIL, BackendSetupError
+
+        def stop(status: str, message: str = "") -> BackendSetupError:
+            logger.error("OpenRouter check before the run: %s", status)
+            return BackendSetupError("openrouter", message or status, f"Stopped before the first step: {status}")
+
+        key = await _key_info(self._client.api_key)
+        if key == "rejected":
+            raise stop(
+                "OpenRouter does not accept the key (401). Check OPENROUTER_API_KEY in the settings. " + SETUP_TAIL
+            )
+        if isinstance(key, dict):
+            remaining = key.get("limit_remaining")
+            if isinstance(remaining, (int, float)) and remaining <= 0:
+                raise stop(
+                    "the OpenRouter key's spending limit is used up. Raise the limit at "
+                    "https://openrouter.ai/settings/keys or use another key. " + SETUP_TAIL
+                )
+        model = await asyncio.to_thread(find_model, self._model, network=True)
+        if model is None:
+            logger.warning(
+                "OpenRouter check: %s is not in OpenRouter's model list (offline?); the calls will tell", self._model
+            )
+            return
+        if not model.tools:
+            raise stop(
+                f"{self._model} cannot call tools on OpenRouter, and every step of a study needs them. Choose a "
+                "model that can (the setup page lists them) and set OPENROUTER_MODEL. " + SETUP_TAIL
+            )
+        if model.context_length and model.context_length < MIN_CONTEXT_TOKENS:
+            raise stop(
+                f"{self._model} reads at most {model.context_length:,} tokens at once; a study's steps need "
+                f"{MIN_CONTEXT_TOKENS:,}. Choose a model with a longer context and set OPENROUTER_MODEL. " + SETUP_TAIL
+            )
+        cap = model.max_completion_tokens or 0
+        if model.context_length:
+            cap = min(cap or model.context_length, model.context_length // 2)
+        if cap and self._max_tokens > cap:
+            logger.info(
+                "OpenRouter: %s writes at most %d tokens per call; using that instead of %d",
+                self._model,
+                cap,
+                self._max_tokens,
+            )
+            self._max_tokens = cap
+        logger.info(
+            "OpenRouter check passed: %s (tools, %s tokens of context, %d output tokens per call)",
+            self._model,
+            f"{model.context_length:,}",
+            self._max_tokens,
+        )
 
     def _provider_preference(self) -> dict[str, Any]:
         """OpenRouter's ``provider`` field for each call.

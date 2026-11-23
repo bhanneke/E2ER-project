@@ -146,6 +146,49 @@ class SandboxBlockedError(PlanLimitReachedError):
         self.args = (status,)
 
 
+class BackendSetupError(PlanLimitReachedError):
+    """The AI provider cannot run the study as set up: the key is wrong, the model is unknown or cannot call tools.
+
+    Every call would fail the same way, so the run pauses (``paused_backend_setup``) before the first
+    step (``OpenRouterBackend.preflight``) or at the first such refusal, with ``status`` saying what
+    to change. No attempt is counted; Resume checks again.
+    """
+
+    event = "paused_backend_setup"
+
+    def __init__(self, backend: str, message: str, status: str, specialist: str | None = None) -> None:
+        super().__init__(backend, message, None, specialist)
+        self.status = status
+        self.args = (status,)
+
+
+SETUP_TAIL = "Change the setting, then press Resume."
+
+#: (marker, status) for refusals that no retry fixes; the wording is OpenRouter's own.
+_SETUP: dict[str, tuple[tuple[re.Pattern[str], str], ...]] = {
+    "openrouter": (
+        (re.compile(r"error code: 401\b|no auth credentials found|user not found|invalid api key"),
+         "OpenRouter does not accept the key (401). Check OPENROUTER_API_KEY in the settings. " + SETUP_TAIL),
+        (re.compile(r"no endpoints found that support tool use"),
+         "No provider of this model on OpenRouter can call tools, which every step of a study needs. "
+         "Choose a model that can (the setup page lists them), set OPENROUTER_MODEL. " + SETUP_TAIL),
+        (re.compile(r"is not a valid model id|model .{0,80} does not exist|no endpoints found for"),
+         "OpenRouter does not know this model. Set OPENROUTER_MODEL to a model id OpenRouter lists. " + SETUP_TAIL),
+    ),
+}  # fmt: skip
+
+
+def detect_setup(backend: str, text: str) -> BackendSetupError | None:
+    """A refusal that no retry fixes (wrong key, unknown model, no tool support), or None."""
+    if not text:
+        return None
+    low = _norm(text)
+    for pattern, status in _SETUP.get(backend, ()):
+        if pattern.search(low):
+            return BackendSetupError(backend, text.strip()[:2000], status)
+    return None
+
+
 def _norm(text: str) -> str:
     return text.replace("’", "'").replace("‘", "'").lower()
 
@@ -255,7 +298,8 @@ async def raise_if_billing(
     """
     if getattr(result, "success", True):
         return
-    limit = detect_billing(backend, str(getattr(result, "error", "") or ""))
+    error = str(getattr(result, "error", "") or "")
+    limit: PlanLimitReachedError | None = detect_billing(backend, error) or detect_setup(backend, error)
     if limit is None:
         return
     from ..tracking.usage import record_cancelled_loop
