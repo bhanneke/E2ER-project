@@ -178,3 +178,15 @@ def test_a_python_above_the_secrets_opens_nothing(home, tmp_path, monkeypatch):
     profile = p.prefix[2]
     allow = [line for line in profile.splitlines() if line.startswith("(allow file-read* (subpath")]
     assert all(f'"{home}"' not in line and f'"{home.resolve()}"' not in line for line in allow)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the profile is macOS's; it escapes Windows paths")
+def test_the_folders_above_a_readable_python_show_their_metadata_only(tmp_path):
+    """Homebrew's Python resolves the folders above itself at start; in a denied folder it could not."""
+    denied = tmp_path / "secrets"
+    venv = denied / "jobs" / "venv"
+    prof = macos_profile([denied], None, readable=[venv])
+    assert f'(allow file-read* (subpath "{venv}"))' in prof
+    meta = next(line for line in prof.splitlines() if line.startswith("(allow file-read-metadata"))
+    assert f'(literal "{denied}")' in meta and f'(literal "{denied / "jobs"}")' in meta
+    assert "subpath" not in meta  # the folders themselves, never what they hold

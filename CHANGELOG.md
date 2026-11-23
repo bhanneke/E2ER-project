@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **AI-written scripts start with a Python that resolves the folders above itself.** On macOS, a virtual environment inside a folder the script sandbox denies (`~/.claude/…`, where coding agents make checkouts) with Homebrew's Python stopped at start (`realpath: … Operation not permitted`): the sandbox now shows the metadata of the folders above the script's Python, never their contents. `SECURITY.md` names GitHub's private security advisories as the one channel.
+
 ## [0.22.0] — 2026-11-23
 
 Fixes from an independent review of 0.21.0 (2026-11-21).

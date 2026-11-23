@@ -169,9 +169,17 @@ def macos_profile(
     paths = " ".join(f"(subpath {_sbpl_string(p)})" for p in denied)
     if paths:
         rules.append(f"(deny file-read* file-write* {paths})")
+        readable = list(readable)
         open_read = " ".join(f"(subpath {_sbpl_string(p)})" for p in readable)
         if open_read:
             rules.append(f"(allow file-read* {open_read})")
+            # A Python resolves the folders above itself at start (Homebrew's calls realpath): those
+            # folders' metadata, not their contents, stays visible when the Python sits in a denied one.
+            above = sorted({a for r in readable for a in Path(r).parents if str(a) != "/"})
+            if above:
+                rules.append(
+                    "(allow file-read-metadata " + " ".join(f"(literal {_sbpl_string(a)})" for a in above) + ")"
+                )
         if workspace is not None:
             ws = {Path(workspace), _real(Path(workspace))}
             rules.append("(allow file-read* file-write* " + " ".join(f"(subpath {_sbpl_string(p)})" for p in ws) + ")")
