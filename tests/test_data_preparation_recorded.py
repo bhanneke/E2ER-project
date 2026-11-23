@@ -207,13 +207,13 @@ def test_every_table_is_traced_to_its_load_or_its_script_and_the_code_answers_fo
     # texts_c1 and texts_c2 are read through f"texts_{c}"; the catalogue (books) by no step.
     assert set(rr.needed_tables(ws, chain, writers)) == {"corpus", "corpus_counts", "texts_c1", "texts_c2"}
 
-    # A run from before e2er recorded tables: the code says it (to_sql with a computed name and the name in a
+    # A run from before e2er recorded tables (and signed its lines): the code says it (to_sql with a computed
+    # name and the name in a
     # string of the script).
     log = ws / sl.SCRIPT_RUNS
     rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
-    log.write_text(
-        "".join(json.dumps({k: v for k, v in r.items() if k != "tables"}) + "\n" for r in rows), "utf-8", newline="\n"
-    )
+    older = [{k: v for k, v in r.items() if k not in ("tables", "mac")} for r in rows]
+    log.write_text("".join(json.dumps(r) + "\n" for r in older), "utf-8", newline="\n")
     writers = rr.table_writers(ws, loads, {"run_estimation.py"})
     assert writers["corpus"] == {"how": "built", "by": "build_data.py", "evidence": "the scripts' code"}
     assert rr.preparation_scripts(ws, chain, loads) == ([ws / "build_data.py"], ["corpus", "corpus_counts"])

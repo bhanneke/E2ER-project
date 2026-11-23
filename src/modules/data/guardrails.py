@@ -108,25 +108,33 @@ class QueryValidator:
 
         from ...db.client import fetch_one
 
-        row = await fetch_one(
-            """
+        sql = """
             SELECT id FROM data_query_records
             WHERE paper_id = %(pid)s
               AND query_type = 'feasibility'
               AND validation_status = 'approved'
-              AND query_sql ILIKE %(table_pattern)s
+              AND LOWER(query_sql) LIKE %(table_pattern)s
             LIMIT 1
-            """,
-            {"pid": paper_id, "table_pattern": f"%{table}%"},
-        )
+            """
+        # LOWER … LIKE, not ILIKE: the same match on Postgres and on SQLite, which has no ILIKE.
+        params = {"pid": paper_id, "table_pattern": f"%{table.lower()}%"}
+        row = await fetch_one(sql, params)
         if not row:
             # Inside a specialist's call the feasibility query of a moment ago may still sit in the
-            # call's audit journal, not yet imported into the run database (audit_journal.py). The model
-            # can write that journal, as it could write the run database's folder before; either way a
-            # production query still waits for the researcher's sealed approval in the dashboard.
-            from .audit_journal import journal_has_approved_feasibility
+            # call's audit journal, not yet imported into the run database (audit_journal.py). Only the
+            # run database counts: e2er wrote its rows after checking each journal line. A sealed line
+            # that names such a query only makes the guardrail wait for that import.
+            from .audit_journal import IMPORT_WAIT, journal_has_pending_feasibility
 
-            if journal_has_approved_feasibility(paper_id, table):
+            if journal_has_pending_feasibility(paper_id, table):
+                import asyncio
+                import time
+
+                deadline = time.monotonic() + IMPORT_WAIT
+                while row is None and time.monotonic() < deadline:
+                    await asyncio.sleep(0.5)
+                    row = await fetch_one(sql, params)
+            if row:
                 return ValidationResult(valid=True)
             return ValidationResult(
                 valid=False,

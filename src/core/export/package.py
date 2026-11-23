@@ -20,9 +20,11 @@ read it. The format is described in docs/STRUCTURED_EXPORT_SPEC.md
   ``e2er-package/wheels/<platform>/`` holds the wheels for this computer, so a
   rerun on the same kind of computer installs without the internet.
 - **A manifest** listing every file with its SHA-256 and size, and a
-  fingerprint over that list. The same export packs to the same bytes (sorted
-  entries, fixed timestamps, no packing date), so two people can compare
-  fingerprints.
+  fingerprint over the whole manifest (format ``e2er-package/2``: the file list
+  and every record of the package, its environment, the files it leaves out and
+  why, the steps that build them again; ``e2er-package/1`` covered the file list
+  only). The same export packs to the same bytes (sorted entries, fixed
+  timestamps, no packing date), so two people can compare fingerprints.
 
 Opening a package never runs anything: names are checked (no absolute path,
 no ``..``, no link), sizes are capped, and every file is checked against the
@@ -49,7 +51,12 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
-FORMAT = "e2er-package/1"
+#: The format pack writes: the fingerprint covers the whole manifest (manifest_fingerprint).
+FORMAT = "e2er-package/2"
+#: The format of packages made before 0.22: the fingerprint covers the list of files only (contents_fingerprint).
+FORMAT_CONTENTS_ONLY = "e2er-package/1"
+#: The formats this e2er reads.
+FORMATS = (FORMAT, FORMAT_CONTENTS_ONLY)
 MANIFEST = "e2er-package.json"
 #: Files the package adds to the study folder (never part of the study's own evidence).
 PACKAGE_DIR = "e2er-package"
@@ -108,11 +115,43 @@ def _canonical(value: Any) -> bytes:
 
 
 def fingerprint(contents: list[dict[str, Any]]) -> str:
-    """The package fingerprint: SHA-256 over the contents list (path, sha256, bytes; sorted by path)."""
+    """The fingerprint of format ``e2er-package/1``: SHA-256 over the contents list (path, sha256, bytes; sorted
+    by path). It leaves the manifest's other fields out (environment, left_out, rebuild, …); see
+    :func:`manifest_fingerprint`."""
     rows = sorted(
         ({"path": c["path"], "sha256": c["sha256"], "bytes": c["bytes"]} for c in contents), key=lambda c: c["path"]
     )
     return "sha256:" + hashlib.sha256(_canonical(rows)).hexdigest()
+
+
+contents_fingerprint = fingerprint
+
+
+def manifest_fingerprint(manifest: dict[str, Any]) -> str:
+    """The fingerprint of format ``e2er-package/2``: SHA-256 over the canonical JSON of the whole manifest without
+    its ``fingerprint`` field, so every record of the package (environment, wheels, left_out and its reasons,
+    rebuild, reproduction_requirements, …) is covered, not only the list of files (review 2026-11)."""
+    rest = {k: v for k, v in manifest.items() if k != "fingerprint"}
+    return "sha256:" + hashlib.sha256(_canonical(rest)).hexdigest()
+
+
+def expected_fingerprint(manifest: dict[str, Any]) -> str:
+    """The fingerprint ``manifest`` must carry, by its format."""
+    if manifest.get("format") == FORMAT_CONTENTS_ONLY:
+        return fingerprint(manifest.get("contents") or [])
+    return manifest_fingerprint(manifest)
+
+
+def seal_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
+    """``manifest`` with the fingerprint its format asks for (format ``FORMAT`` when it names none)."""
+    manifest.setdefault("format", FORMAT)
+    manifest["fingerprint"] = expected_fingerprint(manifest)
+    return manifest
+
+
+def covers_manifest(manifest: dict[str, Any]) -> bool:
+    """Whether the package's fingerprint covers its whole manifest (False: the older, contents-only format)."""
+    return manifest.get("format") != FORMAT_CONTENTS_ONLY
 
 
 def is_package(path: Path) -> bool:
@@ -924,7 +963,6 @@ def build(
             # The export's date, not the packing time: the same export packs to the same bytes.
             "created": study["exported_at"],
             "contents": contents,
-            "fingerprint": fingerprint(contents),
             "left_out": left_out,
             # Steps a rerun adds to the study's reproduce.json to build left-out derived inputs again.
             "rebuild": rebuild,
@@ -938,6 +976,8 @@ def build(
             from ..secret_scan import strip_local_paths
 
             manifest = strip_local_paths(manifest)  # the study's folder named in a note, for instance
+        # Last: the fingerprint covers the manifest as it is written (format e2er-package/2).
+        seal_manifest(manifest)
         manifest_bytes = (json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n").encode()
         target.parent.mkdir(parents=True, exist_ok=True)
         partial = target.with_name(f".{target.name}.partial")
@@ -975,8 +1015,10 @@ def repack(folder: Path, out: Path) -> Packed:
     contents = manifest.get("contents")
     if not isinstance(contents, list) or not contents:
         raise PackageError(f"{MANIFEST} lists no files")
-    if fingerprint(contents) != manifest.get("fingerprint"):
-        raise PackageError(f"{MANIFEST}'s fingerprint does not match its own list of files")
+    if manifest.get("format") not in FORMATS:
+        raise PackageError(f"{MANIFEST} is in format {manifest.get('format')}; this e2er reads {', '.join(FORMATS)}")
+    if expected_fingerprint(manifest) != manifest.get("fingerprint"):
+        raise PackageError(f"{MANIFEST}'s fingerprint does not match the manifest")
     entries: list[tuple[str, Path]] = []
     problems: list[str] = []
     for item in contents:
@@ -1094,14 +1136,49 @@ def archive_steps(path: Path) -> list[str]:
         lines.append(f"  {i}. {printable(cmd, newlines=False)}")
     if not steps:
         lines.append("  (none)")
+    try:
+        manifest = read_manifest(path)
+    except PackageError:
+        manifest = {}
+    # The steps the package's own list adds to build left-out files again (reproduce_recipe.apply_rebuild).
+    raw_rebuild = manifest.get("rebuild")
+    rebuild: list[Any] = raw_rebuild if isinstance(raw_rebuild, list) else []
+    added = []
+    for item in rebuild:
+        if not isinstance(item, dict) or item.get("written") or not isinstance(item.get("script"), str):
+            continue
+        what = item.get("folder") if isinstance(item.get("folder"), str) else item.get("path")
+        script, source = printable(item["script"], newlines=False), printable(item.get("from"), newlines=False)
+        added.append(
+            f"  + python {script} (from {source}): builds {printable(what, newlines=False)} again when the folder "
+            "lacks it"
+        )
+    if added:
+        lines.append(
+            f"Steps {MANIFEST} adds, to build files it left out again (counted only where the study's own records "
+            "say why the file is left out):"
+        )
+        lines += added
+    # What `e2er reproduce` installs: the package's lock when it has one (install_source), else the recipe's file.
+    raw_env = manifest.get("environment")
+    env: dict[str, Any] = raw_env if isinstance(raw_env, dict) else {}
     req = recipe.get("requirements")
-    if isinstance(req, str):
-        data = read_member(path, req)
+    installs, how = req, "the study's own requirements"
+    lock = read_member(path, LOCK) if env.get("lock") == LOCK else None
+    if lock is not None:
+        installs, how = LOCK, "every package pinned with its hashes"
+        m = _LOCK_PYTHON.search(lock[:4096].decode("utf-8", "replace"))
+        python = recipe.get("python") or (m.group(1) if m else None)
+        if python:
+            how += f", for Python {printable(python, newlines=False)}"
+    if isinstance(installs, str):
+        data = lock if installs == LOCK else read_member(path, installs)
         if data is not None:
             names = [ln.split()[0] for ln in data.decode("utf-8", "replace").splitlines() if ln.strip() and
                      not ln.lstrip().startswith(("#", "--hash"))]  # fmt: skip
             shown = ", ".join(printable(n, newlines=False) for n in names[:40]) or "no packages"
-            lines.append(f"Requirements ({printable(req, newlines=False)}): {shown}")
+            more = f" and {len(names) - 40} more" if len(names) > 40 else ""
+            lines.append(f"`e2er reproduce` installs ({printable(installs, newlines=False)}, {how}): {shown}{more}")
     return lines
 
 
@@ -1123,8 +1200,8 @@ def _manifest_of(zf: zipfile.ZipFile) -> dict[str, Any]:
     fmt = str(manifest.get("format") or "")
     if not fmt.startswith("e2er-package/"):
         raise PackageError(f"{MANIFEST} does not name the package format")
-    if fmt != FORMAT:
-        raise PackageError(f"the package is in format {fmt}; this e2er reads {FORMAT}. Update e2er.")
+    if fmt not in FORMATS:
+        raise PackageError(f"the package is in format {fmt}; this e2er reads {' and '.join(FORMATS)}. Update e2er.")
     contents = manifest.get("contents")
     if not isinstance(contents, list) or not all(
         isinstance(c, dict)
@@ -1138,8 +1215,9 @@ def _manifest_of(zf: zipfile.ZipFile) -> dict[str, Any]:
         raise PackageError(f"{MANIFEST} has no valid contents list (path, sha256 and bytes for every file)")
     if len({c["path"] for c in contents}) != len(contents):
         raise PackageError(f"{MANIFEST} lists a file twice")
-    if manifest.get("fingerprint") != fingerprint(contents):
-        raise PackageError(f"the fingerprint in {MANIFEST} does not match its own list of files")
+    if manifest.get("fingerprint") != expected_fingerprint(manifest):
+        what = "its own list of files" if fmt == FORMAT_CONTENTS_ONLY else "the manifest"
+        raise PackageError(f"the fingerprint in {MANIFEST} does not match {what}")
     return manifest
 
 
@@ -1402,25 +1480,71 @@ def declared_left_out(folder: Path) -> dict[str, dict[str, Any]]:
     return out
 
 
-def rebuild_steps(folder: Path) -> list[dict[str, Any]]:
-    """The manifest's ``rebuild`` steps of an unpacked package (none in an ordinary folder)."""
+def rebuild_steps(folder: Path, *, trusted: bool = False) -> list[dict[str, Any]]:
+    """The manifest's ``rebuild`` steps of an unpacked package (none in an ordinary folder).
+
+    The manifest is the packer's word: only steps for a file the package may leave out by the folder's own
+    records (supported_left_out, or an input a step loads again) count unless ``trusted``. An output step's
+    SHA-256 is the one provenance.json records for the file, never the manifest's.
+    """
     items = (package_manifest(folder) or {}).get("rebuild")
-    return [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+    steps = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+    if trusted:
+        return steps
+    supported = set(supported_left_out(folder))
+    try:
+        from ..data_terms import restricted_paths
+
+        supported |= set(restricted_paths(folder))
+    except Exception:  # noqa: BLE001 — records that cannot be read support nothing more
+        pass
+    listed = (_read_json(Path(folder) / "provenance.json") or {}).get("files") or {}
+    out: list[dict[str, Any]] = []
+    for item in steps:
+        if item.get("output"):
+            rel = item.get("folder")
+            if not isinstance(rel, str) or rel not in supported:
+                continue
+            meta = listed.get(rel) if isinstance(listed, dict) else None
+            item = {k: v for k, v in item.items() if k != "sha256"}
+            if isinstance(meta, dict) and isinstance(meta.get("sha256"), str):
+                item["sha256"] = meta["sha256"]
+        out.append(item)
+    return out
+
+
+_LOCK_PYTHON = re.compile(r"^# .*\bfor Python (3\.\d{1,2})\b", re.MULTILINE)
+
+
+def lock_python(folder: Path) -> str | None:
+    """The Python the package's lock was resolved for, as the lock's own header says (``for Python 3.12``)."""
+    try:
+        with (Path(folder) / LOCK).open(encoding="utf-8", errors="replace") as f:
+            head = f.read(4096)
+    except OSError:
+        return None
+    m = _LOCK_PYTHON.search(head)
+    return m.group(1) if m else None
 
 
 def install_source(folder: Path, recipe: dict[str, Any]) -> dict[str, Any]:
-    """What `e2er reproduce` installs from in an unpacked package: the lock, and the wheels when they fit here."""
+    """What `e2er reproduce` installs from in an unpacked package: the lock, and the wheels when they fit here.
+
+    The Python comes from the lock's own header (a file of the package's list), not from the manifest's
+    ``environment``: the manifest's fields are the packer's word (review 2026-11).
+    """
     doc = package_manifest(folder) or {}
     out: dict[str, Any] = {}
     env: dict[str, Any] = doc["environment"] if isinstance(doc.get("environment"), dict) else {}
     if env.get("lock") == LOCK and (Path(folder) / LOCK).is_file():
         out["requirements"] = LOCK
         # The lock was resolved for this Python: a recipe that names none runs on it, not on e2er's own.
-        if not recipe.get("python") and re.match(r"^3\.\d{1,2}$", str(env.get("python") or "")):
-            out["python"] = str(env["python"])
+        python = lock_python(folder)
+        if not recipe.get("python") and python:
+            out["python"] = python
     wheels = doc.get("wheels") if isinstance(doc.get("wheels"), dict) else None
     if wheels:
-        python_minor = str(recipe.get("python") or wheels.get("python") or "")
+        python_minor = str(recipe.get("python") or out.get("python") or wheels.get("python") or "")
         here = platform_key(python_minor)
         folder_rel = f"{WHEELS}/{wheels.get('platform')}"
         if wheels.get("platform") == here and (Path(folder) / folder_rel).is_dir():
@@ -1499,7 +1623,8 @@ def summary(manifest: dict[str, Any], size: int | None = None) -> str:
     total = sum(int(c.get("bytes") or 0) for c in contents)
     size_words = f"{human_size(size)} packed, " if size is not None else ""
     lines.append(f"Size: {size_words}{human_size(total)} unpacked, {len(contents)} file(s)")
-    lines.append(f"Fingerprint: {manifest.get('fingerprint')}")
+    form = "covers the whole manifest" if covers_manifest(manifest) else "covers the list of files only, older format"
+    lines.append(f"Fingerprint: {manifest.get('fingerprint')} ({form})")
     for n in manifest.get("notes") or []:
         lines.append(f"Note: {n}")
     from ..safe_text import printable

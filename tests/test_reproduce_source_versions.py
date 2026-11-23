@@ -14,6 +14,8 @@ import math
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from src.cli_reproduce import reproduce
 from src.core import reproduce as rp
 from src.core import reproduce_sources as rsrc
@@ -32,7 +34,7 @@ ROWS = [
 
 def test_the_fingerprint_ignores_the_order_of_rows_and_columns_and_whole_floats():
     fp = lr.fingerprint_rows(ROWS)
-    assert fp is not None and fp["form"] == "e2er-rows/1" and fp["rows"] == 3
+    assert fp is not None and fp["form"] == "e2er-rows/2" and fp["rows"] == 3
     assert fp["columns"] == ["location", "value", "year"]
     shuffled = [
         {"value": None, "location": "CCC", "year": 2021},
@@ -61,10 +63,16 @@ def test_the_canonical_form_is_pinned():
 
     text = '["location","value","year"]\n["AAA",12.5,2021]\n["BBB",3,2021]\n["CCC",null,2021]\n'
     assert lr.fingerprint_rows(ROWS)["sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    # Plain JSON values are written alike in both forms: a study recorded by 0.21 keeps its fingerprints.
+    assert lr.fingerprint_rows(ROWS, lr.FORM_V1)["sha256"] == lr.fingerprint_rows(ROWS)["sha256"]
 
 
-def test_a_load_without_rows_gets_no_fingerprint():
-    assert lr.with_fingerprint({"connector": "x"}, []) == {"connector": "x"}
+def test_a_load_without_rows_gets_a_fingerprint_and_no_table_gets_none():
+    import hashlib
+
+    empty = lr.with_fingerprint({"connector": "x"}, [])["fingerprint"]
+    assert empty["rows"] == 0 and empty["columns"] == [] and empty["form"] == "e2er-rows/2"
+    assert empty["sha256"] == hashlib.sha256(b"[]\n").hexdigest()
     assert lr.with_fingerprint({"connector": "x"}, None) == {"connector": "x"}
     assert lr.with_fingerprint({"connector": "x"}, ROWS)["fingerprint"]["rows"] == 3
 
@@ -77,7 +85,10 @@ def test_e2er_data_records_the_fingerprint_with_the_load(tmp_path: Path, monkeyp
     entry = {"connector": "who_gho", "retrieved_at": "2026-11-12T10:00:00Z", "request": {"command": "data"}}
     cli._record(result, SimpleNamespace(paper_id="p", specialist="researcher"), entry)
     [load] = json.loads((tmp_path / "data_sources.json").read_text(encoding="utf-8"))["loads"]
-    assert load["fingerprint"] == lr.fingerprint_rows(ROWS)
+    assert load["fingerprint"] == {
+        **lr.fingerprint_rows(ROWS),
+        "also": {"e2er-rows/1": lr.fingerprint_rows(ROWS, lr.FORM_V1)["sha256"]},
+    }
     assert load["rows"] == 3 and load["retrieved_at"] == "2026-11-12T10:00:00Z" and load["request"]
 
 
@@ -90,7 +101,7 @@ def test_the_dossier_lists_the_fingerprint_and_old_loads_stay_as_they_were(tmp_p
     (tmp_path / "data" / "data_sources.json").write_text(json.dumps({"loads": [old, new]}), encoding="utf-8")
     first, second = _data_sources(tmp_path)
     assert "fingerprint" not in first
-    assert second["fingerprint"] == {"form": "e2er-rows/1", "sha256": new["fingerprint"]["sha256"], "rows": 3}
+    assert second["fingerprint"] == {"form": "e2er-rows/2", "sha256": new["fingerprint"]["sha256"], "rows": 3}
 
 
 # ── comparing a reload with the study's record ───────────────────────────────
@@ -375,3 +386,107 @@ def test_many_loads_of_one_source_without_fingerprints_share_one_line():
         "2026-10-05), so e2er cannot say whether the source now returns other data.",
         "WHO returned different data than on 2026-10-14.",
     ]
+
+
+# ── review B, finding 8: only the final error decides ─────────────────────────
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        # an echoed setting earlier in the log, then a permanent error
+        'requesting https://x.example/api?timeout=60\nTraceback (most recent call last):\n  File "get_data.py", '
+        "line 3, in <module>\nrequests.exceptions.HTTPError: 404 Client Error: Not Found for url: https://x.example\n",
+        "retrying after a timeout\nurllib.error.HTTPError: HTTP Error 403: Forbidden\n",
+        'Traceback (most recent call last):\n  File "get_data.py", line 9\nhttpx.HTTPStatusError: Client error '
+        "'400 Bad Request' for url 'https://x.example'\n",
+        'Service Unavailable on the first try; trying again\nTraceback (most recent call last):\n  File "a.py"\n'
+        "KeyError: 'value'\n",
+        "timeout=60\nValueError: the response has no column 'year'\n",
+    ],
+)
+def test_a_permanent_failure_is_not_called_unavailable(tmp_path: Path, log: str):
+    step = _failed_reload(tmp_path, log)
+    assert rsrc.judge("Could not reproduce: x.", 2, [], [step])[1] == rsrc.COULD_NOT_RUN
+
+
+@pytest.mark.parametrize(
+    "log",
+    [
+        'Traceback (most recent call last):\n  File "get_data.py"\nhttpx.ReadTimeout: The read operation timed out\n',
+        'Traceback (most recent call last):\n  File "get_data.py"\nrequests.exceptions.HTTPError: 503 Server Error: '
+        "Service Unavailable for url: https://x.example\n",
+        'Traceback (most recent call last):\n  File "get_data.py"\nhttpx.HTTPStatusError: Server error '
+        "'502 Bad Gateway' for url 'https://x.example'\n",
+        "urllib.error.HTTPError: HTTP Error 429: Too Many Requests\n",
+        'Traceback (most recent call last):\n  File "a.py"\nConnectionError: Connection refused\n',
+    ],
+)
+def test_a_time_out_or_server_error_at_the_end_is_unavailable(tmp_path: Path, log: str):
+    step = _failed_reload(tmp_path, log)
+    assert rsrc.judge("Could not reproduce: x.", 2, [], [step])[1] == rsrc.SOURCE_UNAVAILABLE
+
+
+# ── e2er-rows/2 (review 2026-11-22, finding 14) ────────────────────────────────
+
+
+def test_form_2_writes_dates_missing_values_decimals_sets_and_large_integers_as_documented():
+    import hashlib
+    from datetime import datetime
+    from decimal import Decimal
+
+    import numpy as np
+    import pandas as pd
+
+    rows = [
+        {
+            "a": np.datetime64("2024-01-02T00:00:00", "ns"),
+            "b": pd.NaT,
+            "c": pd.NA,
+            "d": Decimal("1.50"),
+            "e": Decimal("3"),
+            "f": {"y", "x"},
+            "g": 2**60,
+            "h": np.datetime64("NaT", "ns"),
+        }
+    ]
+    fp = lr.fingerprint_rows(rows)
+    text = (
+        '["a","b","c","d","e","f","g","h"]\n'
+        '["2024-01-02T00:00:00",null,null,1.5,3,["x","y"],"1152921504606846976",null]\n'
+    )
+    assert fp["sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    # The same values from pandas (Timestamp, NaT) and from Python (datetime, None) give the same fingerprint.
+    same = [{"a": datetime(2024, 1, 2), "b": None, "c": None, "d": 1.5, "e": 3, "f": ["x", "y"],
+             "g": "1152921504606846976", "h": None}]  # fmt: skip
+    assert lr.fingerprint_rows(same)["sha256"] == fp["sha256"]
+    frame = pd.DataFrame({"a": pd.to_datetime(["2024-01-02", None])})
+    assert (
+        lr.fingerprint_rows(frame)["sha256"]
+        == lr.fingerprint_rows([{"a": "2024-01-02T00:00:00"}, {"a": None}])["sha256"]
+    )
+    # Form 1 is kept as it was: datetime64 as nanoseconds, NA and a Decimal as text.
+    assert lr.fingerprint_rows(rows, lr.FORM_V1)["sha256"] != fp["sha256"]
+    with pytest.raises(ValueError):
+        lr.fingerprint_rows(rows, "e2er-rows/9")
+
+
+def test_a_reload_compares_with_a_study_recorded_in_form_1(tmp_path: Path):
+    """A study recorded by 0.21 (e2er-rows/1) and a reload by this e2er (e2er-rows/2 with also)."""
+    import numpy as np
+
+    folder, run = tmp_path / "study", tmp_path / "run"
+    rows = [{"day": np.datetime64("2024-01-02", "ns"), "v": 1.5}]
+    old = {"connector": "who_gho", "table": "t", "retrieved_at": "2026-10-14T08:00:00Z",
+           "fingerprint": lr.fingerprint_rows(rows, lr.FORM_V1)}  # fmt: skip
+    new = lr.with_fingerprint({"connector": "who_gho", "table": "t", "retrieved_at": "2026-11-22T08:00:00Z"}, rows)
+    assert new["fingerprint"]["sha256"] != old["fingerprint"]["sha256"], "the forms differ for these rows"
+    _records(folder, run, [old], [new])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.SAME, entry["sentence"]
+    # A form this e2er does not compute: it says it cannot compare, never "different data".
+    unknown = {**old, "fingerprint": {**old["fingerprint"], "form": "e2er-rows/9"}}
+    _records(folder, run, [unknown], [new])
+    [entry] = rsrc.compare(folder, run)
+    assert entry["status"] == rsrc.NOT_RECORDED
+    assert "cannot compare" in entry["sentence"] and "e2er-rows/9" in entry["sentence"]

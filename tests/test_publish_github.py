@@ -23,6 +23,7 @@ from src.core.export.structured import export_paper
 from tests.platform_help import fake_program, rmtree
 from tests.test_derived_data import _gaia_workspace
 from tests.test_publish_data_terms import _add, plain_bundle  # noqa: F401 — fixture
+from tests.which_stub import which_only
 
 ID = dict(owner="ada", project="demo", orcid="0009-0000-7466-9581", name=None)
 
@@ -128,7 +129,7 @@ def github(tmp_path: Path, monkeypatch) -> Path:
         monkeypatch.delenv(k, raising=False)
     real_which = shutil.which
     # No tectonic (the paper is not recompiled in the tests); the fake gh is found.
-    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: str(gh) if name == "gh" else None)
+    monkeypatch.setattr(shutil, "which", which_only(gh=str(gh)))
     monkeypatch.setattr(pkg, "uv_lock", lambda r, p, a: (None, "offline in the tests"))
     monkeypatch.delenv("E2ER_PURPOSE", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -541,7 +542,7 @@ def test_restricted_files_are_checked_again_right_before_the_commit(who_study: P
 def test_without_gh_publish_says_what_to_install_and_changes_nothing(
     who_study: Path, github: Path, monkeypatch, capsys
 ):
-    monkeypatch.setattr(shutil, "which", lambda name, *a, **k: None)
+    monkeypatch.setattr(shutil, "which", which_only())
     assert publish(str(who_study), **ID, github_repo=True, yes=True) == 1
     out = capsys.readouterr().out
     assert "https://cli.github.com" in out and "gh auth login" in out and "never receives a GitHub token" in out

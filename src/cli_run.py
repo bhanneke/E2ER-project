@@ -115,6 +115,8 @@ def _api_reachable(timeout: float = 1.5) -> bool:
 #: written once the server answers (a file written before binding could replace
 #: the session file of a server already on the port).
 _pending_session: dict[int, tuple[str, int]] = {}
+#: Port -> (session token, approver key) of a server this command started: the address that may approve.
+_approver_link: dict[int, tuple[str, str]] = {}
 
 
 def _start_uvicorn_in_background() -> int:
@@ -131,7 +133,10 @@ def _start_uvicorn_in_background() -> int:
     # send (X-E2ER-Token); without it the server made a random one of its own
     # and refused every POST with 403.
     token = os.environ.get(ls.ENV_TOKEN) or ls.new_token()  # a new token per start (0.19.0)
-    env = {**os.environ, ls.ENV_TOKEN: token}
+    # The approver key (local_session.py): the server gets its hash; the key is printed only in this terminal.
+    approver, approver_sha = ls.new_approver_key()
+    env = {**os.environ, ls.ENV_TOKEN: token, ls.ENV_APPROVER: approver_sha}
+    _approver_link[_api_port()] = (token, approver)
     cmd = [
         sys.executable,
         "-m",
@@ -477,6 +482,15 @@ def run(
     print(f"\n  Paper ID:  {paper_id}", file=sys.stderr)
     print(f"  Workspace: {workspace}", file=sys.stderr)
     print(f"  Dashboard: {dashboard_url}\n", file=sys.stderr)
+    if _api_port() in _approver_link:
+        token, approver = _approver_link[_api_port()]
+        from .api.local_session import APPROVER_FRAGMENT
+
+        print(
+            "  To approve production data queries, open this address (it is shown only here):\n"
+            f"    {dashboard_url}?t={token}#{APPROVER_FRAGMENT}={approver}\n",
+            file=sys.stderr,
+        )
     print(f"Polling status (max {monitor_seconds:.0f}s, ^C is safe — run continues in background):", file=sys.stderr)
 
     try:

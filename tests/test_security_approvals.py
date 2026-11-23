@@ -33,7 +33,7 @@ def test_an_approved_row_without_the_dashboards_seal_stays_pending():
         assert asyncio.run(get_approval_status_with_note(QID)) == ("pending", "")
 
 
-def test_the_dashboards_approval_counts_and_only_for_the_same_sql():
+def test_the_dashboards_approval_counts_and_only_for_the_same_sql(as_approver):
     with patch("src.db.client.execute"), _db("approved"):
         r = TestClient(app).post(f"/api/queries/{QID}/approve", json={"approved": True, "note": "ok"})
         assert r.status_code == 200
@@ -58,3 +58,50 @@ def test_a_rejection_needs_no_seal():
 def test_a_query_id_that_is_a_path_is_refused():
     r = TestClient(app).post("/api/queries/..%2F..%2Fx/approve", json={"approved": True, "note": ""})
     assert r.status_code == 404
+
+
+def test_the_session_token_alone_cannot_approve(monkeypatch):
+    """Review of 2026-11-21: a script that read ~/.e2er/session-<port>.json approved a production query."""
+    import hashlib
+
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", hashlib.sha256(b"the-real-key").hexdigest())
+    with patch("src.db.client.execute") as ex, _db("pending"):
+        r = TestClient(app).post(f"/api/queries/{QID}/approve", json={"approved": True, "note": ""})
+        assert r.status_code == 403
+        assert "browser e2er opened" in r.json()["detail"]
+        ex.assert_not_called()
+        assert not (seal.seals_dir() / f"{QID}.json").exists() or not seal.is_sealed(QID, "approved", SQL)
+        # Refusing needs no more than the session.
+        assert TestClient(app).post(f"/api/queries/{QID}/approve", json={"approved": False}).status_code == 200
+
+
+def test_a_made_up_cookie_or_key_does_not_approve(monkeypatch):
+    import hashlib
+
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", hashlib.sha256(b"the-real-key").hexdigest())
+    c = TestClient(app)
+    c.cookies.set("e2er_approver_80", "guess")
+    with patch("src.db.client.execute"), _db("pending"):
+        assert c.post(f"/api/queries/{QID}/approve", json={"approved": True}).status_code == 403
+    assert c.post("/api/session/approver", json={"key": "guess"}).status_code == 403
+
+
+def test_without_an_approver_key_nobody_approves(monkeypatch):
+    """A server started without the hash (an old launcher) refuses every approval rather than trusting the token."""
+    monkeypatch.delenv("E2ER_APPROVER_SHA256", raising=False)
+    c = TestClient(app)
+    c.cookies.set("e2er_approver_80", "")
+    with patch("src.db.client.execute"), _db("pending"):
+        assert c.post(f"/api/queries/{QID}/approve", json={"approved": True}).status_code == 403
+
+
+def test_the_launch_key_buys_the_approver_cookie(monkeypatch):
+    import hashlib
+
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", hashlib.sha256(b"the-real-key").hexdigest())
+    c = TestClient(app)
+    r = c.post("/api/session/approver", json={"key": "the-real-key"})
+    assert r.status_code == 200
+    assert "httponly" in r.headers["set-cookie"].lower()
+    with patch("src.db.client.execute"), _db("approved"):
+        assert c.post(f"/api/queries/{QID}/approve", json={"approved": True}).status_code == 200

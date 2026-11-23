@@ -542,6 +542,11 @@ class PipelineRunner:
         if components:
             await log_event(self._paper_id, "template_components", payload=components)
 
+        # Before any model step: which lines of the workspace's script log an older e2er wrote (script_log.adopt).
+        from ..script_log import adopt
+
+        await asyncio.to_thread(adopt, Path(self._workspace))
+
         state: PipelineState | None = None
         try:
             state = PipelineState.load(self._workspace, self._paper_id, self._mode)

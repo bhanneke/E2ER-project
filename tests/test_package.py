@@ -183,7 +183,7 @@ def test_a_package_verifies_and_reproduces_like_its_folder(tmp_path, offline_loc
     packed = pkg.build(folder)
     assert packed.path == folder.parent / f"{folder.name}.e2er"
     m = packed.manifest
-    assert m["format"] == "e2er-package/1" and m["fingerprint"].startswith("sha256:")
+    assert m["format"] == "e2er-package/2" and m["fingerprint"] == pkg.manifest_fingerprint(m)
     assert m["left_out"] == []
     assert m["recipe"]["present"] and [s["run"][-1] for s in m["recipe"]["steps"]][-1] == "run_estimation.py"
     assert m["environment"]["lock"] == pkg.LOCK and m["environment"]["hashes"] is True
@@ -380,8 +380,27 @@ def test_an_edited_manifest_is_refused(tmp_path, offline_lock):
         manifest = json.loads(zf.read(pkg.MANIFEST))
     manifest["contents"][0]["sha256"] = "0" * 64
     bad = _rewrite(packed.path, tmp_path / "bad.e2er", replace={pkg.MANIFEST: json.dumps(manifest).encode()})
-    with pytest.raises(pkg.PackageError, match="fingerprint .* does not match its own list"):
+    with pytest.raises(pkg.PackageError, match="fingerprint .* does not match the manifest"):
         pkg.open_package(bad, tmp_path / "u")
+
+
+def test_an_edited_record_of_the_manifest_is_refused(tmp_path, offline_lock):
+    """Review 2026-11: the fingerprint covered the list of files only, so environment and left_out could change."""
+    folder = _export(tmp_path)
+    packed = pkg.build(folder)
+    with zipfile.ZipFile(packed.path) as zf:
+        manifest = json.loads(zf.read(pkg.MANIFEST))
+    manifest["environment"]["python"] = "3.9"
+    bad = _rewrite(packed.path, tmp_path / "bad.e2er", replace={pkg.MANIFEST: json.dumps(manifest).encode()})
+    with pytest.raises(pkg.PackageError, match="does not match the manifest"):
+        pkg.open_package(bad, tmp_path / "u")
+    # Refingerprinted as the older, contents-only format: it opens, and says that its fingerprint covers less.
+    manifest["format"] = pkg.FORMAT_CONTENTS_ONLY
+    manifest["fingerprint"] = pkg.fingerprint(manifest["contents"])
+    old = _rewrite(packed.path, tmp_path / "old.e2er", replace={pkg.MANIFEST: json.dumps(manifest).encode()})
+    opened = pkg.open_package(old, tmp_path / "o")
+    assert not pkg.covers_manifest(opened.manifest)
+    assert "covers the list of files only, older format" in pkg.summary(opened.manifest)
 
 
 # ── unsafe archives ─────────────────────────────────────────────────────────
@@ -392,7 +411,7 @@ def _package(path: Path, files: dict[str, bytes], *, link: str = "") -> Path:
     import hashlib
 
     contents = [{"path": n, "sha256": hashlib.sha256(d).hexdigest(), "bytes": len(d)} for n, d in files.items()]
-    manifest = {"format": pkg.FORMAT, "contents": contents, "fingerprint": pkg.fingerprint(contents)}
+    manifest = {"format": pkg.FORMAT_CONTENTS_ONLY, "contents": contents, "fingerprint": pkg.fingerprint(contents)}
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(pkg.MANIFEST, json.dumps(manifest))
         for name, data in files.items():
@@ -672,10 +691,10 @@ def test_the_finish_page_offers_the_package_for_download(live_db, session, offli
         )
     )
     c = TestClient(app, base_url=BASE, client=("127.0.0.1", 5))
+    assert c.post(f"/api/papers/{pid}/package").status_code == 403, "needs the session"
+    c.cookies.set("e2er_session_8290", TOKEN)  # the page needs the session too (review of 2026-11-21)
     page = c.get(f"/papers/{pid}/finish").text
     assert "Download package (.e2er)" in page
-    assert c.post(f"/api/papers/{pid}/package").status_code == 403, "needs the session"
-    c.cookies.set("e2er_session_8290", TOKEN)
     assert c.get(f"/api/papers/{pid}/package").status_code == 404, "not written yet"
     d = c.post(f"/api/papers/{pid}/package").json()
     assert d["name"] == f"{bundle.name}.e2er" and d["fingerprint"].startswith("sha256:")
@@ -700,7 +719,7 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
 
     folder = _export(tmp_path)
     packed = pkg.build(folder)
-    if tamper:  # the rerun differs from the published results (recorded as a change): a failure
+    if tamper:  # results changed and recorded as an amendment: no command records that, so the folder is refused
         from src.core.export.provenance import amend
 
         res = folder / "results" / "estimation_results.json"
@@ -710,7 +729,7 @@ def test_reproduce_removes_its_temporary_folders_also_after_a_failure(
         amend(folder, "results/estimation_results.json", "edited", at="x")
     tmp = Path(tempfile.gettempdir())
     assert reproduce(str(packed.path), yes=True, sandbox=False) == 0
-    assert reproduce(str(folder), yes=True, sandbox=False) == (1 if tamper else 0)
+    assert reproduce(str(folder), yes=True, sandbox=False) == (2 if tamper else 0)
     out = capsys.readouterr().out
     assert _leftovers(tmp) == [], out
     assert "is kept" not in out and "--keep keeps it" in out
@@ -762,3 +781,65 @@ def test_named_authors_are_read_with_their_notes_dropped(tmp_path):
 def test_an_empty_title_is_no_title(tmp_path):
     folder = _paper(tmp_path, "\\title{}\n\\author{}\n\\date{}")
     assert "author" not in pkg._study(folder, {})["title"]
+
+
+# ── the manifest's own records are the packer's word (review 2026-11) ───────
+
+
+def test_reproduce_takes_the_python_from_the_lock_and_not_from_the_manifest(tmp_path: Path):
+    folder = tmp_path / "study"
+    (folder / pkg.PACKAGE_DIR).mkdir(parents=True)
+    (folder / pkg.LOCK).write_text(
+        "# Every package the study's code needs, at one version each, with the SHA-256 of every file\n"
+        "# an installer may use. Resolved by e2er from code/requirements.txt for Python 3.12, with releases up "
+        "to 2026-10-16.\nnumpy==2.0.0\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    manifest = {"format": pkg.FORMAT, "environment": {"python": "3.9", "lock": pkg.LOCK}}
+    (folder / pkg.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
+    source = pkg.install_source(folder, {})
+    assert source == {"requirements": pkg.LOCK, "python": "3.12"}
+    assert pkg.install_source(folder, {"python": "3.13"}) == {"requirements": pkg.LOCK}
+
+
+def test_rebuild_steps_of_a_manifest_count_only_for_files_the_records_support(tmp_path: Path):
+    folder = tmp_path / "study"
+    folder.mkdir()
+    sha = "1" * 64
+    (folder / "provenance.json").write_text(
+        json.dumps({"files": {"results/table.csv": {"sha256": sha, "bytes": 10}}}), encoding="utf-8", newline="\n"
+    )
+    planted = {
+        "path": "table.csv",
+        "script": "run.py",
+        "from": "code/run.py",
+        "output": True,
+        "folder": "results/table.csv",
+        "sha256": "2" * 64,
+    }
+    data_step = {"path": "data/clean.csv", "script": "clean.py", "from": "code/clean.py"}
+    manifest = {"format": pkg.FORMAT, "rebuild": [planted, data_step], "left_out": []}
+    (folder / pkg.MANIFEST).write_text(json.dumps(manifest), encoding="utf-8", newline="\n")
+    # Nothing in the folder's records says results/table.csv may be missing: its output step is not taken.
+    assert pkg.rebuild_steps(folder) == [data_step]
+    assert pkg.rebuild_steps(folder, trusted=True) == [planted, data_step]
+
+
+def test_inspect_shows_what_reproduce_installs_and_the_steps_the_package_adds(tmp_path, offline_lock, capsys):
+    """Review 2026-11: inspect listed code/requirements.txt while reproduce installs the package's lock."""
+    folder = _export(tmp_path)
+    packed = pkg.build(folder)
+    with zipfile.ZipFile(packed.path) as zf:
+        manifest = json.loads(zf.read(pkg.MANIFEST))
+    manifest["rebuild"] = [
+        {"path": "data/clean.csv", "script": "clean.py", "from": "code/scratch/clean.py"},
+        {"path": "w.csv", "script": "run.py", "from": "code/run.py", "output": True, "written": True},
+    ]
+    pkg.seal_manifest(manifest)
+    path = _rewrite(packed.path, tmp_path / "r.e2er", replace={pkg.MANIFEST: json.dumps(manifest).encode()})
+    lines = "\n".join(pkg.archive_steps(path))
+    assert f"`e2er reproduce` installs ({pkg.LOCK}, every package pinned with its hashes" in lines
+    assert "Requirements (code/requirements.txt)" not in lines
+    assert "+ python clean.py (from code/scratch/clean.py): builds data/clean.csv again" in lines
+    assert "run.py" not in lines.split("adds")[-1], "a step the recipe already runs adds nothing"

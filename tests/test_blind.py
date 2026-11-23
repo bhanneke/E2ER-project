@@ -25,6 +25,7 @@ from src.core import platform_client as pc
 from src.core.export.provenance import files_at_export
 from tests.run_db import make_run_db, paper_id_of
 from tests.test_platform_cli import SHOWCASE, snapshot
+from tests.which_stub import which_only
 
 URL = "https://platform.test"
 NAME = "Imogen Quärry"
@@ -451,7 +452,7 @@ def quiet_computer(monkeypatch, tmp_path):
     home = tmp_path / "Users" / USER
     home.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setattr("src.cli_publish.shutil.which", lambda _: None)
+    monkeypatch.setattr("src.cli_publish.shutil.which", which_only())
     monkeypatch.setattr(an, "pdf_text", lambda p: "")
     monkeypatch.delenv("E2ER_BLIND_IDENTIFIERS", raising=False)
     monkeypatch.delenv("E2ER_AFFILIATION", raising=False)

@@ -99,6 +99,14 @@ async def check_budget(
         db_spent = 0.0
 
     spent = max(db_spent, float(in_memory_spent))
+    import math
+
+    if not (isinstance(max_cost_usd, int | float) and math.isfinite(max_cost_usd) and max_cost_usd > 0):
+        # NaN never compares true and inf is never reached: such a cap switched the check off (review of
+        # 2026-11-21). The settings' cap stands instead.
+        from ...config import get_settings
+
+        max_cost_usd = get_settings().default_max_cost_usd
     if spent >= max_cost_usd:
         raise BudgetExceededError(spent=spent, cap=max_cost_usd)
 

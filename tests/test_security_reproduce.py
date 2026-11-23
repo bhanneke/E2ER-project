@@ -64,7 +64,7 @@ def _evil_package(tmp_path: Path, canary: Path) -> Path:
     }
     contents = [{"path": p, "sha256": hashlib.sha256(b).hexdigest(), "bytes": len(b)} for p, b in files.items()]
     manifest = {
-        "format": pkg.FORMAT,
+        "format": pkg.FORMAT_CONTENTS_ONLY,
         "contents": contents,
         "fingerprint": pkg.fingerprint(contents),
         "study": {"title": "A harmless study\x1b[2K\rTitle: Forged"},
@@ -385,7 +385,12 @@ def test_a_real_sandbox_run_has_no_network_and_no_home(tmp_path, capsys):
 
 def _package(path: Path, files: dict[str, bytes], manifest_extra: dict | None = None) -> Path:
     contents = [{"path": p, "sha256": hashlib.sha256(b).hexdigest(), "bytes": len(b)} for p, b in files.items()]
-    m = {"format": pkg.FORMAT, "contents": contents, "fingerprint": pkg.fingerprint(contents), **(manifest_extra or {})}
+    m = {
+        "format": pkg.FORMAT_CONTENTS_ONLY,
+        "contents": contents,
+        "fingerprint": pkg.fingerprint(contents),
+        **(manifest_extra or {}),
+    }
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         zf.writestr(pkg.MANIFEST, json.dumps(m))
         for p, b in files.items():

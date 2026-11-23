@@ -206,7 +206,7 @@ def test_list_artifacts_returns_file_list(client, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_approve_query(client):
+def test_approve_query(as_approver, client):
     with patch("src.db.client.execute", new_callable=AsyncMock):
         resp = client.post(
             "/api/queries/query-uuid-123/approve",

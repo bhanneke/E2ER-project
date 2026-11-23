@@ -68,6 +68,23 @@ _home_is_home_on_windows()
 # Tests run in pytest's temporary folders with nothing set up: e2er would otherwise use the
 # default studies folder (~/e2er-studies) instead of a temporary current folder (src/home.py).
 os.environ.setdefault("E2ER_TEMPORARY_FOLDER_OK", "1")
+
+
+def _scripts_run_unsandboxed_where_no_sandbox_is() -> None:
+    """On a machine without a sandbox for AI-written scripts (Windows, Linux without bubblewrap or user
+    namespaces: the CI runners) the suite runs them as before 0.22 (``SCRIPT_SANDBOX=off``); where one
+    exists (macOS) every script of the suite runs in it. tests/test_script_sandbox.py covers both."""
+    if os.environ.get("SCRIPT_SANDBOX"):
+        return
+    from src.core.script_sandbox import SandboxUnavailable, plan
+
+    try:
+        plan(Path.cwd())
+    except SandboxUnavailable:
+        os.environ["SCRIPT_SANDBOX"] = "off"
+
+
+_scripts_run_unsandboxed_where_no_sandbox_is()
 # No real Codex call: a run on the codex backend first asks Codex to write a test file in its
 # sandbox (llm/codex.py check_sandbox). The tests of that check clear this themselves.
 os.environ.setdefault("E2ER_SKIP_SANDBOX_PREFLIGHT", "1")
@@ -520,6 +537,14 @@ def mock_db():
 
 
 @pytest.fixture(autouse=True)
+def _script_log_state_in_the_test(monkeypatch, tmp_path_factory):
+    """The script log's key and adoption records (script_log.py) live in a folder of the test, never in ~/.e2er."""
+    state = tmp_path_factory.mktemp("e2er-state")
+    monkeypatch.setenv("E2ER_SCRIPT_LOG_DIR", str(state))  # e2er-run in a subprocess signs with the same key
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _temporary_files_stay_in_the_test(monkeypatch, tmp_path_factory):
     """Every temporary folder a test makes (`e2er reproduce`'s run folder, an unpacked package, a subprocess's
     TMPDIR) lands under pytest's own base folder, which pytest prunes, never in the machine's $TMPDIR.
@@ -781,12 +806,37 @@ def _the_local_session(monkeypatch):
     from starlette.testclient import TestClient
 
     monkeypatch.setenv("E2ER_SESSION_TOKEN", TEST_SESSION_TOKEN)
+    # No approver key unless a test asks for one (as_approver); a started server's key is undone after the test.
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", "")
     real = TestClient.__init__
 
     def init(self, *args, headers=None, **kwargs):
         real(self, *args, headers={"x-e2er-token": TEST_SESSION_TOKEN, **(headers or {})}, **kwargs)
 
     monkeypatch.setattr(TestClient, "__init__", init)
+
+
+#: The approver key of the test server (local_session.py: only the browser `e2er` opened has it).
+TEST_APPROVER_KEY = "test-approver-key"
+
+
+@pytest.fixture
+def as_approver(monkeypatch):
+    """TestClients made in the test carry the approver cookie of the browser `e2er` opened."""
+    import hashlib
+
+    from starlette.testclient import TestClient
+
+    monkeypatch.setenv("E2ER_APPROVER_SHA256", hashlib.sha256(TEST_APPROVER_KEY.encode()).hexdigest())
+    real = TestClient.__init__
+
+    def init(self, *args, **kwargs):
+        real(self, *args, **kwargs)
+        port = self.base_url.port or 80
+        self.cookies.set(f"e2er_approver_{port}", TEST_APPROVER_KEY)
+
+    monkeypatch.setattr(TestClient, "__init__", init)
+    return TEST_APPROVER_KEY
 
 
 def pytest_collection_modifyitems(config, items):

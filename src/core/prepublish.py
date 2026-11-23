@@ -118,8 +118,24 @@ def counts(report: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def record_from(report: dict[str, Any]) -> dict[str, Any]:
-    """The verification entry for a run that reproduced."""
+def content_id(folder: Path) -> str | None:
+    """The content id of ``folder`` as it is now: the SHA-256 of its provenance.json (research_object.py)."""
+    import hashlib
+
+    try:
+        return "sha256:" + hashlib.sha256((Path(folder) / "provenance.json").read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def record_from(report: dict[str, Any], folder: Path | None = None) -> dict[str, Any]:
+    """The verification entry for a run that reproduced.
+
+    ``content_id``: the content id of the folder the run reproduced (its provenance.json, which lists every
+    file's SHA-256), so the entry names what it is about; publish then changes only what it records as
+    amendments (the stamp, the README). :func:`bind_package` adds the fingerprint of the study package
+    published with it.
+    """
 
     def obj(value: Any) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
@@ -152,8 +168,25 @@ def record_from(report: dict[str, Any]) -> dict[str, Any]:
             "exit_code": report.get("exit_code"),
             "counts": c,
             **timing(report),
+            **({"content_id": cid} if folder is not None and (cid := content_id(folder)) else {}),
         },
     }
+
+
+def bind_package(manifest: dict[str, Any]) -> None:
+    """Add the fingerprint of the study package published with ``manifest`` to its reproduction entry.
+
+    The entry is the outcome for the folder reproduced (``content_id``); the package is made from that folder
+    after publish's own amendments. Nothing changes when no package or no reproduction entry is recorded.
+    """
+    package = manifest.get("package")
+    fp = package.get("fingerprint") if isinstance(package, dict) else None
+    for v in manifest.get("verification") or []:
+        if isinstance(v, dict) and v.get("check") == CHECK and isinstance(v.get("reproduction"), dict):
+            if isinstance(fp, str):
+                v["reproduction"]["package_fingerprint"] = fp
+            else:
+                v["reproduction"].pop("package_fingerprint", None)
 
 
 def timing(report: dict[str, Any]) -> dict[str, Any]:
@@ -240,15 +273,32 @@ def reproduce_first(folder: Path, *, keep_report: bool = True, quiet: bool = Fal
         code = run_reproduction(folder, report)
     if quiet:
         print(out.getvalue(), end="", file=sys.stderr)
-    if keep_report and report:
+    if keep_report and report and not report.get("stopped"):
         target = folder / REPORT_FILE
         try:
             target.parent.mkdir(exist_ok=True)
             target.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8", newline="\n")
         except OSError:
             pass
+    stopped = report.get("stopped") if isinstance(report.get("stopped"), dict) else None
+    if stopped:
+        # The run stopped before the study's code said anything (an edited folder, a recipe that cannot run, an
+        # environment that could not be made): that cause alone, not "does not reproduce", and no
+        # --skip-reproduce, which would publish what the check refused.
+        why = str(stopped.get("why") or "the reproduction did not run")
+        lines = [f"error: not published: {why}"]
+        if stopped.get("kind") == "edited":
+            lines.append(
+                "  Publish the folder as exported (`e2er verify <folder>` shows what changed), or export the study "
+                "again (`e2er export`). Nothing was sent."
+            )
+        else:
+            lines.append("  Nothing was sent.")
+        return Outcome(False, None, lines, report)
     if code == 0 and report.get("exit_code") == 0:
-        return Outcome(True, record_from(report), ["✓ The study reproduces: " + str(report.get("verdict"))], report)
+        return Outcome(
+            True, record_from(report, folder), ["✓ The study reproduces: " + str(report.get("verdict"))], report
+        )
     verdict = str(report.get("verdict") or "the reproduction did not run (see the lines above)")
     kept = f" The full report is in {REPORT_FILE}." if keep_report and report else ""
     if report.get("category") == "source_unavailable":

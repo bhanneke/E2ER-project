@@ -700,11 +700,14 @@ def test_the_finish_page_verifies_the_export(live_db, session, monkeypatch):
         )
     )
     c = TestClient(app, base_url=BASE, client=("127.0.0.1", 5))
-    page = c.get(f"/papers/{pid}/finish").text
-    assert str(bundle) in page and "Publish to e2er.org" in page
+    signed_out = c.get(f"/papers/{pid}/finish", follow_redirects=False)  # the page needs the session too
+    assert signed_out.status_code == 303 and signed_out.headers["location"] == "/signed-out"
+    assert str(bundle) not in c.get(f"/papers/{pid}/finish").text
 
     assert c.post(f"/api/papers/{pid}/verify").status_code == 403, "needs the session"
     c.cookies.set("e2er_session_8290", TOKEN)
+    page = c.get(f"/papers/{pid}/finish").text
+    assert str(bundle) in page and "Publish to e2er.org" in page
     d = c.post(f"/api/papers/{pid}/verify").json()
     assert [x["name"] for x in d["checks"]][:6] == ["integrity", "anchor", "numbers", "tables", "spec", "citations"]
     assert d["verified"] is True, d
@@ -795,7 +798,12 @@ def test_bare_e2er_serves_and_prints_the_launch_url(monkeypatch, capsys, home):
     out = capsys.readouterr().out
     token = os.environ[ls.ENV_TOKEN]
     assert f"http://127.0.0.1:8291/?t={token}" in out
-    assert opened == [f"http://127.0.0.1:8291/?t={token}"]
+    # The approver key rides after "#" (never in a request line); the server has only its hash.
+    [url] = opened
+    assert url.startswith(f"http://127.0.0.1:8291/?t={token}#a=")
+    key = url.split("#a=", 1)[1]
+    assert ls.approver_key_ok(key) and len(os.environ[ls.ENV_APPROVER]) == 64
+    assert key not in os.environ[ls.ENV_APPROVER]
     assert ran["port"] == 8291 and ran["host"] == "127.0.0.1"
 
 

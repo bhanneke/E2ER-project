@@ -261,7 +261,7 @@ def _zip_package(tmp_path: Path, name: str) -> Path:
 
     data = b"x"
     contents = [{"path": name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": 1, "part": "study"}]
-    manifest = {"format": pkg.FORMAT, "contents": contents, "fingerprint": pkg.fingerprint(contents)}
+    manifest = {"format": pkg.FORMAT_CONTENTS_ONLY, "contents": contents, "fingerprint": pkg.fingerprint(contents)}
     out = tmp_path / "p.e2er"
     with zipfile.ZipFile(out, "w") as zf:
         zf.writestr(pkg.MANIFEST, json.dumps(manifest))

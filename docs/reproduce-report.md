@@ -28,6 +28,13 @@ says since when it is there.
 `published`, `produced`, `values`, `counts` (`identical`, `same_at_precision`, `small_difference`,
 `differs`, `missing_in_rerun`, `only_in_rerun`), `matches`, `problem`, `largest_differences`.
 
+A value is `same_at_precision` when the published number was stored rounded (four or more significant
+digits, never a whole number) and the rerun's value rounds to it: within half a unit of its last digit.
+A number in e-notation (a p-value such as `4.5678e-12`) is compared by its significant digits, so the
+rerun must give 4.5678e-12 to five digits; 0.0 or 9.9e-14 against 1.2345e-15 differ. Until 0.21 a number
+in e-notation counted to 12 decimals, plus an absolute allowance of 1e-9, so any two very small numbers
+counted as the same.
+
 Since 0.21 a result file that the folder does not ship (a package leaves it out under a source's terms, as
 `results/figure_spec.json` of a study on Yahoo Finance data) is listed with `"not_compared": true`,
 `"left_out": "left out under Yahoo Finance's terms (rebuilt by code/scratch/build_panel.py)"` and the same
@@ -75,18 +82,32 @@ series):
 
 ## The fingerprint of a load
 
-Since 0.21 every load `e2er-data` and `fetch_data` record in `data_sources.json` carries
-`"fingerprint": {"form": "e2er-rows/1", "sha256": "…", "rows": n, "columns": […]}`, a SHA-256 of the rows
-the load returned. The canonical form (`src/modules/data/load_record.py`, `fingerprint_rows`):
+Since 0.21 every load `e2er-data` and `fetch_data` record in `data_sources.json` carries a fingerprint, a
+SHA-256 of the rows the load returned. Since 0.22 it reads
+`"fingerprint": {"form": "e2er-rows/2", "sha256": "…", "rows": n, "columns": […], "also": {"e2er-rows/1": "…"}}`,
+and a load that returned no rows has one too (the hash of the empty column list). The canonical form
+`e2er-rows/2` (`src/modules/data/load_record.py`, `fingerprint_rows`):
 
 1. the columns are the names of every row's keys, sorted by Unicode code point;
-2. each row is a JSON array of its values in that column order (a missing key is `null`); a number whose
-   value is whole (`3.0`) is written as an integer (`3`), other floats in Python's shortest round-trip form,
-   NaN and infinities as `null`, dates as ISO text, nested objects with their keys sorted;
+2. each row is a JSON array of its values in that column order (a missing key is `null`):
+   - a number whose value is whole (`3.0`, `Decimal("3")`) is written as an integer (`3`); other floats and
+     decimals as a float in Python's shortest round-trip form (`Decimal("1.50")` as `1.5`);
+   - an integer of magnitude 2^53 or more as its decimal text (`"9007199254740993"`): a JSON reader that
+     reads numbers as doubles would change it;
+   - NaN, infinities, pandas' `NA` and `NaT` and numpy's `NaT` as `null`;
+   - dates, times and numpy's `datetime64` as ISO text (`2024-01-02T00:00:00`, as `pandas.Timestamp.isoformat`);
+   - a set as a list sorted by each element's JSON text; nested objects with their keys sorted; anything
+     else as its text;
 3. each array is written as compact JSON (`ensure_ascii=False`, `sort_keys=True`, separators `,` and `:`),
    and the lines are sorted by Unicode code point, so the order of the rows does not count;
 4. the hash is SHA-256 over the UTF-8 bytes of the column list written the same way, a newline, and each
    sorted row line followed by a newline.
+
+`e2er-rows/1` (0.21) differs only in step 2: numpy's `datetime64` became its count of nanoseconds, pandas'
+`NA` and `NaT` the text `<NA>` and `NaT`, a `Decimal` and a set their text, and a load without rows had no
+fingerprint. For plain JSON values (text, numbers, null) both forms give the same hash. A load records its
+rows in both forms (`also`), and `e2er reproduce` compares a reload with the study's record in the form the
+study recorded; for a form it does not compute it says that it cannot compare, never that the data differ.
 
 The same load also records the source (`connector`, `dataset`), the request (`request`, `query`), the time
 (`retrieved_at`, UTC), the row count (`rows`) and the source's version where its interface gives one
@@ -113,8 +134,14 @@ of the description's `verification` list (`e2er.json` and the request to e2er.or
                              "differs": 0, "missing_in_rerun": 0, "only_in_rerun": 0, "result_files": 1,
                              "result_files_not_compared": 0, "tables": 3, "tables_identical": 3,
                              "inputs": 2, "inputs_identical": 0, "inputs_reloaded": 2},
-                  "seconds": 252.2, "reload_seconds": 247.4, "reloaded_sources": ["ESA Gaia Archive"]}}
+                  "seconds": 252.2, "reload_seconds": 247.4, "reloaded_sources": ["ESA Gaia Archive"],
+                  "content_id": "sha256:…", "package_fingerprint": "sha256:…"}}
 ```
+
+`content_id` names the folder the run reproduced: the SHA-256 of its provenance.json, which lists every file's
+SHA-256 (publish then changes only what it records as amendments, such as the stamp on the paper).
+`package_fingerprint` is the fingerprint of the study package published with it (`--github`, `--zenodo`), when
+there is one.
 
 `seconds` is how long the rerun's steps took together, `reload_seconds` how long the steps that loaded data
 again took, and `reloaded_sources` the sources they loaded from (from the report's `steps` and `sources`;

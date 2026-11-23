@@ -77,7 +77,7 @@ import sys
 import sysconfig
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from .pipeline.reproduction import DEFAULT_MINOR_REL_TOLERANCE, _claimed_decimals, _equal_at, label_from
@@ -153,10 +153,26 @@ class RecipeError(Exception):
 
 
 def _safe_rel(path: Any) -> bool:
-    if not isinstance(path, str) or not path.strip():
+    """A path inside the folder on every system: relative, no ``..``, and no Windows drive (``D:x`` is
+    relative to drive D's current folder), UNC share (``\\\\host\\share``), root or colon (an NTFS stream)."""
+    if not isinstance(path, str) or not path.strip() or ":" in path or "\0" in path:
         return False
-    p = Path(path)
-    return not p.is_absolute() and ".." not in p.parts and not path.startswith(("/", "\\"))
+    p, w = Path(path), PureWindowsPath(path)
+    return (
+        not p.is_absolute()
+        and ".." not in p.parts
+        and ".." not in w.parts
+        and not (w.drive or w.root or w.anchor)
+        and not path.startswith(("/", "\\"))
+    )
+
+
+def _inside(root: Path, target: Path) -> Path:
+    """``target`` resolved, when it stays inside ``root`` (links followed); else RecipeError."""
+    resolved = target.resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise RecipeError(f"{target} leads outside the run folder")
+    return resolved
 
 
 #: A requirement line: a name with extras, version specifiers and markers. No URL, path or VCS reference.
@@ -1085,7 +1101,7 @@ def empty_home(run_dir: Path) -> Path:
 REPRODUCE_ENV = "E2ER_REPRODUCE"
 #: Set in the steps that do not load inputs again: e2er-data answers read-only queries only.
 DATA_READ_ONLY_ENV = "E2ER_DATA_READ_ONLY"
-#: ``block`` or ``record``: what the network guard does in a step (see reproduce_netguard.py).
+#: ``block``, ``record`` or ``public``: what the network guard does in a step (see reproduce_netguard.py).
 NETWORK_ENV = "E2ER_REPRODUCE_NETWORK"
 #: Where the guard and e2er-data record what a step tried to reach.
 NETWORK_LOG_ENV = "E2ER_REPRODUCE_NETWORK_LOG"
@@ -1167,6 +1183,8 @@ def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
     would otherwise be there already, and a script that writes nothing would be
     compared with the published file itself and "reproduce" it.
     """
+    run_dir.mkdir(parents=True, exist_ok=True)
+    root = run_dir.resolve()
     files = recipe.get("files")
     if not files:
         # symlinks=True: a link is copied as a link, never as the file it points to (check_foreign refuses links).
@@ -1175,10 +1193,14 @@ def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
         )
     else:
         for dst, src in files.items():
+            if not (_safe_rel(dst) and _safe_rel(src)):
+                raise RecipeError(f'"files": {dst} <- {src} is not a path inside the folder')
             source, target = folder / src, run_dir / dst
             if not source.exists():
                 continue  # an input the folder does not ship; a step loads it again (load_recipe checked)
+            _inside(root, target)  # before any folder is made for it, and again after
             target.parent.mkdir(parents=True, exist_ok=True)
+            _inside(root, target)
             if source.is_symlink() or not source.resolve().is_relative_to(folder.resolve()):
                 raise RecipeError(f'"files": {src} is a link or leads outside the study folder')
             if source.is_dir():
@@ -1187,7 +1209,15 @@ def lay_out(folder: Path, run_dir: Path, recipe: dict[str, Any]) -> list[str]:
                 shutil.copy2(source, target, follow_symlinks=False)
     removed = []
     for c in recipe.get("compare") or []:
+        if not _safe_rel(c.get("produced")):
+            raise RecipeError(f'"compare": {c.get("produced")} is not a path inside the folder')
         produced = run_dir / c["produced"]
+        parent = produced.parent.resolve()
+        if parent != root and not parent.is_relative_to(root):
+            raise RecipeError(f"{produced} leads outside the run folder")
+        if produced.is_symlink():
+            produced.unlink()  # the link itself (inside the run folder), never what it points to
+            continue
         if produced.is_file():
             produced.unlink()
             removed.append(c["produced"])
@@ -1373,7 +1403,10 @@ def run_steps(
         if not web:
             step_environment[DATA_READ_ONLY_ENV] = "1"
             step_environment[NETWORK_ENV] = "record" if allow_network else "block"
-            step_environment[NETWORK_LOG_ENV] = seen_as(net_log)
+        else:
+            # A reload reaches its source on the internet, never this computer or the local network.
+            step_environment[NETWORK_ENV] = "public"
+        step_environment[NETWORK_LOG_ENV] = seen_as(net_log)
         started = time.monotonic()
         code, tail = runner(argv, step_environment, timeout, log, web or allow_network, i)
         results.append(
@@ -1399,7 +1432,12 @@ def blocked_words(step: StepResult) -> str:
     hosts = sorted({str(n["host"]) for n in step.blocked if n.get("host")})
     commands = sorted({str(n["command"]) for n in step.blocked if n.get("command")})
     parts = []
-    if hosts:
+    if hosts and step.reload:
+        parts.append(
+            f"tried to reach {', '.join(hosts[:5])}, which is this computer, the local network or a cloud "
+            "metadata address; a step that loads data again may reach hosts on the internet only"
+        )
+    elif hosts:
         parts.append(
             f"tried to reach the web ({', '.join(hosts[:5])}), which a rerun allows only in the step that loads "
             "the inputs again"

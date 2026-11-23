@@ -46,7 +46,9 @@ compares the folder with what e2er.org published (GET only): the one anchor
 outside the folder. Without it, verify says it verified against the folder only.
 A .e2er file verified ``--against`` is also compared with the study package
 e2er.org records for that version (``package published``): the same fingerprint
-means the same files; the SHA-256 says whether it is the recorded file itself.
+means the same files and, since format ``e2er-package/2``, the same records of the
+package; the SHA-256 says whether it is the recorded file itself. An older package
+(fingerprint over the list of files only) passes only as the recorded file itself.
 """
 
 from __future__ import annotations
@@ -241,8 +243,9 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
         )
     amendments = prov.get("amendments") or []
     if amendments:
+        # Every amended file, by name: a reader sees what changed after export, not the first three.
         paths = sorted({a["path"] for a in amendments})
-        notes += f"; {len(amendments)} change(s) after export recorded as amendments ({', '.join(paths[:3])})"
+        notes += f"; {len(amendments)} change(s) after export recorded as amendments ({', '.join(paths)})"
     rewritten = sorted({a["path"] for a in amendments if a.get("kind") == "abstract_rewritten"})
     if rewritten:
         notes += f"; the abstract rewritten after export by e2er's abstract step ({', '.join(rewritten[:4])})"
@@ -269,24 +272,76 @@ def _check_integrity(bundle: Path, package_left_out: dict[str, dict[str, Any]] |
     )
 
 
+#: The files each kind of amendment may change, as the commands that record them change them (review 2026-11:
+#: any kind but the abstract's could name any file, so a results edit could be recorded as a "stamp").
+#: ``None``: any file, because verify checks the change itself against the file (_redaction_problems: a
+#: redaction or an anonymisation replaces text at recorded places with a fixed text, nothing else).
+#: No kind (the changes ``e2er publish`` makes to compile the paper and mark the report, and the stamp before
+#: it had a kind): the paper, its bibliography and PDF, the reproduction report and the README.
+_UNTYPED_AMENDABLE = (
+    "paper/paper.tex",
+    "paper/paper.pdf",
+    "paper/refs.bib",
+    "reproduction_report.md",
+    "misc/reproduction_report.md",
+    "README.md",
+)
+
+
+def _amendable(kind: Any) -> tuple[str, ...] | None:
+    """The paths an amendment of ``kind`` may name (None: any path); an unknown kind may name none."""
+    from .core import anonymise as an
+    from .core import carry_over as co
+    from .core import redact as rd
+    from .core.abstract import AMENDMENT_KINDS, CHANGED_FILES
+
+    if kind is None:
+        return _UNTYPED_AMENDABLE
+    if kind in AMENDMENT_KINDS:
+        return CHANGED_FILES  # e2er abstract: the abstract, the paper, its PDF and report.html
+    if kind == "stamp":
+        return ("paper/paper.tex", "paper/paper.pdf")
+    if kind == "readme":
+        return ("README.md",)
+    if kind == co.KIND:
+        return ("e2er.json",)
+    if kind in (rd.KIND, an.KIND):
+        return None
+    return ()
+
+
 def _amendment_problems(prov: dict[str, Any]) -> list[str]:
     """Each file changed after export (``e2er publish``) keeps a chain from its exported fingerprint.
 
     Per path, the amendments must link up (each ``sha256_before`` is the
-    previous ``sha256_after``) and end at the fingerprint the file has now.
+    previous ``sha256_after``) and end at the fingerprint the file has now. Each
+    kind of amendment may name only the files its command changes (_amendable):
+    results, data, code and reproduce.json are never amended but by a redaction or
+    an anonymisation, whose every change verify checks against the file.
     """
-    from .core.abstract import AMENDMENT_KINDS, CHANGED_FILES
+    from .core.abstract import AMENDMENT_KINDS
 
     out: list[str] = []
     last: dict[str, str | None] = {}
     for a in prov.get("amendments") or []:
+        if not isinstance(a, dict):
+            out.append("an amendment in provenance.json is not an object")
+            continue
         path, before, after = a.get("path"), a.get("sha256_before"), a.get("sha256_after")
         if not isinstance(path, str) or not isinstance(after, str):
             out.append("an amendment in provenance.json names no file or no new fingerprint")
             continue
-        if a.get("kind") in AMENDMENT_KINDS and path not in CHANGED_FILES:
+        kind = a.get("kind")
+        allowed = _amendable(kind)
+        if kind in AMENDMENT_KINDS and allowed is not None and path not in allowed:
             # e2er abstract changes the abstract, the paper, its PDF and report.html: nothing else.
             out.append(f"{path}: recorded as an abstract amendment, but e2er abstract never changes that file")
+        elif allowed is not None and path not in allowed:
+            label = f'"{kind}"' if isinstance(kind, str) else "without a kind"
+            out.append(
+                f"{path}: recorded as an amendment {label}, but no e2er command records such an amendment of that "
+                f"file (it may change only {', '.join(allowed) if allowed else 'no file'})"
+            )
         if path in last and last[path] != before:
             out.append(f"the amendments of {path} do not link up")
         last[path] = after
@@ -698,30 +753,61 @@ def _published_package(kind: str, record: Any, bundle: Path, against: str | None
     return None, ""
 
 
-def _check_package_against(file: Path, fingerprint: Any, rec: Any, where: str, source: str) -> Check:
-    """The .e2er file against the package e2er.org records: its fingerprint (the same files), and its bytes."""
+def _check_package_against(file: Path, manifest: Any, rec: Any, where: str, source: str) -> Check:
+    """The .e2er file against the package e2er.org records: its fingerprint, and its bytes.
+
+    A package of format ``e2er-package/2`` has a fingerprint over its whole manifest (its list of files and its
+    own records: environment, files left out and why, rebuild steps): the same fingerprint means the same
+    files and the same records, whatever the zip's bytes. An older package (``e2er-package/1``) has a
+    fingerprint over its list of files only: its records are the recorded ones only when the file is the
+    recorded file byte for byte, so a file packed again from it fails (review 2026-11: a package whose
+    environment and left-out reasons were changed and zipped again passed as "packed again").
+    """
     from .core import study_package as sp
+    from .core.export import package as pkg
 
     if rec is None:
         return Check("package published", SKIP, f"{source} records no study package for {where or 'this folder'}")
     bad = sp.record_problems(rec)
     if bad:
         return Check("package published", FAIL, f"the package record of {source} is malformed: {'; '.join(bad)}")
+    doc: dict[str, Any] = manifest if isinstance(manifest, dict) else {}
+    fingerprint = doc.get("fingerprint")
     if fingerprint != rec["fingerprint"]:
         return Check(
             "package published",
             FAIL,
             f"this package (fingerprint {str(fingerprint)[:19]}…) is not the one {source} records for {where} "
-            f"({rec['fingerprint'][:19]}…): its files differ",
+            f"({rec['fingerprint'][:19]}…): its files or its records differ",
         )
     same_bytes = sp.sha256_file(file) == rec["sha256"] and file.stat().st_size == rec["bytes"]
-    tail = (
-        "the file is the one recorded, byte for byte (SHA-256)"
-        if same_bytes
-        else "the file's bytes are not the recorded file's (packed again), its list of files is the same"
-    )
+    if pkg.covers_manifest(doc):
+        tail = (
+            "the file is the one recorded, byte for byte (SHA-256)"
+            if same_bytes
+            else "the file's bytes are not the recorded file's (packed again), its files and its records are the same"
+        )
+        return Check(
+            "package published",
+            PASS,
+            f"its fingerprint (over the whole manifest) is the one {source} records for {where} "
+            f"({rec['host']}); {tail}",
+        )
+    if same_bytes:
+        return Check(
+            "package published",
+            PASS,
+            f"its fingerprint is the one {source} records for {where} ({rec['host']}), contents-only, older format "
+            "(it covers the list of files, not the package's records); the file is the one recorded, byte for byte "
+            "(SHA-256), so its records are the recorded ones too",
+        )
     return Check(
-        "package published", PASS, f"its fingerprint is the one {source} records for {where} ({rec['host']}); {tail}"
+        "package published",
+        FAIL,
+        f"its list of files is the one {source} records for {where}, but the fingerprint of this older format "
+        "(contents-only) does not cover the package's own records (environment, files left out and why, rebuild "
+        "steps), and the file is not the recorded file (its SHA-256 differs): it was packed again, and its records "
+        "may have been changed. Fetch the recorded file with `e2er fetch`",
     )
 
 
@@ -1871,7 +1957,7 @@ def verify(
                     f"{opened.files} file(s) match {pkg.MANIFEST}; fingerprint {opened.manifest.get('fingerprint')}",
                 )
             )
-            package = (bundle_path, opened.manifest.get("fingerprint"))
+            package = (bundle_path, opened.manifest)
             bundle_path = opened.root
             # The manifest's declarations are the packer's word: only those the study's own records support
             # count (a source's terms, larger than the host takes), as in a folder.

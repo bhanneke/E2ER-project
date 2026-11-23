@@ -1061,6 +1061,10 @@ def _describe(
                 )
                 return 1, None
 
+    # The reproduction before publishing names the package published with it (core/prepublish.py).
+    from .core import prepublish as _pp
+
+    _pp.bind_package(manifest)
     written = write_manifest(b, manifest)
     _note_described_here(b, manifest)
     # The registry-entry file is for a pull request; publishing to a platform needs none unless asked for.

@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import ValidationInfo, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 
 #: Setting names that hold a key or secret: their values are stripped of surrounding whitespace.
@@ -289,7 +289,7 @@ class Settings(BaseSettings):
     max_review_rounds: int = 3
     weak_accept_threshold: float = 7.0
     max_revision_iterations: int = 3
-    default_max_cost_usd: float = 25.0  # fallback per-paper cost cap
+    default_max_cost_usd: float = Field(default=25.0, gt=0, allow_inf_nan=False)  # fallback per-paper cost cap
     # Per-API-call output cap. Must be large enough for ONE specialist's
     # `write_file` tool argument (the JSON / LaTeX / markdown content).
     # 16384 was too low: data_architect / paper_drafter writing
@@ -350,6 +350,11 @@ class Settings(BaseSettings):
     codex_network_access: bool = False
     # danger-full-access (no sandbox at all) runs only with this set as well (and a warning).
     codex_allow_full_access: bool = False
+
+    # ── AI-written scripts (e2er-run, the runner's rerun, the meta-analysis script) ──
+    # auto: in the operating system's sandbox (macOS sandbox-exec, Linux bubblewrap), which denies
+    # ~/.e2er and the user's secrets; without one e2er refuses to run the script. off: no sandbox.
+    script_sandbox: str = "auto"
 
     # ── Gemini CLI backend (not tested) ───────────────────────────────────────
     # Set LLM_BACKEND=gemini to delegate to the `gemini` subprocess. Requires

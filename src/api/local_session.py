@@ -165,13 +165,50 @@ def bearer_ok(request: Request) -> bool | None:
 
 #: ``/api/`` paths that answer without the session (none today; /health is outside /api/).
 OPEN_API_PATHS: frozenset[str] = frozenset()
+#: The page that says how to open the dashboard signed in; it, ``/health`` and ``/static/`` need no session.
+SIGNED_OUT_PATH = "/signed-out"
+OPEN_PAGE_PATHS = frozenset({"/health", SIGNED_OUT_PATH, "/favicon.ico"})
+SIGNED_OUT_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>e2er: start e2er</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40rem;margin:4rem auto;padding:0 1rem;
+color:#222;background:#fff} code{background:#f2f2f2;padding:.1rem .3rem;border-radius:3px}</style></head>
+<body><h1>Start e2er</h1>
+<p>This browser tab is not signed in to e2er. Open a terminal and run <code>e2er</code>: it opens the dashboard
+signed in. If e2er is already running, running <code>e2er</code> again opens it signed in.</p></body></html>
+"""
+
+
+def _launch_token_ok(request: Request) -> bool:
+    """A GET that carries this server's token in the launch address (``?t=…``), which the dashboard trades."""
+    t = request.query_params.get(QUERY)
+    return request.method == "GET" and bool(t) and secrets.compare_digest(str(t), session_token())
 
 
 def guard_request(request: Request) -> tuple[int, str] | None:
-    """The checks every request passes: a known Host, and the session on ``/api/``. None = pass."""
+    """The checks every request passes: a known Host, and the session on ``/api/`` and on every page.
+
+    None = pass. A page without the session answers 303 to :data:`SIGNED_OUT_PATH` (status 303, the
+    detail is the address): up to 0.21.0 the pages showed the studies, their files and the settings
+    page to anything on this computer that asked (review of 2026-11-21).
+    """
     if not host_allowed(request):
         return 400, "Invalid Host header: e2er answers at 127.0.0.1 or localhost (or a host set with --host)."
     path = request.url.path
+    if (
+        not path.startswith(("/api/", "/static/"))
+        and path not in OPEN_PAGE_PATHS
+        and request.method != "OPTIONS"
+        and not _launch_token_ok(request)
+        and bearer_ok(request) is not True
+        and not has_session(request)
+    ):
+        if request.method in ("GET", "HEAD"):
+            return 303, SIGNED_OUT_PATH
+        return (
+            403,
+            "This browser tab is not signed in to e2er. Run `e2er` in a terminal: it opens the dashboard signed in.",
+        )
     if path.startswith("/api/") and path not in OPEN_API_PATHS and request.method != "OPTIONS":
         bearer = bearer_ok(request)
         if bearer is False:
@@ -229,6 +266,59 @@ def require_local_session(request: Request) -> None:
         raise HTTPException(status_code=403, detail=problem)
 
 
+# ── the researcher's approvals: a key the session file never holds ─────────
+#
+# The session token is in ``~/.e2er/session-<port>.json``, so whatever can read that file can call
+# the API (review of 2026-11-21: an AI-written script did, and approved a production query). An
+# approval therefore needs more: the approver key. The `e2er` that starts the server makes it, gives
+# the server only its SHA-256 (``E2ER_APPROVER_SHA256``), and puts the key itself only into the
+# address it opens in the browser and prints in its terminal, after ``#`` (a fragment: the browser
+# never sends it in a request line, so no log records it). The dashboard's script trades it for an
+# HttpOnly cookie (``POST /api/session/approver``). Nothing on disk holds the key.
+
+ENV_APPROVER = "E2ER_APPROVER_SHA256"
+APPROVER_FRAGMENT = "a"
+
+
+def new_approver_key() -> tuple[str, str]:
+    """(key, its SHA-256): the key goes to the browser, the hash to the server's environment."""
+    import hashlib
+
+    key = secrets.token_urlsafe(32)
+    return key, hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def approver_cookie_name(request: Request) -> str:
+    port = request.url.port or (443 if request.url.scheme == "https" else 80)
+    return f"e2er_approver_{port}"
+
+
+def approver_key_ok(key: object) -> bool:
+    """Is ``key`` the approver key of this server (whose hash the starting `e2er` set)?"""
+    import hashlib
+
+    expected = os.environ.get(ENV_APPROVER, "")
+    if not (isinstance(key, str) and key and len(expected) == 64):
+        return False
+    return secrets.compare_digest(hashlib.sha256(key.encode("utf-8")).hexdigest(), expected)
+
+
+def is_approver(request: Request) -> bool:
+    """Does this request come from the browser the starting `e2er` opened (its approver cookie)?"""
+    return approver_key_ok(request.cookies.get(approver_cookie_name(request)))
+
+
+def set_approver_cookie(response: Any, request: Request, key: str) -> None:
+    response.set_cookie(approver_cookie_name(request), key, httponly=True, samesite="strict", path="/")
+
+
+NOT_APPROVER = (
+    "Approving a production data query needs the browser e2er opened when it started (or the address it "
+    "printed in that terminal window). This tab can watch the run but not approve: open that address, or "
+    "stop e2er (ctrl-c) and start it again with `e2er`."
+)
+
+
 # ── the session file a second `e2er` reads ──────────────────────────────────
 
 
@@ -246,7 +336,7 @@ def set_session_cookies(response: Any, request: Request, token: str) -> None:
 def write_session_file(port: int, token: str, *, pid: int | None = None) -> Path:
     """Record the token of the server on ``port``; ``pid`` is the server's process (default: this one)."""
     p = session_file(port)
-    p.parent.mkdir(parents=True, exist_ok=True)
+    p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
         json.dump({"token": token, "pid": pid if pid is not None else os.getpid(), "port": port}, fh)

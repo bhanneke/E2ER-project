@@ -52,6 +52,35 @@ def state_dir() -> Path:
     return Path.home() / ".e2er"
 
 
+def make_private(path: Path, *, folder: bool = False) -> None:
+    """Only the user may read ``path``: mode 700 for a folder, 600 for a file (POSIX; never raises)."""
+    if os.name == "nt":
+        return
+    try:
+        if path.exists() and not path.is_symlink():
+            os.chmod(path, 0o700 if folder else 0o600)
+    except OSError:
+        pass
+
+
+def secure_state(db_file: Path | None = None) -> None:
+    """``~/.e2er`` mode 700 and the run database (with its -wal/-shm/-journal files) mode 600.
+
+    The folder holds the dashboard's session, the approval and script-log keys and the run
+    database; up to 0.21.0 it and ``papers.db`` were readable by every account on the computer
+    (review of 2026-11-21).
+    """
+    d = state_dir()
+    try:
+        d.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError:
+        return
+    make_private(d, folder=True)
+    db = db_file if db_file is not None else d / "papers.db"
+    for f in (db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm"), db.with_name(db.name + "-journal")):
+        make_private(f)
+
+
 def settings_file() -> Path:
     """Where e2er remembers the studies folder (and nothing secret)."""
     return state_dir() / "settings.json"

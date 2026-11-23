@@ -7,10 +7,23 @@ id, the decision and the query's SQL, keyed with a secret in ``~/.e2er/approval-
 and keeps the seal in ``~/.e2er/approvals/<query id>.json``. ``check_approval`` counts an
 "approved" row only with a seal that matches; a row without one stays pending.
 
-What this does and does not hold: Claude Code's specialists cannot read or write ``~/.e2er``
-(``--disallowedTools``), and no backend gets the key in its environment. Codex's sandbox does
-not stop reading files, so under Codex a shell command can still read the key; the seal then
-only stops a model that writes the database without it.
+What this does and does not hold. Claude Code's own file tools may not read or write ``~/.e2er``
+(``--disallowedTools``), and no backend gets the key in its environment. That alone did not keep
+the key from the model: up to 0.21.0 a script it ran with ``e2er-run`` could open any file of the
+user's, the key and the dashboard's session token included, and with the token it could call the
+dashboard's approve endpoint, which then wrote this seal (review of 2026-11-21). Since 0.22:
+
+- scripts started by ``e2er-run``, by the runner and by the meta-analysis run in the operating
+  system's sandbox, which denies ``~/.e2er`` (``core/script_sandbox.py``; without a sandbox e2er
+  refuses to run them unless the researcher set ``SCRIPT_SANDBOX=off``);
+- the approve endpoint seals an approval only for the browser the starting ``e2er`` opened (its
+  approver cookie, ``api/local_session.py``), never for the session token alone;
+- ``~/.e2er`` is mode 700.
+
+What remains: under Codex the model's shell commands run in Codex's sandbox, which does not stop
+reading files, so a command can read the key and write a seal file itself (with the network off,
+Codex's default, it cannot reach the dashboard). The seal then stops only a model that writes the
+database without reading the key.
 """
 
 from __future__ import annotations

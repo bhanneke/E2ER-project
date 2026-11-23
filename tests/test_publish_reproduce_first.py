@@ -21,6 +21,7 @@ from src.core.dossier import dossier_id
 from tests.conftest import FAKE_REPRODUCED_REPORT, REAL_REPRODUCE_FIRST
 from tests.run_db import make_run_db, paper_id_of
 from tests.test_blind import rehash
+from tests.test_package import offline_lock  # noqa: F401  (fixture)
 from tests.test_publish_integrity import ARGS, bundle  # noqa: F401  (fixture)
 from tests.test_publish_site_schema import SCHEMA
 
@@ -213,3 +214,59 @@ def test_a_source_that_did_not_answer_says_to_try_again_later(bundle, server, ru
     out = capsys.readouterr().out
     assert "error: not published yet: Could not reproduce yet: a source did not answer" in out
     assert "Run the same command again later." in out and server.sent == []
+
+
+def test_an_edited_folder_is_refused_with_its_own_reason_not_as_a_study_that_does_not_reproduce(
+    bundle,  # noqa: F811
+    server,
+    runs,
+    monkeypatch,
+    capsys,  # noqa: F811
+):
+    """Review 2026-11: an edited folder read "the study does not reproduce" and offered --skip-reproduce."""
+
+    def refused(folder, report):
+        report["stopped"] = {
+            "kind": "edited",
+            "why": "the folder is not the study as exported, so it is not run: results/x.json was changed",
+        }
+        return 2
+
+    monkeypatch.setattr(prepublish, "run_reproduction", refused)
+    assert _go(bundle) == 1
+    out = capsys.readouterr().out
+    assert server.sent == []
+    assert "error: not published: the folder is not the study as exported, so it is not run: results/x.json" in out
+    assert "does not reproduce" not in out and "--skip-reproduce" not in out
+    assert not (bundle / prepublish.REPORT_FILE).exists()
+
+
+def test_reproduce_reports_an_edited_folder_to_publish_instead_of_printing_it(tmp_path, offline_lock, capsys):  # noqa: F811
+    from src.cli_reproduce import reproduce
+    from tests.test_package import _export
+
+    folder = _export(tmp_path)
+    res = folder / "results" / "estimation_results.json"
+    res.write_text(res.read_text(encoding="utf-8").replace("{", "{ ", 1), encoding="utf-8", newline="\n")
+    report: dict = {}
+    assert reproduce(str(folder), yes=True, sandbox=False, report=report) == 2
+    assert report["stopped"]["kind"] == "edited"
+    assert "not the study as exported" in report["stopped"]["why"]
+    assert "not the study as exported" not in capsys.readouterr().out
+    # On its own, `e2er reproduce` prints it as before.
+    assert reproduce(str(folder), yes=True, sandbox=False) == 2
+    assert "error: the folder is not the study as exported" in capsys.readouterr().out
+
+
+def test_the_outcome_names_the_folder_it_reproduced_and_the_package_published_with_it(bundle, server, runs, capsys):  # noqa: F811
+    import hashlib
+
+    want = "sha256:" + hashlib.sha256((bundle / "provenance.json").read_bytes()).hexdigest()
+    assert _go(bundle) == 0, capsys.readouterr().out
+    [entry] = [v for v in server.sent[0]["manifest"]["verification"] if v["check"] == "reproduction"]
+    assert entry["reproduction"]["content_id"] == want
+    manifest = {"package": {"fingerprint": "sha256:" + "a" * 64}, "verification": [entry, {"check": "integrity"}]}
+    prepublish.bind_package(manifest)
+    assert entry["reproduction"]["package_fingerprint"] == "sha256:" + "a" * 64
+    prepublish.bind_package({"verification": [entry]})
+    assert "package_fingerprint" not in entry["reproduction"]

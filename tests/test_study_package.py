@@ -220,13 +220,92 @@ def test_verify_against_the_study_record_compares_the_package_fingerprint(
     assert verify(str(asset), json_output=True, against_file=str(saved)) == 1
     checks = _checks(capsys)
     assert (
-        checks["package published"]["status"] == "FAIL" and "its files differ" in checks["package published"]["detail"]
+        checks["package published"]["status"] == "FAIL"
+        and "its files or its records differ" in checks["package published"]["detail"]
     )
 
     record["versions"][0]["package"] = None
     saved.write_text(json.dumps(record), encoding="utf-8", newline="\n")
     verify(str(asset), json_output=True, against_file=str(saved))
     assert _checks(capsys)["package published"]["status"] == "SKIP"
+
+
+def _rezipped(asset: Path, out: Path, edit) -> Path:
+    """The package with its manifest edited by ``edit`` and zipped again (the review's repro, 2026-11)."""
+    import zipfile
+
+    with zipfile.ZipFile(asset) as src, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            data = src.read(info)
+            if info.filename == pkg.MANIFEST:
+                doc = json.loads(data)
+                edit(doc)
+                data = json.dumps(doc).encode()
+            dst.writestr(info, data)
+    return out
+
+
+def test_a_package_whose_records_were_changed_and_zipped_again_fails_against_the_record(
+    who_study: Path,
+    github: Path,
+    tmp_path: Path,
+    capsys,
+):
+    """Review 2026-11: environment.python and left_out[0].reason changed, zipped again: verify said "packed again"."""
+    asset, record = _published(who_study, github, tmp_path)
+    saved = tmp_path / "study.json"
+    saved.write_text(json.dumps(record), encoding="utf-8", newline="\n")
+    assert pkg.read_manifest(asset)["format"] == pkg.FORMAT
+
+    def tamper(doc: dict) -> None:
+        doc["environment"]["python"] = "3.9"
+        for item in doc.get("left_out") or []:
+            item["reason"] = "the authors chose so"
+
+    def as_new(doc: dict) -> None:
+        tamper(doc)
+        pkg.seal_manifest(doc)
+
+    def as_old(doc: dict) -> None:  # passed off as the older, contents-only format
+        tamper(doc)
+        doc["format"] = pkg.FORMAT_CONTENTS_ONLY
+        doc["fingerprint"] = pkg.fingerprint(doc["contents"])
+
+    for name, edit in (("new", as_new), ("old", as_old)):
+        forged = _rezipped(asset, tmp_path / f"{name}.e2er", edit)
+        capsys.readouterr()
+        assert verify(str(forged), json_output=True, against_file=str(saved)) == 1
+        assert _checks(capsys)["package published"]["status"] == "FAIL", name
+    # The same manifest zipped again (other bytes): its fingerprint covers the manifest, so it passes.
+    same = _rezipped(asset, tmp_path / "same.e2er", lambda doc: None)
+    assert sp.sha256_file(same) != record["versions"][0]["package"]["sha256"]
+    capsys.readouterr()
+    verify(str(same), json_output=True, against_file=str(saved))
+    check = _checks(capsys)["package published"]
+    assert check["status"] == "PASS" and "its files and its records are the same" in check["detail"]
+
+
+def test_an_older_package_record_still_verifies_as_contents_only(tmp_path: Path):
+    """A package published before 0.22 (format e2er-package/1, fingerprint over the files only): the recorded file
+    itself passes and says so; a file packed again from it fails, since its records are not covered."""
+    from src.cli_verify import FAIL, PASS, _check_package_against
+
+    contents = [{"path": "README.md", "sha256": "0" * 64, "bytes": 3}]
+    manifest = {"format": pkg.FORMAT_CONTENTS_ONLY, "contents": contents, "fingerprint": pkg.fingerprint(contents)}
+    file = tmp_path / "old.e2er"
+    file.write_bytes(b"the recorded bytes")
+    rec = {
+        "url": "https://github.com/ada/demos/releases/download/demo-v1/demo-v1.e2er",
+        "sha256": sp.sha256_file(file),
+        "bytes": file.stat().st_size,
+        "host": "github",
+        "fingerprint": manifest["fingerprint"],
+    }
+    check = _check_package_against(file, manifest, rec, "version 1", "e2er.org")
+    assert check.status == PASS and "contents-only, older format" in check.detail
+    file.write_bytes(b"other bytes, packed again")
+    check = _check_package_against(file, manifest, {**rec, "bytes": file.stat().st_size}, "version 1", "e2er.org")
+    assert check.status == FAIL and "packed again" in check.detail and "e2er fetch" in check.detail
 
 
 def test_verify_against_a_dossier_reads_the_dossiers_package_record(

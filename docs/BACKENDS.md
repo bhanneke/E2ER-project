@@ -84,6 +84,23 @@ study as $0, so its spending limit does not apply.
 **Scripts the models write** (the analysis script e2er runs after a specialist,
 the meta-analysis script, `e2er-run`) run with no key or token at all, an empty
 `HOME`, and in a session of their own that the time limit stops as a whole.
+They also run in the operating system's sandbox, which refuses to read or write
+e2er's folder (`~/.e2er`: the dashboard's session, the approval key, the run
+database), any `.env` file, and the usual places of keys and sign-ins (`~/.ssh`,
+`~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.codex`, `~/.claude`, the keychains,
+the browsers' profiles); on macOS a script can also not connect to the
+dashboard's port. macOS uses `sandbox-exec`; Linux uses bubblewrap
+(`sudo apt install bubblewrap`; on Ubuntu 23.10 or later it also needs
+unprivileged user namespaces, see "Codex on Linux and Windows" below). Without a
+sandbox (Windows, or Linux without bubblewrap) e2er says so and does not run the
+script; `SCRIPT_SANDBOX=off` in the settings runs such scripts without one, as
+before 0.22. Inside Codex's or Gemini's own sandbox a second one cannot start;
+there the CLI's sandbox applies.
+
+**Approving a production data query** takes the browser that `e2er` opened when
+it started, or the address it printed in that terminal window: the address
+carries a key after `#a=` that no file holds. A tab opened later by a second
+`e2er` can watch and refuse queries, but not approve them.
 
 The orchestrator does not rely on what a specialist ran: it re-runs the final
 analysis script itself, re-renders the tables and checks every number in the

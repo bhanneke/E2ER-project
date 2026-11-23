@@ -4,8 +4,10 @@ name: schema-drift (Allium OpenAPI)
 # we ship in tests/data/fixtures/. If anything changed upstream, open a
 # GitHub issue so Lane C maintainers can review whether our provider needs
 # an update. It comments on that issue again only when the drift changes
-# (scripts/check_allium_drift.py fingerprints it), and a spec that cannot be
-# fetched (docs.allium.so now redirects to a login page) is a warning, not drift.
+# (scripts/check_allium_drift.py fingerprints it). A spec that cannot be
+# fetched (docs.allium.so now redirects to a login page) is not drift, but the
+# check then compares nothing: one issue labelled schema-drift-unavailable
+# counts the nights in a row, and from the seventh the run fails.
 #
 # Why: live paper runs #14-#18 surfaced wrapper-vs-Allium drift. The PR-time
 # contract tests (tests/data/contract/test_allium_developer_schema.py)
@@ -48,11 +50,63 @@ jobs:
         run: python3 scripts/check_allium_drift.py --fixtures tests/data/fixtures --diff-dir /tmp/drift-diffs
 
       - name: Specs not published
+        # docs.allium.so redirects these files to its login page (since mid-2026): not a change in
+        # the API, so no drift issue, but this check then compares nothing. One issue labelled
+        # schema-drift-unavailable counts the nights in a row ("unavailable streak: N" in its
+        # body); from the LIMIT-th night on the run fails, so the silence shows. Closing the issue
+        # starts the count again; a night that fetches the specs closes it (next step).
         if: steps.diff.outputs.status == 'unavailable'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UNAVAILABLE: ${{ steps.diff.outputs.unavailable }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          LIMIT: "7"
         run: |
-          # docs.allium.so redirects these files to its login page (since mid-2026).
-          # Not a change in the API: no issue, no comment, just a note in the run.
-          echo "::warning::Allium's OpenAPI specs could not be fetched: ${{ steps.diff.outputs.unavailable }}"
+          echo "::warning::Allium's OpenAPI specs could not be fetched: $UNAVAILABLE"
+          gh label create schema-drift-unavailable --color "fbca04" \
+            --description "The schema-drift check could not fetch Allium's specs" 2>/dev/null || true
+          issue=$(gh issue list --state open --label schema-drift-unavailable --json number --jq '.[0].number // empty')
+          prev=0
+          if [ -n "$issue" ]; then
+            prev=$(gh issue view "$issue" --json body --jq .body | tr -d '\r' \
+              | sed -n 's/^unavailable streak: \([0-9]\{1,6\}\)$/\1/p' | head -n 1)
+          fi
+          streak=$(( ${prev:-0} + 1 ))
+          body="$(cat <<EOF
+          The nightly schema-drift check could not fetch Allium's published OpenAPI specs, so it
+          compared nothing: $UNAVAILABLE
+
+          Last run: $RUN_URL (on $(date -u +'%Y-%m-%d'))
+
+          From night $LIMIT in a row on, the run fails. Close this issue to start the count again;
+          the first night that fetches the specs closes it. If the specs stay behind Allium's login,
+          fetch them another way or retire the check (.github/workflows/schema-drift.yml).
+
+          unavailable streak: $streak
+          EOF
+          )"
+          if [ -z "$issue" ]; then
+            gh issue create --title "Allium OpenAPI specs unavailable: the schema-drift check compares nothing" \
+              --label schema-drift-unavailable --body "$body"
+          else
+            gh issue edit "$issue" --body "$body"
+          fi
+          echo "unavailable $streak night(s) in a row"
+          if [ "$streak" -ge "$LIMIT" ]; then
+            echo "::error::Allium's specs have been unavailable $streak nights in a row; the drift check compares nothing (issue labelled schema-drift-unavailable)."
+            exit 1
+          fi
+
+      - name: Specs fetched again
+        if: steps.diff.outputs.status == 'match' || steps.diff.outputs.status == 'drift'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          issue=$(gh issue list --state open --label schema-drift-unavailable --json number --jq '.[0].number // empty')
+          if [ -n "$issue" ]; then
+            gh issue close "$issue" --comment "The specs were fetched again on $(date -u +'%Y-%m-%d'): $RUN_URL"
+          fi
 
       - name: Upload diff artifact
         if: steps.diff.outputs.status == 'drift'

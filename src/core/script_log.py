@@ -36,6 +36,144 @@ def _e2er_version() -> str:
 #: loaded. A dotfile: internal, never exported.
 SCRIPT_RUNS = ".e2er-script-runs.jsonl"
 
+#: The form of the authenticated lines (:func:`_mac`); a line's ``mac`` is an HMAC-SHA-256 over the line
+#: without it, keyed with :func:`_key` (``~/.e2er/script-log-key``, mode 600).
+LINE_FORM = "e2er-script-run/2"
+
+
+# ── authentication: which lines e2er wrote ─────────────────────────────────
+#
+# The log lives in the workspace, and the model can write the workspace. Up to 0.21.0 one line
+# the model wrote without ``outputs`` made every results file "predate output records", and the
+# results-from-code contract accepted numbers typed by hand (review of 2026-11-21). Since 0.22
+# e2er signs each line it writes with a key the model cannot read (``~/.e2er``: Claude Code's
+# specialists may not read it, and scripts run by ``e2er-run`` and by the runner run in a sandbox
+# that denies it, child_env.py), and it records, in its own state folder, how many unsigned lines
+# a workspace's log had when this e2er first ran the study (:func:`adopt`). Readers see only the
+# signed lines and those older lines.
+
+
+#: Where the key and the adoption records live instead of ``~/.e2er`` (the test suite sets it; the
+#: sandbox denies it as it denies ``~/.e2er``). Passed on to ``e2er-run`` as e2er's own run variables are.
+ENV_STATE = "E2ER_SCRIPT_LOG_DIR"
+
+
+def _state_dir() -> Path:
+    return Path(os.environ.get(ENV_STATE) or (Path.home() / ".e2er"))
+
+
+def key_file() -> Path:
+    return _state_dir() / "script-log-key"
+
+
+def _adoptions_dir() -> Path:
+    return _state_dir() / "script-logs"
+
+
+def _write_private(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def _key(create: bool = False) -> bytes | None:
+    try:
+        text = key_file().read_text(encoding="utf-8").strip()
+        if len(text) >= 64:
+            return bytes.fromhex(text[:64])
+    except (OSError, ValueError):
+        pass
+    if not create:
+        return None
+    import secrets
+
+    raw = secrets.token_bytes(32)
+    try:
+        _write_private(key_file(), raw.hex() + "\n")
+    except OSError as e:
+        logger.warning("script log: no key written (%s); its lines stay unsigned", e)
+        return None
+    return _key(create=False)
+
+
+def _mac(key: bytes, row: dict) -> str:
+    import hmac
+
+    body = {k: v for k, v in row.items() if k != "mac"}
+    msg = LINE_FORM.encode() + b"\n" + json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()
+
+
+def _signed(row: dict, key: bytes | None) -> dict:
+    if key is None:
+        return row
+    return {**{k: v for k, v in row.items() if k != "mac"}, "mac": _mac(key, row)}
+
+
+def _valid_mac(row: dict, key: bytes | None) -> bool:
+    import hmac
+
+    mac = row.get("mac")
+    return key is not None and isinstance(mac, str) and hmac.compare_digest(mac, _mac(key, row))
+
+
+def _adoption_file(workspace: Path) -> Path:
+    ident = hashlib.sha256(str(Path(workspace).resolve()).encode("utf-8")).hexdigest()[:32]
+    return _adoptions_dir() / f"{ident}.json"
+
+
+def adopt(workspace: Path) -> None:
+    """Record, once per workspace and before any model step of a run, the unsigned lines its log holds now.
+
+    The runner calls this when a run starts or resumes. Those lines were written before this e2er
+    signed its lines (an older e2er); every unsigned line written later is ignored. Also makes the
+    key. Never raises.
+    """
+    try:
+        _key(create=True)
+        state = _adoption_file(workspace)
+        if state.is_file():
+            return
+        try:
+            data = (Path(workspace) / SCRIPT_RUNS).read_bytes()
+        except OSError:
+            data = b""
+        lines = data.splitlines(keepends=True)
+        key = _key()
+        legacy = 0
+        for raw in lines:  # the unsigned lines before the first signed one
+            try:
+                row = json.loads(raw)
+            except ValueError:
+                legacy += 1
+                continue
+            if isinstance(row, dict) and _valid_mac(row, key):
+                break
+            legacy += 1
+        prefix = b"".join(lines[:legacy])
+        doc = {
+            "workspace": str(Path(workspace).resolve()),
+            "legacy_lines": legacy,
+            "legacy_sha256": hashlib.sha256(prefix).hexdigest(),
+            "form": LINE_FORM,
+            "e2er_version": _e2er_version(),
+        }
+        _write_private(state, json.dumps(doc) + "\n")
+    except OSError as e:
+        logger.warning("script log: %s not adopted: %s", workspace, e)
+
+
+def _adoption(workspace: Path) -> dict | None:
+    try:
+        doc = json.loads(_adoption_file(workspace).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
 #: Where the bootstrap writes the packages the script loaded (a file outside the workspace).
 PACKAGES_ENV = "E2ER_PACKAGES_OUT"
 
@@ -377,6 +515,7 @@ def record_script_run(
             packages = record.get("packages")
             if isinstance(packages, dict):
                 line["packages"] = dict(sorted(packages.items()))
+        line = _signed(line, _key(create=True))
         with open(Path(workspace) / SCRIPT_RUNS, "a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(line) + "\n")
     except OSError as e:
@@ -384,19 +523,49 @@ def record_script_run(
 
 
 def read_script_runs(workspace: Path) -> list[dict]:
-    """The recorded script runs, in the order they ran (unreadable lines are skipped)."""
+    """The script runs e2er recorded, in the order they ran (unreadable and untrusted lines are skipped).
+
+    A line counts when e2er signed it (``mac``), or when it is one of the unsigned lines the log
+    held when this e2er first ran the study (:func:`adopt`). A log of a study this e2er never ran
+    (an older study exported or checked now) has no such record: its unsigned lines all count, as
+    before. A line with a ``mac`` that does not match, and an unsigned line written after the
+    study was adopted, are skipped: e2er did not write them. Each returned row carries
+    ``"signed": True`` when e2er signed it.
+    """
     out: list[dict] = []
     try:
-        lines = (Path(workspace) / SCRIPT_RUNS).read_text(encoding="utf-8").splitlines()
+        data = (Path(workspace) / SCRIPT_RUNS).read_bytes()
     except OSError:
         return out
-    for line in lines:
+    lines = data.splitlines(keepends=True)
+    key = _key()
+    adopted = _adoption(Path(workspace))
+    legacy = len(lines)  # never adopted: every unsigned line is from before signing
+    if adopted is not None:
+        n = adopted.get("legacy_lines")
+        legacy = n if isinstance(n, int) and 0 <= n <= len(lines) else 0
+        if hashlib.sha256(b"".join(lines[:legacy])).hexdigest() != adopted.get("legacy_sha256"):
+            legacy = 0  # the older lines changed since: none of them counts
+    skipped = 0
+    for i, raw in enumerate(lines):
         try:
-            row = json.loads(line)
+            row = json.loads(raw)
         except ValueError:
             continue
-        if isinstance(row, dict) and isinstance(row.get("script"), str):
-            out.append(row)
+        if not (isinstance(row, dict) and isinstance(row.get("script"), str)):
+            continue
+        if "mac" in row:
+            if not _valid_mac(row, key):
+                skipped += 1
+                continue
+            row = {k: v for k, v in row.items() if k != "mac"}
+            row["signed"] = True
+        elif i >= legacy:
+            skipped += 1
+            continue
+        out.append(row)
+    if skipped:
+        logger.warning("script log: %d line(s) of %s were not written by e2er and are ignored", skipped, SCRIPT_RUNS)
     return out
 
 
@@ -416,9 +585,12 @@ def confirm_output(workspace: Path, rel: str, sha: str) -> None:
                 continue
             outputs = row.get("outputs") if isinstance(row, dict) else None
             if isinstance(outputs, dict) and rel in outputs:
+                key = _key()
+                if not _valid_mac(row, key):
+                    continue  # only a line e2er signed is changed (and signed again)
                 row.setdefault("confirmed", {})[rel] = {"same_values_as": sha, "rerun_wrote": outputs[rel]}
                 outputs[rel] = sha
-                lines[i] = json.dumps(row)
+                lines[i] = json.dumps(_signed(row, key))
                 path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
                 return
     except OSError as e:
@@ -477,9 +649,10 @@ def results_from_code(workspace: Path, rel: str) -> tuple[str, str, dict | None]
         return NOT_RECORDED, f"the script log ({SCRIPT_RUNS}) records no run", None
     writer = results_writer(workspace, rel, runs)
     if writer is None:
-        if any(not isinstance(r.get("outputs"), dict) for r in runs):
-            # Runs from before e2er recorded output files (a study resumed after an update): one of them may
-            # have written it, and nothing can be said.
+        older = [r for r in runs if not isinstance(r.get("outputs"), dict) and not r.get("signed")]
+        if any((workspace / str(r["script"])).is_file() for r in older):
+            # Runs from before e2er recorded output files (a study resumed after an update) of a script the
+            # study still has: one of them may have written it, and nothing can be said.
             return NOT_RECORDED, PREDATES, None
         return NOT_FROM_CODE, f"no recorded run of the study's scripts wrote {rel}", None
     script = str(writer.get("script"))
