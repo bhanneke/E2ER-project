@@ -95,6 +95,15 @@ def main(argv: list[str] | None = None) -> int:
     a.add_argument("--max-requests", type=int, default=300)
 
     args = ap.parse_args(argv)
+    if os.environ.get("E2ER_AI_STEP"):
+        if args.workspace:
+            print("e2er-fieldmap: works on this step's study; leave out --workspace.", file=sys.stderr)
+            return 2
+        from ...core.workspace_guard import guard_ai_step
+
+        refused = guard_ai_step("e2er-fieldmap")
+        if refused is not None:
+            return refused
     ws = _workspace(args.workspace)
     try:
         return _run(args, ws)

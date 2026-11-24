@@ -165,7 +165,10 @@ async def run_specialist(
     if backend_name in API_BACKENDS:
         command_tools = command_tools_for(specialist)
         tools.extend(command_tools)
-        handlers.insert(0, CommandToolHandler(workspace, {t["name"] for t in command_tools}))
+        handlers.insert(
+            0,
+            CommandToolHandler(workspace, {t["name"] for t in command_tools}, paper_id=paper_id, specialist=specialist),
+        )
         system = f"{for_api_backend(system)}\n\n{COMMANDS_NOTE}"
         user_prompt = for_api_backend(user_prompt)
     handler = CompositeToolHandler(handlers)

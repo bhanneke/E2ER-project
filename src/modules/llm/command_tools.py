@@ -134,12 +134,38 @@ def for_api_backend(text: str) -> str:
     return _VIA_BASH.sub("", text)
 
 
+#: Options that choose the study, the step's name or the folder: e2er sets these itself.
+_STEP_OPTIONS = ("--paper-id", "--specialist", "--workspace")
+
+
+def _blocked_option(args: list[str]) -> str | None:
+    """The first argument naming one of :data:`_STEP_OPTIONS`, abbreviations included (argparse takes
+    any unambiguous prefix: ``--works`` is ``--workspace``)."""
+    for a in args:
+        if not a.startswith("--") or len(a) < 3:
+            continue
+        name = a.split("=", 1)[0]
+        if any(opt.startswith(name) for opt in _STEP_OPTIONS):
+            return name
+    return None
+
+
 class CommandToolHandler(ToolHandler):
     """Runs the command tools in ``workspace``."""
 
-    def __init__(self, workspace: Path, names: set[str], *, timeout: float | None = None) -> None:
+    def __init__(
+        self,
+        workspace: Path,
+        names: set[str],
+        *,
+        paper_id: str | None = None,
+        specialist: str | None = None,
+        timeout: float | None = None,
+    ) -> None:
         self._workspace = Path(workspace).resolve()
         self._names = set(names) & set(ENTRY_POINTS)
+        self._paper_id = paper_id
+        self._specialist = specialist
         try:
             run_limit = float(os.environ.get("E2ER_RUN_TIMEOUT") or 600)
         except ValueError:
@@ -165,16 +191,29 @@ class CommandToolHandler(ToolHandler):
             return f'Error: {tool_name} takes {{"args": [ ...words after the command... ]}}, a list of strings.'
         if raw and raw[0] == tool_name:  # the command name repeated as the first word
             raw = raw[1:]
-        if any(a == "--workspace" or a.startswith("--workspace=") for a in raw):
-            return f"Error: {tool_name} works on this study's folder; --workspace is not allowed."
+        blocked = _blocked_option(raw)
+        if blocked:
+            return (
+                f"Error: {tool_name} works on this step's study under this step's name; leave out {blocked} "
+                f"(e2er fills in {', '.join(_STEP_OPTIONS)} itself)."
+            )
         return await self._run(tool_name, raw)
 
     async def _run(self, command: str, args: list[str]) -> str:
         module, func = ENTRY_POINTS[command]
-        env = dict(os.environ)
-        # e2er's own code, never a module of the study's folder: -P keeps the folder off sys.path.
-        env["PYTHONPATH"] = os.pathsep.join(p for p in (str(_PACKAGE_ROOT), env.get("PYTHONPATH", "")) if p)
+        # The environment Claude Code gives these commands (cli_support.run_env): an allowlist without
+        # other providers' keys or e2er's control tokens, with the step's study, name and the AI-step
+        # marker, under which the commands refuse other studies and links out of the folder.
+        from ...config import get_settings
+        from .cli_support import run_env
+
+        settings = get_settings()
+        root = Path(settings.workspace_root).expanduser().resolve()
+        env = run_env(settings, paper_id=self._paper_id, specialist=self._specialist, workspace_root_abs=root)
+        env["E2ER_AI_STEP"] = self._specialist or "specialist"
         env["E2ER_WORKSPACE"] = str(self._workspace)
+        # e2er's own code, never a module of the study's folder: -P keeps the folder off sys.path.
+        env["PYTHONPATH"] = str(_PACKAGE_ROOT)
         env["PYTHONIOENCODING"] = "utf-8"
         proc = await asyncio.create_subprocess_exec(
             sys.executable,

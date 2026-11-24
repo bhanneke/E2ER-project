@@ -1183,6 +1183,24 @@ def main(argv: list[str] | None = None) -> int:
     # + audit log both need it). Public sources don't strictly need paper_id
     # for authorisation, but we still record it on the audit row so the
     # reproducibility chain isn't broken.
+    if os.environ.get("E2ER_AI_STEP"):
+        # An AI step works on its own study under its own name (review of 2026-11-24): another
+        # study's id would read or write that study's data, another name would misattribute the loads.
+        for flag, value, own in (
+            ("--paper-id", args.paper_id, os.environ.get("E2ER_PAPER_ID")),
+            ("--specialist", args.specialist, os.environ.get("E2ER_SPECIALIST")),
+        ):
+            if value and own and value != own:
+                print(
+                    f"e2er-data: {flag} names another {flag[2:].replace('-', ' ')} than this step's; leave it out.",
+                    file=sys.stderr,
+                )
+                return 2
+        from ...core.workspace_guard import guard_ai_step
+
+        refused = guard_ai_step("e2er-data")
+        if refused is not None:
+            return refused
     args.paper_id = args.paper_id or os.environ.get("E2ER_PAPER_ID")
     args.specialist = args.specialist or os.environ.get("E2ER_SPECIALIST") or "data_analyst"
     if not args.paper_id:

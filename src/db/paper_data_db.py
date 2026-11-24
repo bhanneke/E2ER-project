@@ -58,13 +58,31 @@ _FORBIDDEN_SQL = re.compile(
 # ── paths + identifiers ──────────────────────────────────────────────────────
 
 
+class UnsafeDataDbError(ValueError):
+    """``data.db`` is a link, or leads out of the study's folder: e2er neither reads nor writes it."""
+
+
 def data_db_path(workspace: Path) -> Path:
-    """Path to this paper's data warehouse file (may not exist yet)."""
-    return Path(workspace) / DATA_DB_FILENAME
+    """Path to this paper's data warehouse file (may not exist yet).
+
+    A link is refused (review of 2026-11-24): an AI-written script, sandboxed itself, could link
+    ``data.db`` to a database outside the study, which ``e2er-data`` (outside the sandbox) would then
+    read or write.
+    """
+    path = Path(workspace) / DATA_DB_FILENAME
+    if path.is_symlink() or (path.exists() and not path.resolve().is_relative_to(Path(workspace).resolve())):
+        raise UnsafeDataDbError(
+            f"{path.name} in the study's folder is a link; e2er reads and writes only a real file there. "
+            "Delete the link and load the data again."
+        )
+    return path
 
 
 def has_data_db(workspace: Path) -> bool:
-    return data_db_path(workspace).is_file()
+    try:
+        return data_db_path(workspace).is_file()
+    except UnsafeDataDbError:
+        return False
 
 
 def sanitize_table_name(raw: str) -> str:

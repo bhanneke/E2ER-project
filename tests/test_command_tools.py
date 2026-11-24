@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src.core.script_log import SCRIPT_RUNS as LOG_NAME
 from src.modules.llm.command_tools import COMMANDS_NOTE, CommandToolHandler, command_tools_for, for_api_backend
 
@@ -57,9 +59,7 @@ async def test_paths_out_of_the_folder_and_other_tools_are_refused(tmp_path):
     out = await h.handle("e2er-run", {"args": ["../outside.py"]})
     assert "not allowed" in out and "outside\n" not in out.split("\n", 1)[-1], out
     assert "not one of your tools" in await h.handle("e2er-lit", {"args": ["list"]})
-    assert "--workspace is not allowed" in await h.handle(
-        "e2er-data", {"args": ["query", "tables", "--workspace", "/"]}
-    )
+    assert "leave out --workspace" in await h.handle("e2er-data", {"args": ["query", "tables", "--workspace", "/"]})
     assert not h.can_handle("e2er-lit") and h.can_handle("e2er-data")
 
 
@@ -68,3 +68,93 @@ async def test_e2er_data_answers_in_the_study_folder(tmp_path):
     ws.mkdir()
     out = await CommandToolHandler(ws, {"e2er-data"}).handle("e2er-data", {"args": ["--help"]})
     assert out.startswith("exit code: 0") and "usage" in out.lower(), out
+
+
+# --- review of 2026-11-24: the step's own study, no options that choose another, no links out ---------
+
+
+def _study_with_db(tmp_path):
+    import sqlite3
+
+    ws = tmp_path / "study"
+    ws.mkdir()
+    con = sqlite3.connect(ws / "data.db")
+    con.execute("CREATE TABLE t (v TEXT)")
+    con.execute("INSERT INTO t VALUES ('OWN-ROW')")
+    con.commit()
+    con.close()
+    return ws
+
+
+async def test_e2er_data_queries_the_steps_own_study(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret-test")
+    ws = _study_with_db(tmp_path)
+    h = CommandToolHandler(ws, {"e2er-data"}, paper_id="p1", specialist="data_analyst")
+    out = await h.handle("e2er-data", {"args": ["query", "sql", "SELECT v FROM t"]})
+    assert out.startswith("exit code: 0") and "OWN-ROW" in out, out
+    (ws / "show_env.py").write_text("import os\nprint(sorted(os.environ.items()))\n")
+    env_dump = await CommandToolHandler(ws, {"e2er-run"}, paper_id="p1", specialist="data_analyst").handle(
+        "e2er-run", {"args": ["show_env.py"]}
+    )
+    assert "sk-or-secret-test" not in env_dump
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--paper-id", "other", "query", "tables"],
+        ["--paper-id=other", "query", "tables"],
+        ["--pap", "other", "query", "tables"],
+        ["--spec", "referee", "query", "tables"],
+        ["--works", "/tmp", "query", "tables"],
+        ["--workspace=/tmp", "query", "tables"],
+    ],
+)
+async def test_options_that_choose_another_study_are_refused_in_every_spelling(tmp_path, args):
+    ws = _study_with_db(tmp_path)
+    out = await CommandToolHandler(ws, {"e2er-data", "e2er-fieldmap"}, paper_id="p1").handle(
+        "e2er-data", {"args": args}
+    )
+    assert out.startswith("Error:") and "leave out" in out, out
+
+
+async def test_a_link_out_of_the_folder_stops_the_commands(tmp_path):
+    import sqlite3
+
+    outside = tmp_path / "secret.sqlite"
+    con = sqlite3.connect(outside)
+    con.execute("CREATE TABLE s (v TEXT)")
+    con.execute("INSERT INTO s VALUES ('SECRET-ROW')")
+    con.commit()
+    con.close()
+    ws = tmp_path / "study"
+    ws.mkdir()
+    (ws / "data.db").symlink_to(outside)
+    h = CommandToolHandler(ws, {"e2er-data", "e2er-check-tables"}, paper_id="p1", specialist="data_analyst")
+    for args in (["query", "sql", "SELECT v FROM s"], ["query", "tables"]):
+        out = await h.handle("e2er-data", {"args": args})
+        assert "SECRET-ROW" not in out and not out.startswith("exit code: 0") and "links that point outside" in out, out
+    out = await h.handle("e2er-check-tables", {"args": []})
+    assert "links that point outside" in out, out
+
+
+def test_data_db_itself_refuses_a_link(tmp_path):
+    from src.db.paper_data_db import UnsafeDataDbError, data_db_path, has_data_db
+
+    ws = tmp_path / "study"
+    ws.mkdir()
+    (tmp_path / "x.sqlite").write_bytes(b"")
+    (ws / "data.db").symlink_to(tmp_path / "x.sqlite")
+    with pytest.raises(UnsafeDataDbError):
+        data_db_path(ws)
+    assert has_data_db(ws) is False
+
+
+def test_e2er_data_in_an_ai_step_refuses_another_study_on_the_cli_path(monkeypatch, capsys):
+    from src.modules.data.cli import main
+
+    monkeypatch.setenv("E2ER_AI_STEP", "data_analyst")
+    monkeypatch.setenv("E2ER_PAPER_ID", "p1")
+    monkeypatch.setenv("E2ER_SPECIALIST", "data_analyst")
+    assert main(["--paper-id", "other", "query", "tables"]) == 2
+    assert "another" in capsys.readouterr().err

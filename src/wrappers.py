@@ -110,6 +110,11 @@ def run_main(argv: list[str] | None = None) -> int:
 def lit_main(argv: list[str] | None = None) -> int:
     """``e2er-lit``: the literature bridge, for the workspace it is called in."""
     os.environ["E2ER_WORKSPACE"] = str(Path.cwd().resolve())
+    from .core.workspace_guard import guard_ai_step
+
+    refused = guard_ai_step("e2er-lit")
+    if refused is not None:
+        return refused
     from .modules.literature.cli import main
 
     return main(argv)
@@ -124,6 +129,11 @@ def check_tables_main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return REFUSED
+    from .core.workspace_guard import guard_ai_step
+
+    refused = guard_ai_step("e2er-check-tables")
+    if refused is not None:
+        return refused
     from .core.renderer.check_tables import main
 
     return main([str(Path.cwd().resolve())])
