@@ -1185,6 +1185,10 @@ def _sandbox_blocked(specialist: str, backend_name: str, error: str, diagnostic:
     return SandboxBlockedError(backend_name, error, status, specialist=specialist)
 
 
+#: The setting that holds a backend's time limit per call (seconds).
+_TIMEOUT_SETTING = {"claude_code": "CLAUDE_CODE_TIMEOUT", "codex": "CODEX_TIMEOUT", "gemini": "GEMINI_TIMEOUT"}
+
+
 def _timed_out(specialist: str, backend_name: str, error: str, seconds: float) -> Exception:
     """The pause for a call that ran into its time limit, with the sentence the researcher reads."""
     import re as _re
@@ -1196,9 +1200,10 @@ def _timed_out(specialist: str, backend_name: str, error: str, seconds: float) -
     limit = int(m.group(1)) if m else int(seconds)
     minutes = max(1, round(limit / 60))
     who = labels.specialist(specialist)
+    setting = _TIMEOUT_SETTING.get(backend_name, "SPECIALIST_TIMEOUT")
     status = (
         f"Paused: one call ran into its time limit ({minutes} minutes, {limit:,} s) and was stopped ({who}). "
         "The files it wrote are kept. Press Resume to give it a new attempt; to allow more time, set "
-        f"[timeouts] {specialist} = <minutes> in the template (or CLAUDE_CODE_TIMEOUT / CODEX_TIMEOUT in .env)."
+        f"[timeouts] {specialist} = <minutes> in the template (or {setting} in .env)."
     )
     return CallTimedOutError(backend_name, error, status, specialist=specialist)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import re
 import time
 from typing import Any
 
@@ -164,6 +165,16 @@ def _reasoning_of(msg: Any) -> Any:
     return details if isinstance(details, list) and details else None
 
 
+#: The smallest output limit worth asking for when the credit left covers no more (a step writes files).
+_MIN_OUTPUT_TOKENS = 2048
+
+
+def _affordable(error: str) -> int | None:
+    """The output tokens OpenRouter's 402 says the credit left can pay for ("can only afford N"), or None."""
+    m = re.search(r"can only afford (\d+)", error)
+    return int(m.group(1)) - 64 if m else None
+
+
 #: The context a model needs for a study's steps (the system prompt, skills and the step's files).
 MIN_CONTEXT_TOKENS = 64_000
 
@@ -223,6 +234,9 @@ class OpenRouterBackend(LLMBackend):
     out. The conversation is kept small (``llm/history.py``) and each attempt
     stops at ``openrouter_attempt_token_budget`` input tokens.
     """
+
+    #: Billed per call: the study's spending limit applies to every call (strategist/engine.py).
+    bills_per_call = True
 
     def __init__(self, model: str | None = None) -> None:
         settings = get_settings()
@@ -495,6 +509,12 @@ class OpenRouterBackend(LLMBackend):
 
         oai_tools = self._convert_tools(tools)
         msgs: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
+        # The step's time limit, as the CLI backends have it (template, step, else SPECIALIST_TIMEOUT).
+        from .cli_support import effective_timeout
+
+        time_limit = effective_timeout(int(getattr(settings, "specialist_timeout", 3600) or 3600))
+        max_tokens = self._max_tokens
+        lowered = False
 
         for turn in range(max_turns):
             over, spent, cap = await loop_over_budget(paper_id, loop_key, usage.cost_usd or 0.0)
@@ -503,6 +523,13 @@ class OpenRouterBackend(LLMBackend):
                     "OpenRouter turn %d: spending limit reached ($%.2f of $%.2f); stopping", turn, spent, cap
                 )
                 return _result(False, "", f"spending limit reached: ${spent:.2f} of ${cap:.2f}", "budget")
+            if time_limit and time.monotonic() - start > time_limit:
+                logger.warning(
+                    "OpenRouter turn %d: the step's time limit (%d s) is used up; stopping", turn, time_limit
+                )
+                return _result(
+                    False, "", f"the step ran into its time limit {time_limit}s after {turns} calls", "timeout"
+                )
             sent = usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens
             if token_budget and sent >= token_budget:
                 logger.warning(
@@ -534,7 +561,7 @@ class OpenRouterBackend(LLMBackend):
                 create_kwargs: dict[str, Any] = {
                     "model": self._model,
                     "messages": request_msgs,
-                    "max_tokens": self._max_tokens,
+                    "max_tokens": max_tokens,
                 }
                 if oai_tools:
                     create_kwargs["tools"] = oai_tools
@@ -554,6 +581,13 @@ class OpenRouterBackend(LLMBackend):
                     response.choices[0].finish_reason if response.choices else "?",
                 )
             except Exception as e:
+                afford = _affordable(str(e))
+                if afford and not lowered and _MIN_OUTPUT_TOKENS <= afford < max_tokens:
+                    # "This request requires more credits, or fewer max_tokens ... can only afford N": the
+                    # credit left covers a shorter answer. Ask for that once, instead of pausing the run.
+                    logger.warning("OpenRouter turn %d: credit covers %d output tokens; asking for that", turn, afford)
+                    max_tokens, lowered = afford, True
+                    continue
                 logger.error("OpenRouter error on turn %d: %s", turn, e)
                 return _result(False, "", str(e), "end_turn")
 
@@ -582,13 +616,13 @@ class OpenRouterBackend(LLMBackend):
                 logger.warning(
                     "OpenRouter turn %d: hit max_tokens=%d (finish=length). Bailing out to avoid infinite loop.",
                     turn,
-                    self._max_tokens,
+                    max_tokens,
                 )
                 return _result(
                     False,
                     msg.content or "",
                     (
-                        f"max_tokens={self._max_tokens} too low — model output truncated. "
+                        f"max_tokens={max_tokens} too low — model output truncated. "
                         "Increase max_tokens_per_call in settings."
                     ),
                     "length",

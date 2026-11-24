@@ -200,6 +200,12 @@ class StrategistEngine:
         # for the in-memory cost cap.
         self.total_usage: TokenUsage = TokenUsage()
 
+    def _paid_call(self) -> dict[str, str]:
+        """The study's id for a backend billed per call (OpenRouter, Anthropic), so the study's spending
+        limit applies to the strategist's calls too. The CLI backends would also take it as the folder
+        to work in, so they get nothing, as before."""
+        return {"paper_id": self._paper_id} if getattr(type(self._backend), "bills_per_call", False) else {}
+
     async def _record_usage(self, kind: str, usage) -> None:
         """Persist a strategist call to llm_usage so it shows up in audit/cost.
         Without this, strategist tokens are invisible to GET /api/papers and
@@ -234,6 +240,7 @@ class StrategistEngine:
 
         msgs = [{"role": "user", "content": prompt}]
         result = await self._backend.tool_loop(
+            **self._paid_call(),
             system=_STRATEGIST_SYSTEM,
             messages=msgs,
             tools=FILE_TOOLS,
@@ -260,6 +267,7 @@ class StrategistEngine:
                 },
             ]
             retry = await self._backend.tool_loop(
+                **self._paid_call(),
                 system=_STRATEGIST_SYSTEM,
                 messages=retry_msgs,
                 tools=[],
@@ -278,6 +286,7 @@ class StrategistEngine:
         prompt = f"Iteration: {iteration}, Pivots used: {pivot_count}\n\n{context}\n\n" + _CEILING_CHECK_PROMPT
 
         result = await self._backend.tool_loop(
+            **self._paid_call(),
             system=_STRATEGIST_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             tools=[],
@@ -322,6 +331,7 @@ class StrategistEngine:
         prompt = f"{context}\n\nFind all flaws. Output JSON SelfAttackReport."
 
         result = await self._backend.tool_loop(
+            **self._paid_call(),
             system=_SELF_ATTACK_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             tools=[],

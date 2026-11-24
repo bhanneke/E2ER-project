@@ -14,6 +14,7 @@ from ...modules.llm.plan_limit import CallTimedOutError, PlanLimitReachedError, 
 from ..governance import DEFAULT_REGIME
 from ..specialists.base import run_specialist
 from ..specialists.contracts import Contribution, WorkOrder
+from ..strategist.state import BudgetExceededError
 
 logger = get_logger(__name__)
 
@@ -318,6 +319,11 @@ async def execute_work_order(
         )
         blocked.specialist = blocked.specialist or work_order.specialist
         logger.warning("Specialist %s paused: %s", work_order.specialist, blocked.status[:300])
+        raise
+    except BudgetExceededError:
+        # The study's spending limit, reached inside this step: the run pauses (the runner says so and
+        # Resume with a higher limit goes on); not this specialist's failure.
+        logger.warning("Specialist %s stopped at the study's spending limit", work_order.specialist)
         raise
     except PlanLimitReachedError as limit:
         # The subscription plan's usage limit: not this specialist's failure. No

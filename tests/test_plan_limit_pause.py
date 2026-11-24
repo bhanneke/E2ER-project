@@ -462,3 +462,29 @@ def test_the_vocabulary_check_reads_the_sentence_as_plain():
     assert not problems(f"<p>{status_text('codex', 'at 14:30')}</p>")
     assert not problems(f"<p>{status_text('claude_code')}</p>")
     assert re.search(r"press Resume", status_text("gemini"))
+
+
+async def test_the_spending_limit_inside_a_step_is_not_a_failed_attempt(tmp_path, events, monkeypatch):
+    """Review of 2026-11-23: a step that reached the study's spending limit counted as failed and was tried again."""
+    from src.core.specialists import dispatcher
+    from src.core.specialists.contracts import WorkOrder
+    from src.core.strategist.state import BudgetExceededError
+
+    calls: list[str] = []
+
+    async def fake_run_specialist(*, work_order, **kw):
+        calls.append(work_order.specialist)
+        raise BudgetExceededError(5.02, 5.0)
+
+    monkeypatch.setattr(dispatcher, "run_specialist", fake_run_specialist)
+    monkeypatch.setattr("src.modules.tracking.usage.check_budget_by_paper_id", AsyncMock())
+    with pytest.raises(BudgetExceededError):
+        await dispatcher.run_with_attempts(
+            WorkOrder(paper_id="p", specialist="data_analyst", focus="data"),
+            MagicMock(),
+            tmp_path,
+            "m",
+            backend_name="openrouter",
+        )
+    assert calls == ["data_analyst"]
+    assert not [e for e in events if e[0] == "specialist_failed"]

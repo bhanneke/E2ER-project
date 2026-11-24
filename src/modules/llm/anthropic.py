@@ -28,6 +28,9 @@ class AnthropicBackend(LLMBackend):
     Applies prompt caching to the system prompt when enabled.
     """
 
+    #: Billed per call: the study's spending limit applies to every call (strategist/engine.py).
+    bills_per_call = True
+
     def __init__(self, model: str | None = None) -> None:
         settings = get_settings()
         if not settings.anthropic_api_key:

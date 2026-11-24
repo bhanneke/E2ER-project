@@ -299,6 +299,15 @@ async def raise_if_billing(
     if getattr(result, "success", True):
         return
     error = str(getattr(result, "error", "") or "")
+    if getattr(result, "stop_reason", None) == "budget":
+        # The study's spending limit, reached inside a step: the run pauses like at the limit before a
+        # step (BudgetExceededError), and the attempt does not count as failed. Its calls were billed.
+        from ...core.strategist.state import BudgetExceededError
+        from ..tracking.usage import record_cancelled_loop
+
+        await record_cancelled_loop(paper_id, specialist, backend, model, getattr(result, "usage", None))
+        m = re.search(r"\$([\d.]+) of \$([\d.]+)", error)
+        raise BudgetExceededError(float(m.group(1)) if m else 0.0, float(m.group(2)) if m else 0.0)
     limit: PlanLimitReachedError | None = detect_billing(backend, error) or detect_setup(backend, error)
     if limit is None:
         return

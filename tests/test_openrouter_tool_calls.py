@@ -131,3 +131,94 @@ async def test_tool_calls_run_when_the_provider_says_stop_and_reasoning_goes_bac
     assert handler.calls == [("write_file", {"path": "x.py", "content": "1"})]
     assistant = next(m for m in sent[1] if m["role"] == "assistant")
     assert assistant["reasoning_details"] == blocks
+
+
+# --- limits inside a step (review of 2026-11-23) ------------------------------------------------
+
+
+async def test_the_spending_limit_inside_a_step_pauses_the_run(backend, monkeypatch):
+    from src.core.strategist.state import BudgetExceededError
+
+    async def over(paper_id, loop_key, cost):
+        return True, 5.02, 5.0
+
+    recorded = []
+
+    async def record(*a):
+        recorded.append(a)
+
+    monkeypatch.setattr("src.modules.tracking.usage.loop_over_budget", over)
+    monkeypatch.setattr("src.modules.tracking.usage.record_cancelled_loop", record)
+    with pytest.raises(BudgetExceededError) as e:
+        await backend.tool_loop(
+            system="s",
+            messages=[{"role": "user", "content": "go"}],
+            tools=[],
+            tool_handler=None,
+            max_turns=3,
+            paper_id="p1",
+            specialist="data_analyst",
+        )
+    assert (e.value.spent, e.value.cap) == (5.02, 5.0) and recorded and recorded[0][0] == "p1"
+
+
+async def test_too_little_credit_for_the_output_limit_asks_for_less(backend, monkeypatch):
+    calls: list[int] = []
+
+    async def create(kwargs, turn):
+        calls.append(kwargs["max_tokens"])
+        if len(calls) == 1:
+            raise RuntimeError(
+                "Error code: 402 - This request requires more credits, or fewer max_tokens. "
+                "You requested up to 32768 tokens, but can only afford 9000."
+            )
+        return _response(finish="stop", content="Done.")
+
+    monkeypatch.setattr(backend, "_create", create)
+    result = await backend.tool_loop(
+        system="s", messages=[{"role": "user", "content": "go"}], tools=[], tool_handler=None, max_turns=4
+    )
+    assert result.success and calls[0] > 9000 and calls[1] == 9000 - 64
+
+
+async def test_the_step_stops_at_its_time_limit(backend, monkeypatch):
+    import asyncio
+
+    from src.modules.llm.cli_support import call_timeout
+
+    class Slow(_Handler):
+        async def handle(self, tool_name, tool_input):
+            await asyncio.sleep(1.2)
+            return "ok"
+
+    async def create(kwargs, turn):
+        return _response(finish="tool_calls", calls=[_call(f"c{turn}", "list_directory", "{}")])
+
+    monkeypatch.setattr(backend, "_create", create)
+    token = call_timeout.set((1, False))
+    try:
+        result = await backend.tool_loop(
+            system="s",
+            messages=[{"role": "user", "content": "go"}],
+            tools=[{"name": "list_directory", "description": "", "input_schema": {"type": "object"}}],
+            tool_handler=Slow(),
+            max_turns=10,
+        )
+    finally:
+        call_timeout.reset(token)
+    assert not result.success and result.stop_reason == "timeout" and "limit 1s" in result.error
+
+
+def test_the_strategist_tells_paid_backends_its_study_only():
+    from pathlib import Path
+
+    from src.core.strategist.engine import StrategistEngine
+
+    class Paid:
+        bills_per_call = True
+
+    class Cli:
+        pass
+
+    assert StrategistEngine(Paid(), Path("."), "p1")._paid_call() == {"paper_id": "p1"}
+    assert StrategistEngine(Cli(), Path("."), "p1")._paid_call() == {}
