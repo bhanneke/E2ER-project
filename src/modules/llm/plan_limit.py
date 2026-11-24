@@ -320,4 +320,4 @@ async def raise_if_billing(
 
 def is_plan_limit_status(text: str | None) -> bool:
     """Whether a stored status text (a paper's ``last_error``) is a plan-limit or billing-limit pause."""
-    return bool(text) and (PAUSE_TAIL in str(text) or BILLING_TAIL in str(text))
+    return bool(text) and (PAUSE_TAIL in str(text) or BILLING_TAIL in str(text) or SETUP_TAIL in str(text))

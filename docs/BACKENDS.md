@@ -125,7 +125,7 @@ itself, and the model has no shell. It gets tools instead:
   `query_allium` when an Allium key is set.
 
 Before the first step of a run on OpenRouter, e2er asks OpenRouter whether it
-accepts the key and whether the key has credit left, and checks in OpenRouter's
+accepts the key and whether the key's own spending limit has room left, and checks in OpenRouter's
 model list that the model can call tools and reads at least 64,000 tokens at
 once; it lowers the output limit per call (`MAX_TOKENS_PER_CALL`) to what the
 model allows. When one of these fails, or a call is refused for good (a wrong

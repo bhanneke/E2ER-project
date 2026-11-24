@@ -477,12 +477,12 @@ async def execute_parallel(
     logger.info("Parallel dispatch: %d specialists", len(work_orders))
     sem = asyncio.Semaphore(get_settings().max_concurrent_specialists)
 
-    async def _one(wo: WorkOrder) -> Contribution | PlanLimitReachedError:
+    async def _one(wo: WorkOrder) -> Contribution | PlanLimitReachedError | BudgetExceededError:
         try:
             return await run_with_attempts(
                 wo, backend, workspace, model, extra_tools, extra_handlers, backend_name, governance, sem=sem
             )
-        except PlanLimitReachedError as limit:
+        except (PlanLimitReachedError, BudgetExceededError) as limit:
             return limit
 
     # A plan's usage limit hit by one specialist does not stop the others: each
@@ -491,6 +491,11 @@ async def execute_parallel(
     # The others usually hit the same limit at their next call, so this costs
     # little, and nothing they finished is thrown away.
     outcomes = await asyncio.gather(*(_one(wo) for wo in work_orders))
+    # The study's spending limit, reached by one of them: the others finished (as at a plan's limit, so
+    # none is still running when the run pauses), then the batch raises it (review of 2026-11-24).
+    budget = [o for o in outcomes if isinstance(o, BudgetExceededError)]
+    if budget:
+        raise max(budget, key=lambda b: b.spent)
     limits = [o for o in outcomes if isinstance(o, PlanLimitReachedError)]
     if limits:
         raise next((x for x in limits if x.resets), limits[0])

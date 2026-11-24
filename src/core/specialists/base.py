@@ -1205,7 +1205,8 @@ def _timed_out(specialist: str, backend_name: str, error: str, seconds: float) -
     who = labels.specialist(specialist)
     setting = _TIMEOUT_SETTING.get(backend_name, "SPECIALIST_TIMEOUT")
     status = (
-        f"Paused: one call ran into its time limit ({minutes} minutes, {limit:,} s) and was stopped ({who}). "
+        f"Paused: one {'step' if backend_name in ('openrouter', 'anthropic') else 'call'} ran into its time limit "
+        f"({minutes} minutes, {limit:,} s) and was stopped ({who}). "
         "The files it wrote are kept. Press Resume to give it a new attempt; to allow more time, set "
         f"[timeouts] {specialist} = <minutes> in the template (or {setting} in .env)."
     )

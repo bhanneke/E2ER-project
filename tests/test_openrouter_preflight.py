@@ -58,7 +58,6 @@ async def test_a_good_key_and_model_pass_and_the_output_limit_follows_the_model(
     ("key", "model", "says"),
     [
         ("rejected", _model(), "does not accept the key (401)"),
-        ({"limit_remaining": 0}, _model(), "spending limit is used up"),
         ({}, _model(tools=False), "cannot call tools"),
         ({}, _model(context_length=32_000), "reads at most 32,000 tokens"),
     ],
@@ -108,3 +107,19 @@ def test_the_model_list_reads_the_output_limit():
         }
     )["a/b"]
     assert m.max_completion_tokens == 512 and m.tools
+
+
+async def test_a_used_up_key_limit_pauses_at_the_billing_limit(backend, monkeypatch):
+    from src.modules.llm.plan_limit import BillingLimitReachedError, is_plan_limit_status
+
+    _with(monkeypatch, {"limit_remaining": 0}, _model())
+    with pytest.raises(BillingLimitReachedError) as e:
+        await backend.preflight()
+    assert e.value.event == "paused_billing_limit" and is_plan_limit_status(e.value.status)
+
+
+def test_the_setup_pause_reads_as_a_pause():
+    from src.modules.llm.plan_limit import is_plan_limit_status
+
+    status = detect_setup("openrouter", "Error code: 401 - User not found.").status
+    assert is_plan_limit_status(status) and ";" not in status

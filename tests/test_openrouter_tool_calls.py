@@ -222,3 +222,83 @@ def test_the_strategist_tells_paid_backends_its_study_only():
 
     assert StrategistEngine(Paid(), Path("."), "p1")._paid_call() == {"paper_id": "p1"}
     assert StrategistEngine(Cli(), Path("."), "p1")._paid_call() == {}
+
+
+# --- review of 2026-11-24 --------------------------------------------------------------------
+
+
+async def test_streamed_reasoning_fragments_become_one_block_with_its_signature():
+    frags = [
+        [{"type": "reasoning.text", "text": "Let ", "index": 0}],
+        [{"type": "reasoning.text", "text": "me think", "index": 0}],
+        [{"type": "reasoning.text", "signature": "sig-1", "index": 0}],
+    ]
+    chunks = [_chunk(reasoning=f) for f in frags]
+    chunks += [_chunk(calls=[_frag(index=0, id="a", name="list_directory", args="{}")]), _chunk(finish="tool_calls")]
+    msg = (await _collect(_stream(chunks))).choices[0].message
+    assert msg.reasoning_details == [
+        {"type": "reasoning.text", "text": "Let me think", "index": 0, "signature": "sig-1"}
+    ]
+
+
+async def test_two_calls_numbered_zero_stay_two_calls():
+    chunks = [
+        _chunk(calls=[_frag(index=0, id="a", name="read_file", args='{"path": "x"}')]),
+        _chunk(calls=[_frag(index=0, id="b", name="read_file", args='{"path": ')]),
+        _chunk(calls=[_frag(index=0, args='"y"}')]),
+        _chunk(finish="tool_calls"),
+    ]
+    calls = (await _collect(_stream(chunks))).choices[0].message.tool_calls
+    assert [(c.id, json.loads(c.function.arguments)) for c in calls] == [("a", {"path": "x"}), ("b", {"path": "y"})]
+
+
+async def test_a_stream_cut_off_without_a_finish_reason_is_asked_again():
+    from src.modules.llm.openrouter import _StalledError
+
+    with pytest.raises(_StalledError):
+        await _collect(_stream([_chunk(content="half an ans")]))
+
+
+async def test_too_little_credit_even_for_the_lowered_limit_pauses_at_the_billing_limit(backend, monkeypatch):
+    from src.modules.llm.plan_limit import BillingLimitReachedError
+
+    async def create(kwargs, turn):
+        if turn == 0:
+            raise RuntimeError("Error code: 402 - This request requires more credits ... can only afford 3064.")
+        return _response(finish="length", content="partial")
+
+    monkeypatch.setattr(backend, "_create", create)
+
+    async def record(*a):
+        return None
+
+    monkeypatch.setattr("src.modules.tracking.usage.record_cancelled_loop", record)
+    with pytest.raises(BillingLimitReachedError):
+        await backend.tool_loop(
+            system="s", messages=[{"role": "user", "content": "go"}], tools=[], tool_handler=None, max_turns=4
+        )
+
+
+async def test_answers_discarded_and_asked_again_are_counted(backend, monkeypatch):
+    from types import SimpleNamespace
+
+    from src.modules.llm import openrouter as orb
+
+    empty = SimpleNamespace(
+        choices=[],
+        usage=SimpleNamespace(prompt_tokens=50_000, completion_tokens=0, prompt_tokens_details=None, cost=0.4),
+        error="provider failed",
+        model_extra={},
+    )
+    good = _response(finish="stop", content="Done.")
+    answers = iter([empty, good])
+
+    async def complete(kwargs):
+        return next(answers)
+
+    monkeypatch.setattr(backend, "_complete", complete)
+    monkeypatch.setattr(orb, "_EMPTY_BACKOFF_SECONDS", 0)
+    result = await backend.tool_loop(
+        system="s", messages=[{"role": "user", "content": "go"}], tools=[], tool_handler=None, max_turns=3
+    )
+    assert result.success and result.usage.input_tokens >= 50_000

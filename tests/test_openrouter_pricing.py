@@ -361,15 +361,24 @@ async def test_tool_loop_stops_at_the_spending_limit(backend, monkeypatch):
     tool_turn = _resp("tool_calls", tool_calls=[_tc("a", "list_directory", "{}")], usage=_usage(10, 10, cost=0.06))
     create = AsyncMock(return_value=tool_turn)
     monkeypatch.setattr(backend._client.chat.completions, "create", create)
-    r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], _Recorder(), paper_id="p1")
-    assert not r.success
-    assert r.stop_reason == "budget"
-    assert "spending limit" in (r.error or "")
+    recorded = []
+
+    async def record(paper_id, specialist, backend_name, model, usage):
+        recorded.append((paper_id, usage))
+
+    monkeypatch.setattr("src.modules.tracking.usage.record_cancelled_loop", record)
+    from src.core.strategist.state import BudgetExceededError
+
+    # Since the review of 2026-11-23 the run pauses at the limit (BudgetExceededError), as before a step;
+    # the loop's calls are recorded first, since the runner never sees a returned result.
+    with pytest.raises(BudgetExceededError) as e:
+        await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], _Recorder(), paper_id="p1")
+    assert e.value.cap == pytest.approx(1.0) and e.value.spent == pytest.approx(1.02)
     assert create.call_count == 2
-    assert r.usage.cost_usd == pytest.approx(0.12)
+    assert [p for p, _ in recorded] == ["p1"] and recorded[0][1].cost_usd == pytest.approx(0.12)
     from src.modules.tracking import usage as usage_mod
 
-    assert "p1" not in usage_mod._in_flight  # its cost is recorded by the runner, not counted twice
+    assert "p1" not in usage_mod._in_flight  # recorded once, not counted twice
 
 
 async def test_loops_running_at_once_count_together(monkeypatch):

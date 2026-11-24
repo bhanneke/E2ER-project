@@ -28,19 +28,22 @@ Two consumers depend on this file:
   real data, write `estimation_results.json` as `{}` rather than
   fabricating values. The empty file is the honest signal.
 
-## How estimation actually runs — write a script, the runner executes it
+## How estimation actually runs — write a script, run it with `e2er-run`
 
-You do **not** have a general code-execution tool: you can read data and
-write files, but you cannot run Python yourself. That is by design. So
-the way to "run estimation" is:
+You have no general code-execution tool: you can read data and write
+files, and run one workspace script at a time with `e2er-run`. So the way
+to "run estimation" is:
 
 1. Write your estimation code as a script named **exactly
    `run_estimation.py`** in the workspace root. It must read the
    workspace data files and write its numeric output to **exactly
    `estimation_results.json`**.
-2. Finish your turn. After you return, the **runner executes
-   `run_estimation.py` for you** and validates that
-   `estimation_results.json` came out populated. The run is logged to
+2. Run it with `e2er-run run_estimation.py`, read the traceback if it
+   fails, fix the script and run it again until it exits cleanly and
+   `estimation_results.json` is populated.
+3. Finish your turn. After you return, the **runner executes
+   `run_estimation.py` again** and checks that `estimation_results.json`
+   is exactly what the script writes. The run is logged to
    `run_estimation.log` (exit code + stdout/stderr) for the next reviewer.
 
 Naming matters: the runner looks for `run_estimation.py` →

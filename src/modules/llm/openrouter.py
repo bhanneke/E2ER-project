@@ -7,6 +7,7 @@ import itertools
 import json
 import re
 import time
+from contextvars import ContextVar
 from typing import Any
 
 from openai import AsyncOpenAI, AsyncStream
@@ -24,6 +25,9 @@ _loop_keys = itertools.count(1)
 #: What each running loop has used so far, by loop key (recorded if the run is stopped mid-loop).
 _spent: dict[int, TokenUsage] = {}
 _EMPTY_BACKOFF_SECONDS = 5.0
+#: The usage of the answers one call discarded and asked again (empty, failed mid-stream): OpenRouter
+#: bills them. Per task, so the steps that share a backend keep theirs apart (review of 2026-11-24).
+_DISCARDED: ContextVar[list[Any] | None] = ContextVar("e2er_openrouter_discarded", default=None)
 
 #: Models whose providers cache only at explicit ``cache_control`` breakpoints
 #: (OpenRouter's prompt-caching guide, read 2026-10-14). Anthropic takes one
@@ -77,6 +81,7 @@ async def _collect(stream: Any) -> Any:
 
     text: list[str] = []
     calls: dict[int, dict[str, Any]] = {}
+    remap: dict[int, int] = {}
     reasoning: list[Any] = []
     finish: str | None = None
     usage: Any = None
@@ -107,7 +112,7 @@ async def _collect(stream: Any) -> Any:
                 if isinstance(details, list):
                     reasoning.extend(details)
                 for tc in getattr(delta, "tool_calls", None) or []:
-                    slot = calls.setdefault(_slot_of(tc, calls), {"id": "", "name": "", "args": []})
+                    slot = calls.setdefault(_slot_of(tc, calls, remap), {"id": "", "name": "", "args": []})
                     if getattr(tc, "id", None):
                         slot["id"] = tc.id
                     fn = getattr(tc, "function", None)
@@ -122,6 +127,9 @@ async def _collect(stream: Any) -> Any:
     if finish == "error":
         # The provider failed mid-answer (OpenRouter sends the error in the stream).
         return SimpleNamespace(choices=[], usage=usage, error=error or "the provider failed mid-answer", model_extra={})
+    if seen_choice and finish is None and (text or calls):
+        # The stream ended without a finish reason: cut off, not a whole answer (review 2026-11-24).
+        raise _StalledError("the stream ended without a finish reason")
     if seen_choice and (text or calls or finish):
         tool_calls = [
             SimpleNamespace(
@@ -132,7 +140,9 @@ async def _collect(stream: Any) -> Any:
             for i, c in sorted(calls.items())
         ]
         message = SimpleNamespace(
-            content="".join(text) or None, tool_calls=tool_calls or None, reasoning_details=reasoning or None
+            content="".join(text) or None,
+            tool_calls=tool_calls or None,
+            reasoning_details=_merge_reasoning(reasoning) or None,
         )
         choices.append(
             SimpleNamespace(finish_reason=finish or ("tool_calls" if tool_calls else "stop"), message=message)
@@ -140,21 +150,52 @@ async def _collect(stream: Any) -> Any:
     return SimpleNamespace(choices=choices, usage=usage, error=error, model_extra={})
 
 
-def _slot_of(tc: Any, calls: dict[int, dict[str, Any]]) -> int:
+def _slot_of(tc: Any, calls: dict[int, dict[str, Any]], remap: dict[int, int] | None = None) -> int:
     """Which tool call a streamed fragment belongs to.
 
-    OpenAI-style providers number the calls (``index``). Some send fragments without an index:
-    those continue the call being streamed, unless they carry a new call id.
+    OpenAI-style providers number the calls (``index``). Some send fragments without an index: those
+    continue the call being streamed, unless they carry a new call id. Some number every call 0: a
+    fragment with a new call id opens a new call there too (``remap``: index -> the call it now feeds).
     """
+    new_id = getattr(tc, "id", None)
     if getattr(tc, "index", None) is not None:
-        return int(tc.index)
+        remap = {} if remap is None else remap
+        idx = int(tc.index)
+        slot = remap.get(idx)
+        if slot is None or (new_id and calls.get(slot, {}).get("id") and calls[slot]["id"] != new_id):
+            slot = max(calls, default=-1) + 1
+            remap[idx] = slot
+        return slot
     if not calls:
         return 0
     last = max(calls)
-    new_id = getattr(tc, "id", None)
     if new_id and calls[last]["id"] and calls[last]["id"] != new_id:
         return last + 1
     return last
+
+
+def _merge_reasoning(parts: list[Any]) -> list[Any]:
+    """Streamed reasoning fragments as whole blocks, one per (index, type): their text and summary joined,
+    the other fields (signature, data, id, format) as last sent. A provider streams one thinking block as
+    many fragments, and only the whole block, with its signature, is valid to send back."""
+    merged: dict[tuple[Any, Any], dict[str, Any]] = {}
+    out: list[Any] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            out.append(part)
+            continue
+        key = (part.get("index", 0), part.get("type"))
+        block = merged.get(key)
+        if block is None:
+            block = merged[key] = dict(part)
+            out.append(block)
+            continue
+        for k, v in part.items():
+            if k in ("text", "summary") and isinstance(v, str):
+                block[k] = (block.get(k) or "") + v
+            elif v is not None:
+                block[k] = v
+    return out
 
 
 def _reasoning_of(msg: Any) -> Any:
@@ -263,7 +304,8 @@ class OpenRouterBackend(LLMBackend):
     async def preflight(self) -> None:
         """Before a run's first step: stop when the key, the model or its limits cannot run a study.
 
-        Checks the key with OpenRouter (``/api/v1/key``: accepted, credit left), and in OpenRouter's model
+        Checks the key with OpenRouter (``/api/v1/key``: accepted, its own spending limit not used up; the
+        account's credit shows at the first call, which pauses the run when it is empty), and in OpenRouter's model
         list that the model exists, can call tools, and has room for a study's prompts; lowers the output
         limit per call to what the model allows. Offline or when OpenRouter does not answer, the run goes
         on and the calls report what is wrong. Raises :class:`BackendSetupError` (the run pauses).
@@ -283,10 +325,11 @@ class OpenRouterBackend(LLMBackend):
         if isinstance(key, dict):
             remaining = key.get("limit_remaining")
             if isinstance(remaining, (int, float)) and remaining <= 0:
-                raise stop(
-                    "the OpenRouter key's spending limit is used up. Raise the limit at "
-                    "https://openrouter.ai/settings/keys or use another key. " + SETUP_TAIL
-                )
+                from .plan_limit import detect_billing
+
+                limit = detect_billing("openrouter", "key limit exceeded (OpenRouter /key: limit_remaining 0)")
+                if limit is not None:
+                    raise limit
         model = await asyncio.to_thread(find_model, self._model, network=True)
         if model is None:
             logger.warning(
@@ -300,7 +343,7 @@ class OpenRouterBackend(LLMBackend):
             )
         if model.context_length and model.context_length < MIN_CONTEXT_TOKENS:
             raise stop(
-                f"{self._model} reads at most {model.context_length:,} tokens at once; a study's steps need "
+                f"{self._model} reads at most {model.context_length:,} tokens at once, and a study's steps need "
                 f"{MIN_CONTEXT_TOKENS:,}. Choose a model with a longer context and set OPENROUTER_MODEL. " + SETUP_TAIL
             )
         cap = model.max_completion_tokens or 0
@@ -354,6 +397,9 @@ class OpenRouterBackend(LLMBackend):
                 continue
             if response.choices:
                 return response
+            wasted = _DISCARDED.get()
+            if wasted is not None and getattr(response, "usage", None) is not None:
+                wasted.append(response)
             err = getattr(response, "error", None) or (getattr(response, "model_extra", None) or {}).get("error")
             last = str(err or "no choices in the response")
             logger.warning("OpenRouter turn %d: empty response (%s), attempt %d", turn, last, attempt + 1)
@@ -573,7 +619,15 @@ class OpenRouterBackend(LLMBackend):
                     extra["cache_control"] = {"type": "ephemeral"}
                 create_kwargs["extra_body"] = extra
                 turns += 1
-                response = await self._create(create_kwargs, turn)
+                discarded: list[Any] = []
+                discard_token = _DISCARDED.set(discarded)
+                try:
+                    response = await self._create(create_kwargs, turn)
+                finally:
+                    _DISCARDED.reset(discard_token)
+                    for lost in discarded:
+                        usage = usage + self._usage_of(lost)
+                    _spent[loop_key] = usage
                 logger.info(
                     "OpenRouter turn %d: response in %.1fs (finish=%s)",
                     turn,
@@ -612,6 +666,16 @@ class OpenRouterBackend(LLMBackend):
             # Looping is futile — the model will hit the same wall again. Return
             # an error so the runner can fail this specialist and either retry
             # at the orchestration level or surface a clear cap error.
+            if finish_reason == "length" and lowered:
+                # The output limit came down to what the credit pays for, and the answer needs more: a
+                # refusal for money after all, so the run pauses at the billing limit (review 2026-11-24).
+                return _result(
+                    False,
+                    msg.content or "",
+                    f"OpenRouter: the credit left can only afford {max_tokens} output tokens per call, "
+                    "too few for this step; error code: 402",
+                    "end_turn",
+                )
             if finish_reason == "length":
                 logger.warning(
                     "OpenRouter turn %d: hit max_tokens=%d (finish=length). Bailing out to avoid infinite loop.",

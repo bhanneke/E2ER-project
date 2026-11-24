@@ -488,3 +488,31 @@ async def test_the_spending_limit_inside_a_step_is_not_a_failed_attempt(tmp_path
         )
     assert calls == ["data_analyst"]
     assert not [e for e in events if e[0] == "specialist_failed"]
+
+
+async def test_a_spending_limit_in_a_parallel_batch_lets_the_others_finish_first(tmp_path, events, monkeypatch):
+    """Review of 2026-11-24: the other steps of the batch kept running after the run had paused."""
+    import asyncio
+
+    from src.core.specialists import dispatcher
+    from src.core.specialists.contracts import Contribution, WorkOrder
+    from src.core.strategist.state import BudgetExceededError
+
+    finished: list[str] = []
+
+    async def fake_run_specialist(*, work_order, **kw):
+        if work_order.specialist == "idea_developer":
+            raise BudgetExceededError(5.1, 5.0)
+        await asyncio.sleep(0.2)
+        finished.append(work_order.specialist)
+        return Contribution(paper_id=work_order.paper_id, specialist=work_order.specialist, output="", success=True)
+
+    monkeypatch.setattr(dispatcher, "run_specialist", fake_run_specialist)
+    monkeypatch.setattr("src.modules.tracking.usage.check_budget_by_paper_id", AsyncMock())
+    orders = [
+        WorkOrder(paper_id="p", specialist="idea_developer", focus="plan"),
+        WorkOrder(paper_id="p", specialist="literature_scanner", focus="lit"),
+    ]
+    with pytest.raises(BudgetExceededError):
+        await dispatcher.execute_parallel(orders, MagicMock(), tmp_path, "m", backend_name="openrouter")
+    assert finished == ["literature_scanner"]
