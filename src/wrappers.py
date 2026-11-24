@@ -134,6 +134,10 @@ def check_tables_main(argv: list[str] | None = None) -> int:
     refused = guard_ai_step("e2er-check-tables")
     if refused is not None:
         return refused
+    own = os.environ.get("E2ER_WORKSPACE")
+    if os.environ.get("E2ER_AI_STEP") and own and Path(own).resolve() != Path.cwd().resolve():
+        print("e2er-check-tables: run it in this step's study folder.", file=sys.stderr)
+        return REFUSED
     from .core.renderer.check_tables import main
 
     return main([str(Path.cwd().resolve())])

@@ -190,3 +190,37 @@ def test_the_folders_above_a_readable_python_show_their_metadata_only(tmp_path):
     meta = next(line for line in prof.splitlines() if line.startswith("(allow file-read-metadata"))
     assert f'(literal "{denied}")' in meta and f'(literal "{denied / "jobs"}")' in meta
     assert "subpath" not in meta  # the folders themselves, never what they hold
+
+
+@pytest.mark.skipif(sys.platform != "darwin" or not _sandbox_here(), reason="the link rule is macOS's profile")
+def test_a_sandboxed_script_makes_no_links(tmp_path, home):
+    """Review of 2026-11-24: a link made in the sandbox would lead e2er's own commands to a denied file."""
+    import subprocess
+
+    from src.core.script_sandbox import wrap
+
+    argv, _ = wrap([sys.executable, "-c", "import os; os.symlink('/etc/hosts', 'l')"], tmp_path)
+    done = subprocess.run(argv, cwd=tmp_path, capture_output=True, text=True)
+    assert done.returncode != 0 and not (tmp_path / "l").is_symlink(), done.stderr
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux") or not _sandbox_here(), reason="bubblewrap's pid namespace")
+def test_no_process_outlives_a_sandboxed_script(tmp_path, home):
+    """Review of 2026-11-24: a double-forked child kept changing the study's files after the script ended."""
+    import subprocess
+    import time
+
+    from src.core.script_sandbox import wrap
+
+    code = (
+        "import os, time\n"
+        "if os.fork() == 0:\n"
+        "    os.setsid()\n"
+        "    if os.fork() == 0:\n"
+        "        time.sleep(1.5); open('late', 'w').write('x')\n"
+        "    os._exit(0)\n"
+    )
+    argv, _ = wrap([sys.executable, "-c", code], tmp_path)
+    subprocess.run(argv, cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    time.sleep(2.5)
+    assert not (tmp_path / "late").exists()

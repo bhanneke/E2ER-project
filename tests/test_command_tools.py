@@ -118,24 +118,47 @@ async def test_options_that_choose_another_study_are_refused_in_every_spelling(t
     assert out.startswith("Error:") and "leave out" in out, out
 
 
-async def test_a_link_out_of_the_folder_stops_the_commands(tmp_path):
-    import sqlite3
-
-    outside = tmp_path / "secret.sqlite"
-    con = sqlite3.connect(outside)
-    con.execute("CREATE TABLE s (v TEXT)")
-    con.execute("INSERT INTO s VALUES ('SECRET-ROW')")
-    con.commit()
-    con.close()
+async def test_a_link_into_what_the_sandbox_denies_stops_the_commands(tmp_path, monkeypatch):
+    """Review of 2026-11-24: a link to a secret (here ~/.ssh of a stand-in home) stops every command."""
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh" / "id_test").write_text("SECRET-KEY-LINE\n")
+    monkeypatch.setenv("HOME", str(home))
     ws = tmp_path / "study"
     ws.mkdir()
-    (ws / "data.db").symlink_to(outside)
+    (ws / "data_dictionary.json").symlink_to(home / ".ssh" / "id_test")
     h = CommandToolHandler(ws, {"e2er-data", "e2er-check-tables"}, paper_id="p1", specialist="data_analyst")
-    for args in (["query", "sql", "SELECT v FROM s"], ["query", "tables"]):
+    for args in (["query", "tables"], ["query", "sql", "SELECT 1"]):
         out = await h.handle("e2er-data", {"args": args})
-        assert "SECRET-ROW" not in out and not out.startswith("exit code: 0") and "links that point outside" in out, out
+        assert "SECRET-KEY-LINE" not in out and "closed to the study's scripts" in out, out
     out = await h.handle("e2er-check-tables", {"args": []})
-    assert "links that point outside" in out, out
+    assert "closed to the study's scripts" in out and "data_dictionary.json" in out, out
+
+
+def test_links_e2er_makes_to_the_researchers_data_stay_allowed(tmp_path, monkeypatch):
+    """Review of 2026-11-24: e2er links the researcher's data and PDFs into the study; those are not refused."""
+    from src.core.workspace_guard import guard_ai_step
+
+    outside = tmp_path / "my-data"
+    outside.mkdir()
+    (outside / "x.csv").write_text("a,b\n1,2\n")
+    ws = tmp_path / "study"
+    (ws / "data").mkdir(parents=True)
+    (ws / "data" / "x.csv").symlink_to(outside / "x.csv")
+    monkeypatch.setenv("E2ER_AI_STEP", "data_analyst")
+    monkeypatch.setenv("E2ER_WORKSPACE", str(ws))
+    assert guard_ai_step("e2er-data") is None
+
+
+def test_a_folder_too_large_to_check_is_refused(tmp_path, monkeypatch):
+    from src.core import workspace_guard
+
+    ws = tmp_path / "study"
+    ws.mkdir()
+    for i in range(12):
+        (ws / f"f{i}").write_text("")
+    monkeypatch.setattr(workspace_guard, "_MAX_ENTRIES", 10)
+    assert "more than 10 files and folders" in (workspace_guard.refusal(ws, "e2er-data") or "")
 
 
 def test_data_db_itself_refuses_a_link(tmp_path):

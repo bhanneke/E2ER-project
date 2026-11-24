@@ -1,12 +1,13 @@
 """Links out of a study's folder, for the e2er commands an AI step runs.
 
-An AI-written script runs in the operating system's sandbox (core/script_sandbox.py), but inside it
-the script can still create a symbolic link in the study's folder that points elsewhere, for example
-``data.db -> ~/.e2er/<run database>``. The e2er commands the model runs next (``e2er-data``,
-``e2er-lit``, ``e2er-check-tables``, ``e2er-fieldmap``) are e2er's own code and run outside that
-sandbox; following such a link they would read, and hand back to the model, a file outside the
-study (review of 2026-11-24). So during an AI step a command refuses to run while the study's folder
-holds a link that leads out of it.
+An AI-written script runs in the operating system's sandbox (core/script_sandbox.py), which denies
+e2er's folder, the run database and the user's secrets. The e2er commands the model runs next
+(``e2er-data``, ``e2er-lit``, ``e2er-check-tables``, ``e2er-fieldmap``) are e2er's own code and run
+outside that sandbox: following a link such as ``data.db -> ~/.e2er/<run database>`` they would read
+what the sandbox denies and hand it to the model (review of 2026-11-24). So during an AI step a command
+refuses to run while the study's folder holds a link into what the sandbox denies. Links e2er makes
+itself, to the researcher's data and PDFs, lead elsewhere and stay. The sandbox on macOS lets a script
+make no link at all; this check also covers links made any other way.
 """
 
 from __future__ import annotations
@@ -21,9 +22,20 @@ _SKIP = frozenset({".git", ".venv", "venv", "__pycache__", "node_modules"})
 _MAX_ENTRIES = 200_000
 
 
-def outside_links(workspace: Path, *, limit: int = 20) -> list[str]:
-    """Links in ``workspace`` (relative paths) whose target lies outside it, at most ``limit``."""
+class TooManyEntriesError(Exception):
+    """The study's folder holds more entries than the check looks at."""
+
+
+def denied_links(workspace: Path, *, limit: int = 20) -> list[str]:
+    """Links in ``workspace`` (relative paths) that lead into what the script sandbox denies, at most ``limit``.
+
+    Raises :class:`TooManyEntriesError` past :data:`_MAX_ENTRIES` entries: a check that stopped early
+    would pass a link it never saw.
+    """
+    from .script_sandbox import denied_paths
+
     root = Path(workspace).resolve()
+    denied = [Path(d).resolve() for d in denied_paths(workspace=root)]
     found: list[str] = []
     seen = 0
     for here, dirs, files in os.walk(root, followlinks=False):
@@ -31,7 +43,7 @@ def outside_links(workspace: Path, *, limit: int = 20) -> list[str]:
         for name in [*dirs, *files]:
             seen += 1
             if seen > _MAX_ENTRIES:
-                return found
+                raise TooManyEntriesError(f"more than {_MAX_ENTRIES:,} files and folders")
             p = Path(here) / name
             if not p.is_symlink():
                 continue
@@ -40,7 +52,7 @@ def outside_links(workspace: Path, *, limit: int = 20) -> list[str]:
             except (OSError, RuntimeError):  # a loop of links
                 found.append(p.relative_to(root).as_posix())
                 continue
-            if not target.is_relative_to(root):
+            if any(target == d or target.is_relative_to(d) for d in denied):
                 found.append(p.relative_to(root).as_posix())
                 if len(found) >= limit:
                     return found
@@ -49,13 +61,19 @@ def outside_links(workspace: Path, *, limit: int = 20) -> list[str]:
 
 def refusal(workspace: Path, command: str) -> str | None:
     """The sentence that refuses ``command`` while the study's folder links out of itself, or None."""
-    links = outside_links(workspace)
+    try:
+        links = denied_links(workspace)
+    except TooManyEntriesError as e:
+        return (
+            f"{command}: refused. The study's folder holds {e}, more than e2er checks for links; "
+            "remove files the study does not need and run the command again."
+        )
     if not links:
         return None
     return (
-        f"{command}: refused. The study's folder holds links that point outside it ({', '.join(links)}); "
-        "e2er's commands do not follow them. Delete the links (write the files into the study's folder "
-        "instead) and run the command again."
+        f"{command}: refused. The study's folder holds links into folders that are closed to the study's "
+        f"scripts ({', '.join(links)}); e2er's commands do not follow them. Delete these links and run "
+        "the command again."
     )
 
 

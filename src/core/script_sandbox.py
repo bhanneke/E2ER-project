@@ -184,6 +184,10 @@ def macos_profile(
             ws = {Path(workspace), _real(Path(workspace))}
             rules.append("(allow file-read* file-write* " + " ".join(f"(subpath {_sbpl_string(p)})" for p in ws) + ")")
     rules.append('(deny file-read* file-write* (regex #"/\\.env(\\.[^/]*)?$"))')
+    # No symbolic links (review of 2026-11-24): a link made here would lead e2er's own commands, which run
+    # outside this sandbox, to a file this sandbox denies; a background process could even swap one in
+    # between a command's check and its read. Hard links into the denied folders fail already.
+    rules.append("(deny file-write-create (vnode-type SYMLINK))")
     if port:
         rules.append(f'(deny network-outbound (remote ip "localhost:{int(port)}"))')
     return "\n".join(rules)
@@ -192,7 +196,9 @@ def macos_profile(
 def bwrap_args(denied: list[Path], *, workspace: Path | None = None, readable: Iterable[Path] = ()) -> list[str]:
     """bubblewrap: the whole file system as it is, the denied folders behind empty ones, files behind /dev/null;
     then the study's folder and the script's Python mounted again where a denied folder hid them."""
-    args = ["--dev-bind", "/", "/", "--die-with-parent"]
+    # --unshare-pid: the script's processes live in their own process namespace, so none outlives the script
+    # (a process left running could change the study's files after the step, review of 2026-11-24).
+    args = ["--dev-bind", "/", "/", "--die-with-parent", "--unshare-pid"]
     hidden: list[Path] = []
     for p in denied:
         if p.is_dir() and not p.is_symlink():
