@@ -130,9 +130,9 @@ async def test_a_link_into_what_the_sandbox_denies_stops_the_commands(tmp_path, 
     h = CommandToolHandler(ws, {"e2er-data", "e2er-check-tables"}, paper_id="p1", specialist="data_analyst")
     for args in (["query", "tables"], ["query", "sql", "SELECT 1"]):
         out = await h.handle("e2er-data", {"args": args})
-        assert "SECRET-KEY-LINE" not in out and "closed to the study's scripts" in out, out
+        assert "SECRET-KEY-LINE" not in out and "lead out of it" in out, out
     out = await h.handle("e2er-check-tables", {"args": []})
-    assert "closed to the study's scripts" in out and "data_dictionary.json" in out, out
+    assert "lead out of it" in out and "data_dictionary.json" in out, out
 
 
 def test_links_e2er_makes_to_the_researchers_data_stay_allowed(tmp_path, monkeypatch):
@@ -181,3 +181,23 @@ def test_e2er_data_in_an_ai_step_refuses_another_study_on_the_cli_path(monkeypat
     monkeypatch.setenv("E2ER_SPECIALIST", "data_analyst")
     assert main(["--paper-id", "other", "query", "tables"]) == 2
     assert "another" in capsys.readouterr().err
+
+
+def test_a_link_out_of_the_study_is_refused_outside_data_and_literature(tmp_path, monkeypatch):
+    """Re-review of 2026-11-24: under Codex or Gemini the model can make links; an e2er command would write
+    through data_dictionary.json or tables/ to a file outside the study."""
+    from src.core.workspace_guard import guard_ai_step
+
+    other = tmp_path / "other-study"
+    other.mkdir()
+    (other / "data_dictionary.json").write_text("{}")
+    ws = tmp_path / "study"
+    ws.mkdir()
+    (ws / "data_dictionary.json").symlink_to(other / "data_dictionary.json")
+    (ws / "inner.txt").write_text("x")
+    (ws / "alias.txt").symlink_to(ws / "inner.txt")  # a link within the study is fine
+    monkeypatch.setenv("E2ER_AI_STEP", "data_analyst")
+    monkeypatch.setenv("E2ER_WORKSPACE", str(ws))
+    assert guard_ai_step("e2er-data") == 2
+    (ws / "data_dictionary.json").unlink()
+    assert guard_ai_step("e2er-data") is None

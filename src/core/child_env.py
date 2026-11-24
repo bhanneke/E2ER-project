@@ -19,6 +19,7 @@ import os
 import re
 import site
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -171,10 +172,14 @@ def run_in_own_session(
             import logging
 
             logging.getLogger(__name__).warning("AI-written script runs %s", how.note)
+    import uuid
+
+    marker = uuid.uuid4().hex
+    argv = _with_marker(list(argv), marker)
     proc = subprocess.Popen(
         argv,
         cwd=str(cwd),
-        env=dict(env),
+        env={**env, RUN_MARKER: marker},
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
         encoding="utf-8",
@@ -191,7 +196,91 @@ def run_in_own_session(
         _kill_group(proc)
         proc.wait()
         raise
+    end_leftovers(proc.pid, marker)
     return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+
+
+#: Every process of one script run carries this variable with the run's own value (run_in_own_session).
+RUN_MARKER = "E2ER_SCRIPT_RUN"
+
+
+def end_leftovers(pgid: int, marker: str) -> list[int]:
+    """Stop what a script left running after it ended: its process group, then every process of the
+    user's that still carries the run's marker (one that left the group with ``setsid``).
+
+    Review of 2026-11-24: a process a script left behind kept changing the study's files after
+    ``e2er-run`` had recorded them. On Linux the sandbox's own process namespace ends such processes
+    already; on macOS this does. A process that starts itself again without the marker escapes it; it can
+    no longer make links in the sandbox, so what remains is a late change to the study's files.
+    Returns the process ids stopped by marker.
+    """
+    import signal
+
+    if os.name == "nt":
+        return []
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        pass
+    needle = f"{RUN_MARKER}={marker}"
+    stopped: list[int] = []
+    for pid in _pids_with(needle):
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, signal.SIGKILL)
+            stopped.append(pid)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+    return stopped
+
+
+def _with_marker(argv: list[str], marker: str) -> list[str]:
+    """``argv`` with the run's marker as a Python option (``-X e2er_run=<marker>``) after the interpreter.
+
+    macOS shows other processes' command lines but not the environment of a sandboxed one; a process the
+    script forks keeps its command line. Python stores ``-X`` options and otherwise ignores them.
+    """
+    for i, a in enumerate(argv):
+        name = Path(a).name.lower()
+        if name.startswith("python") or a == sys.executable:
+            return [*argv[: i + 1], "-X", f"e2er_run={marker}", *argv[i + 1 :]]
+    return argv
+
+
+def _pids_with(needle: str) -> list[int]:
+    """The user's processes whose environment, or command line, holds ``needle`` (``NAME=value``)."""
+    found: list[int] = []
+    proc_root = Path("/proc")
+    if proc_root.is_dir() and (proc_root / "self" / "environ").exists():
+        raw = needle.encode()
+        for entry in proc_root.iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                if raw in (entry / "environ").read_bytes().split(b"\0"):
+                    found.append(int(entry.name))
+            except OSError:
+                continue
+        return found
+    try:  # macOS and the BSDs: ps shows each of the user's processes with its environment (-E)
+        out = subprocess.run(
+            ["ps", "-E", "-ww", "-o", "pid=,command=", "-U", str(os.getuid())],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return found
+    flag = "e2er_run=" + needle.split("=", 1)[1]
+    for line in out.splitlines():
+        words = line.split()
+        if needle in words or flag in words:
+            head = line.strip().split(None, 1)[0]
+            if head.isdigit():
+                found.append(int(head))
+    return found
 
 
 def _kill_group(proc: subprocess.Popen[str]) -> None:

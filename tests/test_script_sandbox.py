@@ -7,6 +7,7 @@ The reviewer's repro: `e2er serve`, then `e2er-run analysis.py` on a script that
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -222,5 +223,27 @@ def test_no_process_outlives_a_sandboxed_script(tmp_path, home):
     )
     argv, _ = wrap([sys.executable, "-c", code], tmp_path)
     subprocess.run(argv, cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    time.sleep(2.5)
+    assert not (tmp_path / "late").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups and sessions")
+def test_what_a_script_leaves_running_is_stopped_when_it_ends(tmp_path, home):
+    """Re-review of 2026-11-24: a double-forked child (setsid) outlived e2er-run on macOS and changed files."""
+    import time
+
+    from src.core.child_env import run_in_own_session
+
+    code = (
+        "import os, time\n"
+        "if os.fork() == 0:\n"
+        "    os.setsid()\n"
+        "    if os.fork() == 0:\n"
+        "        os.close(1); os.close(2)\n"
+        "        time.sleep(1.5); open('late', 'w').write('x')\n"
+        "    os._exit(0)\n"
+    )
+    # As e2er-run runs a script (its output goes straight to the terminal); the child closes its output.
+    run_in_own_session([sys.executable, "-c", code], cwd=tmp_path, env=dict(os.environ), timeout=30, capture=False)
     time.sleep(2.5)
     assert not (tmp_path / "late").exists()
