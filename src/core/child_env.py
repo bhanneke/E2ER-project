@@ -268,6 +268,8 @@ def _pids_with(needle: str) -> list[int]:
             ["ps", "-E", "-ww", "-o", "pid=,command=", "-U", str(os.getuid())],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=20,
             check=False,
         ).stdout
