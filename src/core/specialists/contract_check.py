@@ -1057,6 +1057,14 @@ def check_declared_tables(workspace: Path) -> list[ContractCheck]:
                 + "; ".join(problems)
                 + f". Tables in data.db: {available}. Load each series with `e2er-data ... --table <name>`; "
                 "a table whose values are NULL was not loaded (check the connector's error, e.g. an API key)."
+                + (
+                    ' A column the source fills only for some rows ("N of M non-null") is no loading error: '
+                    'give it the share it has in data_dictionary.json, e.g. {"name": "nst", "min_non_null": 0.02}, '
+                    "or leave the column out of the dictionary; a table the study does not use (a test load) "
+                    "belongs out of the dictionary."
+                    if hollow
+                    else ""
+                )
             )
             if problems
             else "",

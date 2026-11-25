@@ -226,3 +226,23 @@ async def test_a_json_file_that_would_not_parse_is_not_written(tmp_path):
     bad = await h.handle("edit_file", {"path": "d.json", "old_string": '"t"}', "new_string": '"t" "x": 1}'})
     assert bad.startswith("Error: nothing written") and "valid JSON" in bad, bad
     assert (tmp_path / "d.json").read_text() == '{"tables": [{"name": "t"}]}'
+
+
+def test_a_sparse_column_gets_the_hint_to_declare_its_share(tmp_path):
+    """Live test 2026-11-25: DeepSeek read "a table whose values are NULL was not loaded" for a column USGS fills
+    in 7 of 150 rows, and loaded the data again three times."""
+    import json as _json
+    import sqlite3
+
+    from src.core.specialists.contract_check import check_declared_tables
+
+    con = sqlite3.connect(tmp_path / "data.db")
+    con.execute("CREATE TABLE quakes (mag REAL, nst REAL)")
+    con.executemany("INSERT INTO quakes VALUES (?, ?)", [(5.0 + i / 100, 12.0 if i < 7 else None) for i in range(150)])
+    con.commit()
+    con.close()
+    (tmp_path / "data_dictionary.json").write_text(
+        _json.dumps({"tables": [{"name": "quakes", "source": "usgs", "columns": [{"name": "mag"}, {"name": "nst"}]}]})
+    )
+    reason = check_declared_tables(tmp_path)[0].reason
+    assert "quakes.nst: 7 of 150" in reason and "min_non_null" in reason and "test load" in reason, reason
