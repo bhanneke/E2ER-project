@@ -208,9 +208,12 @@ async def test_empty_responses_give_up_with_a_clear_error(backend, monkeypatch):
     empty = SimpleNamespace(choices=None, usage=None, error={"message": "upstream failed"})
     create = AsyncMock(return_value=empty)
     monkeypatch.setattr(backend._client.chat.completions, "create", create)
-    r = await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
-    assert not r.success
-    assert "upstream failed" in (r.error or "")
+    from src.modules.llm.plan_limit import CallTimedOutError
+
+    # Since the live test of 2026-11-25 the run pauses when no provider gives an answer (Resume tries again).
+    with pytest.raises(CallTimedOutError) as e:
+        await backend.tool_loop("s", [{"role": "user", "content": "u"}], [], None)
+    assert "upstream failed" in e.value.status and "{" not in e.value.status
 
 
 async def test_invalid_tool_arguments_go_back_to_the_model(backend, monkeypatch):

@@ -68,7 +68,10 @@ def _with_system_breakpoint(msgs: list[dict[str, Any]]) -> list[dict[str, Any]]:
 #: A streamed call that sends nothing for this long has stalled (first chunk: the
 #: provider reads the whole prompt first; later chunks: tokens arrive every second).
 _FIRST_CHUNK_SECONDS = 240.0
-_IDLE_SECONDS = 120.0
+# Live test 2026-11-25 (DeepSeek V3.2): answers that had begun went silent for over 120 s and then came,
+# 293 tokens after 135 s: a reasoning model thinks between chunks without sending them. 300 s still ends a
+# provider that truly stopped, and the next try asks the fast providers (``_create``).
+_IDLE_SECONDS = 300.0
 
 
 class _StalledError(Exception):
@@ -430,6 +433,8 @@ class OpenRouterBackend(LLMBackend):
             if wasted is not None and getattr(response, "usage", None) is not None:
                 wasted.append(response)
             err = getattr(response, "error", None) or (getattr(response, "model_extra", None) or {}).get("error")
+            if isinstance(err, dict):
+                err = err.get("message") or err
             last = str(err or "no choices in the response")
             logger.warning("OpenRouter turn %d: empty response (%s), attempt %d", turn, last, attempt + 1)
             if attempt < _EMPTY_RETRIES:
