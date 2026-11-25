@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +104,9 @@ class FileToolHandler(ToolHandler):
 
             elif tool_name == "write_file":
                 p = self._resolve(tool_input["path"])
+                refused = _refuse_content(tool_input["path"], tool_input["content"], tool_input["content"])
+                if refused:
+                    return refused
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(tool_input["content"], encoding="utf-8", newline="\n")
                 return f"Written {len(tool_input['content'])} chars to {tool_input['path']}"
@@ -115,6 +120,9 @@ class FileToolHandler(ToolHandler):
                 if old not in content:
                     return f"Error: old_string not found in {tool_input['path']}"
                 new_content = content.replace(old, tool_input["new_string"], 1)
+                refused = _refuse_content(tool_input["path"], tool_input["new_string"], new_content)
+                if refused:
+                    return refused
                 p.write_text(new_content, encoding="utf-8", newline="\n")
                 return f"Edited {tool_input['path']}"
 
@@ -135,3 +143,29 @@ class FileToolHandler(ToolHandler):
             return f"Error: {e}"
         except Exception as e:
             return f"Error executing {tool_name}: {e}"
+
+
+#: The shortened parts of older exchanges (history.ELIDED, and the wording before 0.23).
+_ELIDED = re.compile(r"characters[^\]\n]{0,80}?(?:not repeated|left out of this conversation)")
+
+
+def _refuse_content(path: str, written: str, result: str) -> str | None:
+    """Why a write must not happen, or None (live test 2026-11-25).
+
+    A model rewriting a file from its own history copied a shortened part ("[713 characters, not
+    repeated]") into it, and a JSON file it edited no longer parsed; a later check stopped the run.
+    Refused here, the model sees why at once and writes the file again.
+    """
+    if _ELIDED.search(written):
+        return (
+            f"Error: nothing written to {path}. The text holds a placeholder for content left out of this "
+            'conversation ("[… characters, …]"). Read the file (read_file) and write its real content.'
+        )
+    if path.lower().endswith(".json"):
+        try:
+            json.loads(result)
+        except ValueError as e:
+            return (
+                f"Error: nothing written to {path}: the result would not be valid JSON ({e}). Fix it and write again."
+            )
+    return None

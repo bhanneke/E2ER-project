@@ -94,6 +94,12 @@ def _preview(text: str) -> str:
     return joined[:_PREVIEW_CHARS]
 
 
+#: What a shortened part of an older exchange says (review of the live test, 2026-11-25): a model that rewrote a
+#: file from its own history copied "[713 characters, not repeated]" into data_dictionary.json. The words say
+#: where the content is; the file tools refuse a write that carries them (tools.py).
+ELIDED = "left out of this conversation, read the file for it"
+
+
 def _summarise_args(arguments: Any, tool_name: str) -> Any:
     """Long string values in a tool call's arguments replaced by their length (still valid JSON)."""
     if not isinstance(arguments, str) or len(arguments) <= _SHORT:
@@ -101,15 +107,15 @@ def _summarise_args(arguments: Any, tool_name: str) -> Any:
     try:
         parsed = json.loads(arguments)
     except (json.JSONDecodeError, ValueError):
-        return json.dumps({"summary": f"[{len(arguments):,} characters of arguments to {tool_name}, not repeated]"})
+        return json.dumps({"summary": f"[{len(arguments):,} characters of arguments to {tool_name}, {ELIDED}]"})
     if not isinstance(parsed, dict):
-        return json.dumps({"summary": f"[{len(arguments):,} characters of arguments to {tool_name}, not repeated]"})
+        return json.dumps({"summary": f"[{len(arguments):,} characters of arguments to {tool_name}, {ELIDED}]"})
     short: dict[str, Any] = {}
     for key, value in parsed.items():
         if isinstance(value, str) and len(value) > _SHORT:
-            short[key] = f"[{len(value):,} characters, not repeated]"
+            short[key] = f"[{len(value):,} characters, {ELIDED}]"
         elif not isinstance(value, str) and len(json.dumps(value)) > _SHORT:
-            short[key] = f"[{len(json.dumps(value)):,} characters of {type(value).__name__}, not repeated]"
+            short[key] = f"[{len(json.dumps(value)):,} characters of {type(value).__name__}, {ELIDED}]"
         else:
             short[key] = value
     return json.dumps(short)
@@ -144,7 +150,7 @@ def _summarise_exchange(msgs: list[dict[str, Any]], ex: _Exchange) -> list[dict[
         new_calls.append({**c, "function": fn})
     content = assistant.get("content") or ""
     if isinstance(content, str) and len(content) > 4 * _SHORT:
-        content = content[: 2 * _SHORT].rstrip() + f" [… {len(content):,} characters, rest not repeated]"
+        content = content[: 2 * _SHORT].rstrip() + f" [… {len(content):,} characters, the rest {ELIDED}]"
     out: list[dict[str, Any]] = [{**assistant, "content": content, "tool_calls": new_calls}]
     for m in msgs[ex.start + 1 : ex.end]:
         text = m.get("content")

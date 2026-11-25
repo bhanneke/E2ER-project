@@ -201,3 +201,28 @@ def test_a_link_out_of_the_study_is_refused_outside_data_and_literature(tmp_path
     assert guard_ai_step("e2er-data") == 2
     (ws / "data_dictionary.json").unlink()
     assert guard_ai_step("e2er-data") is None
+
+
+# --- live test of 2026-11-25: a placeholder from the history copied into a file; broken JSON --------
+
+
+async def test_a_write_carrying_a_history_placeholder_is_refused(tmp_path):
+    from src.modules.llm.history import ELIDED
+    from src.modules.llm.tools import FileToolHandler
+
+    h = FileToolHandler(tmp_path)
+    for text in ('{"a": 1, [713 characters, not repeated]}', f'x = "[713 characters, {ELIDED}]"'):
+        out = await h.handle("write_file", {"path": "notes.txt", "content": text})
+        assert out.startswith("Error: nothing written") and "read_file" in out, out
+    assert not (tmp_path / "notes.txt").exists()
+
+
+async def test_a_json_file_that_would_not_parse_is_not_written(tmp_path):
+    from src.modules.llm.tools import FileToolHandler
+
+    h = FileToolHandler(tmp_path)
+    ok = await h.handle("write_file", {"path": "d.json", "content": '{"tables": [{"name": "t"}]}'})
+    assert ok.startswith("Written")
+    bad = await h.handle("edit_file", {"path": "d.json", "old_string": '"t"}', "new_string": '"t" "x": 1}'})
+    assert bad.startswith("Error: nothing written") and "valid JSON" in bad, bad
+    assert (tmp_path / "d.json").read_text() == '{"tables": [{"name": "t"}]}'
