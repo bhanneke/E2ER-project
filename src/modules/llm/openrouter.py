@@ -206,6 +206,8 @@ def _reasoning_of(msg: Any) -> Any:
     return details if isinstance(details, list) and details else None
 
 
+#: How an answer the model's providers never sent is reported (``_create``).
+STALLED_PREFIX = "OpenRouter returned no answer after"
 #: The smallest output limit worth asking for when the credit left covers no more (a step writes files).
 _MIN_OUTPUT_TOKENS = 2048
 
@@ -301,6 +303,24 @@ class OpenRouterBackend(LLMBackend):
 
         load_models()
 
+    async def _raise_if_stalled(self, result: Any, paper_id: str | None, specialist: str | None) -> None:
+        """Pause the run when the model's providers stopped answering, even the fast ones: a new attempt from the
+        start would cost the step's whole conversation again and meet the same providers (live test 2026-11-25:
+        three attempts of about 530,000 tokens each, then the study failed)."""
+        error = str(getattr(result, "error", "") or "")
+        if getattr(result, "success", True) or not error.startswith(STALLED_PREFIX):
+            return
+        from ..tracking.usage import record_cancelled_loop
+        from .plan_limit import CallTimedOutError
+
+        await record_cancelled_loop(paper_id, specialist, "openrouter", self._model, getattr(result, "usage", None))
+        status = (
+            f"Paused: OpenRouter's providers of {self._model} stopped answering ({error.split(': ', 1)[-1]}), "
+            "the fastest ones too. Nothing is lost: press Resume to try this step again, now or later, or choose "
+            "another model (OPENROUTER_MODEL)."
+        )
+        raise CallTimedOutError("openrouter", error, status, specialist=specialist)
+
     async def preflight(self) -> None:
         """Before a run's first step: stop when the key, the model or its limits cannot run a study.
 
@@ -394,6 +414,15 @@ class OpenRouterBackend(LLMBackend):
             except _StalledError as e:
                 last = str(e)
                 logger.warning("OpenRouter turn %d: %s, attempt %d", turn, last, attempt + 1)
+                # A stall is no error to OpenRouter, so it does not fall back by itself: ask the model's fast
+                # providers from now on, for the rest of the run (live test 2026-11-25: the cheapest DeepSeek
+                # provider sent nothing for 120 s, three times on the same call).
+                if self._provider_sort != "throughput":
+                    logger.warning("OpenRouter: %s stalled; asking its fastest providers from now on", self._model)
+                    self._provider_sort = "throughput"
+                extra = dict(create_kwargs.get("extra_body") or {})
+                extra["provider"] = self._provider_preference()
+                create_kwargs = {**create_kwargs, "extra_body": extra}
                 continue
             if response.choices:
                 return response
@@ -405,7 +434,7 @@ class OpenRouterBackend(LLMBackend):
             logger.warning("OpenRouter turn %d: empty response (%s), attempt %d", turn, last, attempt + 1)
             if attempt < _EMPTY_RETRIES:
                 await asyncio.sleep(_EMPTY_BACKOFF_SECONDS * (attempt + 1))
-        raise RuntimeError(f"OpenRouter returned no answer after {_EMPTY_RETRIES + 1} attempts: {last}")
+        raise RuntimeError(f"{STALLED_PREFIX} {_EMPTY_RETRIES + 1} attempts: {last}")
 
     async def _complete(self, create_kwargs: dict[str, Any]) -> Any:
         """The call, streamed, so a provider that stops sending is noticed.
@@ -504,6 +533,7 @@ class OpenRouterBackend(LLMBackend):
             result = await self._tool_loop(system, messages, tools, tool_handler, max_turns, paper_id, loop_key)
             # No credits, or the key's spending limit: the run pauses (like a plan's limit) instead of failing.
             await raise_if_billing("openrouter", self._model, result, paper_id, specialist)
+            await self._raise_if_stalled(result, paper_id, specialist)
             return result
         except asyncio.CancelledError:
             # A stopped run: the runner never records this loop's usage, but it was billed.

@@ -302,3 +302,53 @@ async def test_answers_discarded_and_asked_again_are_counted(backend, monkeypatc
         system="s", messages=[{"role": "user", "content": "go"}], tools=[], tool_handler=None, max_turns=3
     )
     assert result.success and result.usage.input_tokens >= 50_000
+
+
+# --- live test of 2026-11-25: a stalled provider ---------------------------------------------
+
+
+async def test_after_a_stall_the_next_try_asks_the_fast_providers(backend, monkeypatch):
+    from src.modules.llm import openrouter as orb
+
+    sent: list[dict] = []
+
+    async def complete(kwargs):
+        sent.append(dict(kwargs.get("extra_body") or {}))
+        if len(sent) == 1:
+            raise orb._StalledError("no data for 120 s")
+        return _response(finish="stop", content="Done.")
+
+    backend._provider_sort = "price"
+    monkeypatch.setattr(backend, "_complete", complete)
+    monkeypatch.setattr(orb, "provider_order", lambda m: ["Cheap", "Fast"], raising=False)
+    result = await backend.tool_loop(
+        system="s", messages=[{"role": "user", "content": "go"}], tools=[], tool_handler=None, max_turns=3
+    )
+    assert result.success and sent[1]["provider"] == {"sort": "throughput"}
+    assert backend._provider_sort == "throughput"  # for the rest of the run
+
+
+async def test_when_every_provider_stalls_the_run_pauses(backend, monkeypatch):
+    from src.modules.llm import openrouter as orb
+    from src.modules.llm.plan_limit import CallTimedOutError
+
+    async def complete(kwargs):
+        raise orb._StalledError("no data for 120 s")
+
+    async def record(*a):
+        return None
+
+    monkeypatch.setattr(backend, "_complete", complete)
+    monkeypatch.setattr("src.modules.tracking.usage.record_cancelled_loop", record)
+    with pytest.raises(CallTimedOutError) as e:
+        await backend.tool_loop(
+            system="s",
+            messages=[{"role": "user", "content": "go"}],
+            tools=[],
+            tool_handler=None,
+            max_turns=3,
+            paper_id="p1",
+            specialist="data_architect",
+        )
+    assert "stopped answering" in e.value.status and "press Resume" in e.value.status
+    assert e.value.specialist == "data_architect"
