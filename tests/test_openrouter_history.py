@@ -158,7 +158,9 @@ async def test_summaries_keep_valid_tool_call_json_and_say_what_was_there(backen
     read_texts = [t for t in tool_texts if t != "written"]
     assert any(t.startswith("[earlier result of read_file(path=") for t in tool_texts)
     assert any(
-        "characters, left out of this conversation" in tc["function"]["arguments"] for m in last for tc in m.get("tool_calls") or []
+        "characters, left out of this conversation" in tc["function"]["arguments"]
+        for m in last
+        for tc in m.get("tool_calls") or []
     )
     # The last exchanges are in full.
     assert len(read_texts[-1]) > 20_000
